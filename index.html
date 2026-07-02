@@ -2253,7 +2253,8 @@ function setCfgAccount(acc){ CFG_ACCOUNT=acc; CFG=JSON.parse(JSON.stringify(effe
 
 // ── RISCO POR SESSÃO ──
 // nomes EXATOS que o robô procura (não mudar sem alinhar com o robô)
-const SESSION_RISK_KEYS=['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','OP2'];
+// robô v1.2: 8 sessões no Operacional 1 (M5-09h, M5-15h30 e M1-18h são novas) + OP2
+const SESSION_RISK_KEYS=['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h','OP2'];
 function sessionLabel(k){
   const map={
     'M5-01h': {pt:'Sessão M5 · 01:00', en:'M5 session · 01:00', es:'Sesión M5 · 01:00'},
@@ -2261,16 +2262,24 @@ function sessionLabel(k){
     'M1-02h': {pt:'Sessão M1 · 02:00', en:'M1 session · 02:00', es:'Sesión M1 · 02:00'},
     'M1-11h': {pt:'Sessão M1 · 11:00', en:'M1 session · 11:00', es:'Sesión M1 · 11:00'},
     'M1-17h': {pt:'Sessão M1 · 17:00', en:'M1 session · 17:00', es:'Sesión M1 · 17:00'},
+    'M5-09h': {pt:'Sessão M5 · 09:00', en:'M5 session · 09:00', es:'Sesión M5 · 09:00'},
+    'M5-15h30':{pt:'Sessão M5 · 15:30', en:'M5 session · 15:30', es:'Sesión M5 · 15:30'},
+    'M1-18h': {pt:'Sessão M1 · 18:00', en:'M1 session · 18:00', es:'Sesión M1 · 18:00'},
     'OP2':    {pt:'Operacional 2 · 20h–05h', en:'Operational 2 · 8pm–5am', es:'Operacional 2 · 20h–05h'},
   };
   const m=map[k]||{pt:k,en:k,es:k}; return LANG==='en'?m.en:LANG==='es'?m.es:m.pt;
 }
-// perfis prontos (preenchem as 6 sessões + o risco global)
+// perfis prontos (preenchem as sessões + o risco global)
 const SR_PROFILES={
-  conservador:{'M5-01h':0.2,'M15-01h':0.2,'M1-02h':0.3,'M1-11h':0.3,'M1-17h':0.5,'OP2':0.3,_risk:0.3},
-  moderado:   {'M5-01h':0.3,'M15-01h':0.3,'M1-02h':0.5,'M1-11h':0.5,'M1-17h':1.0,'OP2':0.5,_risk:0.5},
-  arrojado:   {'M5-01h':0.5,'M15-01h':0.5,'M1-02h':0.8,'M1-11h':0.8,'M1-17h':1.5,'OP2':0.8,_risk:0.8},
+  conservador:{'M5-01h':0.2,'M15-01h':0.2,'M1-02h':0.3,'M1-11h':0.3,'M1-17h':0.5,'M5-09h':0.2,'M5-15h30':0.2,'M1-18h':0.3,'OP2':0.3,_risk:0.3},
+  moderado:   {'M5-01h':0.3,'M15-01h':0.3,'M1-02h':0.5,'M1-11h':0.5,'M1-17h':1.0,'M5-09h':0.3,'M5-15h30':0.3,'M1-18h':0.5,'OP2':0.5,_risk:0.5},
+  arrojado:   {'M5-01h':0.5,'M15-01h':0.5,'M1-02h':0.8,'M1-11h':0.8,'M1-17h':1.5,'M5-09h':0.5,'M5-15h30':0.5,'M1-18h':0.8,'OP2':0.8,_risk:0.8},
 };
+// liga/desliga por sessão do robô v1.2 (controle GLOBAL do admin; OP2 fica no robô).
+// Padrão de fábrica: só M5-01h e M15-01h ligadas. Sincronizado com o servidor
+// pelo bloco BW LIVE (GET/POST /api/risk-profiles ↔ sessionOn).
+const SESSION_ON_KEYS=['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h'];
+const BW_SESSION_ON={'M5-01h':true,'M15-01h':true,'M1-02h':false,'M1-11h':false,'M1-17h':false,'M5-09h':false,'M5-15h30':false,'M1-18h':false};
 function srSet(k,v){ if(!CFG.sessionRisk||typeof CFG.sessionRisk!=='object') CFG.sessionRisk={}; const n=parseFloat(v); CFG.sessionRisk[k]=(isFinite(n)&&n>=0&&n<=10)?n:0; CFG.profile='custom'; const el=document.getElementById('sr-prof-lbl'); if(el) el.textContent=(LANG==='pt'?'Perfil: Personalizado':LANG==='en'?'Profile: Custom':'Perfil: Personalizado'); }
 function applySrProfile(name){ const p=SR_PROFILES[name]; if(!p) return; CFG.sessionRisk={}; for(const k of SESSION_RISK_KEYS) CFG.sessionRisk[k]=p[k]; CFG.riskPerTrade=p._risk; CFG.profile=name; renderPage('config'); }
 function srVal(k){ const sr=(CFG.sessionRisk&&typeof CFG.sessionRisk==='object')?CFG.sessionRisk:{}; return (k in sr)?sr[k]:(CFG.riskPerTrade!=null?CFG.riskPerTrade:0.5); }
@@ -2328,14 +2337,14 @@ function renderConfig(){
       </div>`;
     })()}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px">
-      ${SESSION_RISK_KEYS.map(k=>`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px">
+      ${SESSION_RISK_KEYS.map(k=>{const off=SESSION_ON_KEYS.includes(k)&&!BW_SESSION_ON[k];return `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px${!isAdm&&off?';opacity:.55':''}">
           <div style="font-size:.86rem;color:var(--t1);font-weight:500">${sessionLabel(k)}</div>
           ${isAdm?`<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
             <input type="number" step="0.1" min="0" max="10" value="${srVal(k)}" onchange="srSet('${k}',this.value)" oninput="srSet('${k}',this.value)" style="width:64px;text-align:right;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:7px 8px;color:var(--t1);font-size:.9rem;font-weight:600">
             <span style="font-size:.85rem;color:var(--t3)">%</span>
-          </div>`:`<div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l);flex-shrink:0">${srVal(k)}%</div>`}
-        </div>`).join('')}
+          </div>`:`<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${off?`<span style="font-family:var(--fm);font-size:.58rem;letter-spacing:.05em;color:var(--t4);background:var(--s3);padding:2px 8px;border-radius:20px">${LANG==='pt'?'DESLIGADA':LANG==='en'?'OFF':'APAGADA'}</span>`:''}<div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l)">${srVal(k)}%</div></div>`}
+        </div>`;}).join('')}
     </div>
     <div class="banner info" style="margin:14px 0 0">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -2348,13 +2357,13 @@ function renderConfig(){
   <div class="cfg-section rv" style="border-color:rgba(255,59,71,.25)">
     <div class="cfg-section-head">
       <div class="cfg-section-ico" style="background:rgba(255,59,71,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red-l)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Estes são os valores dos 3 perfis que TODOS os alunos podem escolher. Ao salvar, alunos que estão em um perfil passam a operar com os novos valores automaticamente.':LANG==='en'?'These are the values of the 3 profiles ALL students can choose. On save, students on a profile automatically switch to the new values.':'Estos son los valores de los 3 perfiles que TODOS los alumnos pueden elegir. Al guardar, se aplican automáticamente.'}</div></div>
+      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Controle GLOBAL do robô v1.2: ligue/desligue cada sessão e defina os valores dos 3 perfis que TODOS os alunos podem escolher. Ao salvar, os robôs aplicam na próxima consulta (~5 min).':LANG==='en'?'GLOBAL control of robot v1.2: turn each session on/off and set the values of the 3 profiles ALL students can choose. Robots apply on the next poll (~5 min).':'Control GLOBAL del robot v1.2: activa/desactiva cada sesión y define los valores de los 3 perfiles. Los robots aplican en la próxima consulta (~5 min).'}</div></div>
     </div>
-    <div class="tbl-wrap"><table class="tbl" style="min-width:540px">
-      <thead><tr><th>${LANG==='pt'?'Sessão':LANG==='en'?'Session':'Sesión'}</th><th style="color:var(--green-l)">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</th><th style="color:var(--amber-l)">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</th><th style="color:var(--red-l)">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</th></tr></thead>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:600px">
+      <thead><tr><th>${LANG==='pt'?'Sessão':LANG==='en'?'Session':'Sesión'}</th><th>${LANG==='pt'?'Ativa':LANG==='en'?'On':'Activa'}</th><th style="color:var(--green-l)">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</th><th style="color:var(--amber-l)">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</th><th style="color:var(--red-l)">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</th></tr></thead>
       <tbody>
-        ${SESSION_RISK_KEYS.map(k=>`<tr><td style="font-size:.82rem">${sessionLabel(k)}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-${k}" value="${SR_PROFILES[n][k]}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>`).join('')}
-        <tr><td style="font-size:.82rem">${LANG==='pt'?'Risco global (fallback)':LANG==='en'?'Global risk (fallback)':'Riesgo global (fallback)'}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-_risk" value="${SR_PROFILES[n]._risk}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>
+        ${SESSION_RISK_KEYS.map(k=>`<tr><td style="font-size:.82rem">${sessionLabel(k)}</td><td>${SESSION_ON_KEYS.includes(k)?`<input type="checkbox" id="gp-on-${k}" ${BW_SESSION_ON[k]?'checked':''} style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer">`:`<span style="font-size:.7rem;color:var(--t4)">${LANG==='pt'?'no robô':LANG==='en'?'in robot':'en robot'}</span>`}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-${k}" value="${SR_PROFILES[n][k]}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>`).join('')}
+        <tr><td style="font-size:.82rem">${LANG==='pt'?'Risco global (fallback)':LANG==='en'?'Global risk (fallback)':'Riesgo global (fallback)'}</td><td></td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-_risk" value="${SR_PROFILES[n]._risk}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>
       </tbody>
     </table></div>
     <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn-primary" onclick="saveGlobalProfiles()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${LANG==='pt'?'Salvar padrões globais':LANG==='en'?'Save global presets':'Guardar perfiles globales'}</button></div>
@@ -4884,12 +4893,18 @@ setLang(LANG);
       var r=await fetch(API+'/api/risk-profiles',{headers:{'Authorization':'Bearer '+SESSION.token}});
       if(!r.ok)return;
       var d=await r.json();
+      var changed=false;
       if(d&&d.profiles){
         ['conservador','moderado','arrojado'].forEach(function(n){
           if(d.profiles[n]&&typeof d.profiles[n]==='object') Object.assign(SR_PROFILES[n],d.profiles[n]);
         });
-        if(CURRENT_PAGE==='config') renderPage('config');
+        changed=true;
       }
+      if(d&&d.sessionOn&&typeof d.sessionOn==='object'){
+        SESSION_ON_KEYS.forEach(function(k){ if(k in d.sessionOn) BW_SESSION_ON[k]=!!d.sessionOn[k]; });
+        changed=true;
+      }
+      if(changed&&CURRENT_PAGE==='config') renderPage('config');
     }catch(e){}
   };
   setInterval(function(){ try{ if(SESSION&&SESSION.token&&document.visibilityState==='visible') fetchRiskProfiles(); }catch(e){} },300000);
@@ -4904,11 +4919,15 @@ setLang(LANG);
       var rg=document.getElementById('gp-'+n+'-_risk'); if(rg){ var v=parseFloat(rg.value); if(isFinite(v)&&v>=0&&v<=10) p._risk=v; }
       profiles[n]=p;
     });
+    // liga/desliga das 8 sessões do robô v1.2 (checkboxes gp-on-*)
+    var sessionOn={};
+    SESSION_ON_KEYS.forEach(function(k){ var el=document.getElementById('gp-on-'+k); sessionOn[k]=el?!!el.checked:!!BW_SESSION_ON[k]; });
     try{
-      var r=await fetch(API+'/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},body:JSON.stringify({profiles})});
+      var r=await fetch(API+'/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},body:JSON.stringify({profiles:profiles,sessionOn:sessionOn})});
       if(r.ok){
         ['conservador','moderado','arrojado'].forEach(function(n){ Object.assign(SR_PROFILES[n],profiles[n]); });
-        toast(LANG==='pt'?'Padrões globais salvos — já valem para todos os alunos':LANG==='en'?'Global presets saved — now live for all students':'Perfiles globales guardados','success');
+        SESSION_ON_KEYS.forEach(function(k){ BW_SESSION_ON[k]=sessionOn[k]; });
+        toast(LANG==='pt'?'Padrões e sessões salvos — os robôs aplicam na próxima consulta (~5 min)':LANG==='en'?'Presets & sessions saved — robots apply on next poll (~5 min)':'Perfiles y sesiones guardados','success');
       } else if(r.status===404){
         toast(LANG==='pt'?'O backend (worker) ainda não foi atualizado para a v18':LANG==='en'?'Backend (worker) not yet updated to v18':'El backend aún no fue actualizado (v18)','error');
       } else {

@@ -1,10 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v18 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v19 (Cloudflare Worker)
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
  *         ATUAIS automaticamente na próxima leitura de config)
+ *  + v19: ROBÔ v1.2 — 8 sessões no Operacional 1 (3 novas) e
+ *         LIGA/DESLIGA por sessão (sessionOn, chaves "on_<sessão>")
+ *         controlado globalmente pelo admin. Contrato do Luiz.
  * ═══════════════════════════════════════════════════════════════
  *
  *  Bindings:
@@ -55,7 +58,7 @@ export default {
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
       if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v18' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v19' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -144,11 +147,43 @@ function accountsList(mt5AccountsRaw, mt5AccountSingle) {
    recebe os valores ATUAIS do perfil na leitura de /api/ea/config — ou seja,
    mudou o padrão, mudou para todo mundo automaticamente. */
 const DEFAULT_RISK_PROFILES = {
-  conservador: { 'M5-01h':0.2, 'M15-01h':0.2, 'M1-02h':0.3, 'M1-11h':0.3, 'M1-17h':0.5, 'OP2':0.3, _risk:0.3 },
-  moderado:    { 'M5-01h':0.3, 'M15-01h':0.3, 'M1-02h':0.5, 'M1-11h':0.5, 'M1-17h':1.0, 'OP2':0.5, _risk:0.5 },
-  arrojado:    { 'M5-01h':0.5, 'M15-01h':0.5, 'M1-02h':0.8, 'M1-11h':0.8, 'M1-17h':1.5, 'OP2':0.8, _risk:0.8 },
+  conservador: { 'M5-01h':0.2, 'M15-01h':0.2, 'M1-02h':0.3, 'M1-11h':0.3, 'M1-17h':0.5, 'M5-09h':0.2, 'M5-15h30':0.2, 'M1-18h':0.3, 'OP2':0.3, _risk:0.3 },
+  moderado:    { 'M5-01h':0.3, 'M15-01h':0.3, 'M1-02h':0.5, 'M1-11h':0.5, 'M1-17h':1.0, 'M5-09h':0.3, 'M5-15h30':0.3, 'M1-18h':0.5, 'OP2':0.5, _risk:0.5 },
+  arrojado:    { 'M5-01h':0.5, 'M15-01h':0.5, 'M1-02h':0.8, 'M1-11h':0.8, 'M1-17h':1.5, 'M5-09h':0.5, 'M5-15h30':0.5, 'M1-18h':0.8, 'OP2':0.8, _risk:0.8 },
 };
 const RISK_PROFILE_NAMES = ['conservador','moderado','arrojado'];
+
+/* ─── LIGA/DESLIGA POR SESSÃO (v19 — robô v1.2) ───
+   O admin controla GLOBALMENTE quais sessões do Operacional 1 estão ativas.
+   O robô lê em config.sessionOn com o prefixo "on_" (contrato do robô v1.2).
+   OP2 fica de fora (o on/off dele segue no próprio robô por enquanto).
+   Padrão de fábrica: só M5-01h e M15-01h ligadas. */
+const SESSION_ON_KEYS = ['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h'];
+const DEFAULT_SESSION_ON = {
+  'M5-01h':true, 'M15-01h':true, 'M1-02h':false, 'M1-11h':false,
+  'M1-17h':false, 'M5-09h':false, 'M5-15h30':false, 'M1-18h':false,
+};
+async function getSessionOn(env) {
+  try {
+    const s = await env.SESSIONS.get('session_on');
+    if (s) {
+      const p = JSON.parse(s);
+      if (p && typeof p === 'object') {
+        const out = {};
+        for (const k of SESSION_ON_KEYS) out[k] = (k in p) ? !!p[k] : DEFAULT_SESSION_ON[k];
+        return out;
+      }
+    }
+  } catch (e) {}
+  return { ...DEFAULT_SESSION_ON };
+}
+function sanitizeSessionOn(raw) {
+  const out = { ...DEFAULT_SESSION_ON };
+  if (raw && typeof raw === 'object') {
+    for (const k of SESSION_ON_KEYS) if (k in raw) out[k] = !!raw[k];
+  }
+  return out;
+}
 async function getRiskProfiles(env) {
   try {
     const s = await env.SESSIONS.get('risk_profiles');
@@ -178,22 +213,33 @@ function sanitizeRiskProfiles(raw) {
   }
   return out;
 }
-/* GET /api/risk-profiles — qualquer usuário logado lê os padrões atuais */
+/* GET /api/risk-profiles — qualquer usuário logado lê os padrões atuais + sessões ativas */
 async function handleRiskProfilesGet(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
-  return json({ ok: true, profiles: await getRiskProfiles(env) });
+  return json({ ok: true, profiles: await getRiskProfiles(env), sessionOn: await getSessionOn(env) });
 }
-/* POST /api/admin/risk-profiles — só admin grava { profiles:{conservador,moderado,arrojado} } */
+/* POST /api/admin/risk-profiles — só admin grava
+   { profiles:{conservador,moderado,arrojado}, sessionOn:{'M5-01h':true,...} }
+   (profiles e sessionOn são opcionais — grava o que vier) */
 async function handleRiskProfilesSave(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
   let body; try { body = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
-  const profiles = sanitizeRiskProfiles(body && body.profiles ? body.profiles : body);
-  await env.SESSIONS.put('risk_profiles', JSON.stringify({ ...profiles, updated_at: new Date().toISOString(), updated_by: email }));
-  return json({ ok: true, profiles });
+  const now = new Date().toISOString();
+  let profiles = null, sessionOn = null;
+  if (body && body.profiles && typeof body.profiles === 'object') {
+    profiles = sanitizeRiskProfiles(body.profiles);
+    await env.SESSIONS.put('risk_profiles', JSON.stringify({ ...profiles, updated_at: now, updated_by: email }));
+  }
+  if (body && body.sessionOn && typeof body.sessionOn === 'object') {
+    sessionOn = sanitizeSessionOn(body.sessionOn);
+    await env.SESSIONS.put('session_on', JSON.stringify({ ...sessionOn, updated_at: now, updated_by: email }));
+  }
+  if (!profiles && !sessionOn) return json({ error: 'nothing_to_save' }, 400);
+  return json({ ok: true, profiles: profiles || await getRiskProfiles(env), sessionOn: sessionOn || await getSessionOn(env) });
 }
 
 /* ─── CONFIG POR CONTA ───
@@ -639,7 +685,8 @@ async function handleAdminClients(request, env, json) {
    O ALUNO salva os parâmetros pelo painel (sessão autenticada). */
 const EA_ALLOWED_KEYS = ['riskPerTrade','lotMode','fixedLot','maxLot','leverage','dailyTarget','dailyLoss','maxTrades','maxSimultaneous','equityStop','newsPause','profile'];
 // nomes EXATOS das sessões que o robô procura no sessionRisk (não mudar sem alinhar com o robô)
-const SESSION_RISK_KEYS = ['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','OP2'];
+// v19: robô v1.2 tem 8 sessões no Operacional 1 (M5-09h, M5-15h30 e M1-18h são novas) + OP2
+const SESSION_RISK_KEYS = ['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h','OP2'];
 function sanitizeSessionRisk(raw) {
   const out = {};
   if (raw && typeof raw === 'object') {
@@ -826,6 +873,13 @@ async function handleEaConfig(request, env, json, url) {
       if (p._risk != null) config.riskPerTrade = p._risk;
     }
   }
+  // v19: LIGA/DESLIGA POR SESSÃO (robô v1.2) — sempre manda as 8 chaves "on_"
+  // explícitas (contrato: chave ausente = robô mantém o estado atual; explícito
+  // é determinístico). Controle GLOBAL do admin, igual para todas as licenças.
+  const so = await getSessionOn(env);
+  const sessionOn = {};
+  for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = !!so[k];
+  config.sessionOn = sessionOn;
   return json({ ok: true, active: true, license, plan: row.plan || null, account: acc.bound || null, config, updated_at: cfg.updated_at || null });
 }
 
