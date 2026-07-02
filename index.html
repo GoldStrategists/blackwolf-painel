@@ -1753,6 +1753,7 @@ function eaStatusBanner(){
     <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${st.account||'—'}</b></div>
     <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: <b style="color:var(--t1)">${money(st.balance)}</b></div>
     <div style="font-size:.8rem;color:var(--t3)">Equity: <b style="color:var(--t1)">${money(st.equity)}</b></div>
+    <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Posições abertas':LANG==='en'?'Open positions':'Posiciones abiertas'}: <b style="color:${st.open_positions>0?'var(--blue-l)':'var(--t1)'}">${st.open_positions!=null?st.open_positions:'—'}</b></div>
     <div style="font-size:.74rem;color:var(--t3);margin-left:auto">${LANG==='pt'?'Visto':LANG==='en'?'Seen':'Visto'}: ${seenTxt}</div>
   </div>`;
 }
@@ -2341,6 +2342,23 @@ function renderConfig(){
       <div class="banner-tx">${LANG==='pt'?'A sessão <b>M1 · 17:00</b> costuma ser a mais forte do dia. Ajuste com responsabilidade — risco maior aumenta ganho <b>e</b> perda.':LANG==='en'?'The <b>M1 · 17:00</b> session tends to be the strongest of the day. Adjust responsibly — higher risk increases gain <b>and</b> loss.':'La sesión <b>M1 · 17:00</b> suele ser la más fuerte. Ajusta con responsabilidad — más riesgo aumenta ganancia <b>y</b> pérdida.'}</div>
     </div>
   </div>
+
+  ${isAdm?`
+  <!-- PADRÕES GLOBAIS (somente admin) -->
+  <div class="cfg-section rv" style="border-color:rgba(255,59,71,.25)">
+    <div class="cfg-section-head">
+      <div class="cfg-section-ico" style="background:rgba(255,59,71,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red-l)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Estes são os valores dos 3 perfis que TODOS os alunos podem escolher. Ao salvar, alunos que estão em um perfil passam a operar com os novos valores automaticamente.':LANG==='en'?'These are the values of the 3 profiles ALL students can choose. On save, students on a profile automatically switch to the new values.':'Estos son los valores de los 3 perfiles que TODOS los alumnos pueden elegir. Al guardar, se aplican automáticamente.'}</div></div>
+    </div>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:540px">
+      <thead><tr><th>${LANG==='pt'?'Sessão':LANG==='en'?'Session':'Sesión'}</th><th style="color:var(--green-l)">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</th><th style="color:var(--amber-l)">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</th><th style="color:var(--red-l)">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</th></tr></thead>
+      <tbody>
+        ${SESSION_RISK_KEYS.map(k=>`<tr><td style="font-size:.82rem">${sessionLabel(k)}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-${k}" value="${SR_PROFILES[n][k]}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>`).join('')}
+        <tr><td style="font-size:.82rem">${LANG==='pt'?'Risco global (fallback)':LANG==='en'?'Global risk (fallback)':'Riesgo global (fallback)'}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-_risk" value="${SR_PROFILES[n]._risk}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>
+      </tbody>
+    </table></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn-primary" onclick="saveGlobalProfiles()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${LANG==='pt'?'Salvar padrões globais':LANG==='en'?'Save global presets':'Guardar perfiles globales'}</button></div>
+  </div>`:''}
 
   <!-- PRESETS -->
   <div class="cfg-section rv">
@@ -4563,7 +4581,15 @@ function doRefresh(btn){
   if(btn){ btn.classList.add('spin'); setTimeout(()=>btn.classList.remove('spin'),1000); }
   // re-render current page (re-runs animations)
   document.querySelectorAll('.rv').forEach(el=>{ el.classList.remove('in'); el.querySelectorAll('[data-done]').forEach(d=>d.removeAttribute('data-done')); });
-  setTimeout(()=>{ renderPage(CURRENT_PAGE); toast(LANG==='pt'?'Dados atualizados':LANG==='en'?'Data updated':'Datos actualizados','success'); },300);
+  // busca dados NOVOS do servidor (trades, status do robô, licença) antes de re-renderizar
+  const jobs=[];
+  if(SESSION && SESSION.token && !SESSION.isDemo){
+    jobs.push(refreshMe());
+    if(VIEW_MODE==='admin' && SESSION.role==='admin') jobs.push(fetchRealClients());
+  }
+  Promise.allSettled(jobs).then(()=>{
+    setTimeout(()=>{ renderPage(CURRENT_PAGE); toast(LANG==='pt'?'Dados atualizados':LANG==='en'?'Data updated':'Datos actualizados','success'); },150);
+  });
 }
 
 /* ─── ADMIN ACTIONS ─── */
@@ -4824,6 +4850,72 @@ setLang(LANG);
     t.style.setProperty('--mx',(e.clientX-r.left)+'px');
     t.style.setProperty('--my',(e.clientY-r.top)+'px');
   },{passive:true});
+})();
+</script>
+
+<script>
+/* ══ BW LIVE — bloco NOVO e ISOLADO: atualização quase em tempo real + perfis globais de risco ══
+   Usa apenas funções/variáveis já públicas do app (fetchMyData, SESSION, SR_PROFILES, toast). */
+(function(){
+  'use strict';
+  var profilesFetched=false;
+
+  /* 1) Tempo quase-real: busca trades/status do robô a cada 60s
+        (só logado com conta real, em modo cliente e com a aba visível) */
+  function liveTick(){
+    try{
+      if(!SESSION||!SESSION.token||SESSION.isDemo)return;
+      if(!document.getElementById('app').classList.contains('active'))return;
+      if(document.visibilityState!=='visible')return;
+      if(!profilesFetched){ profilesFetched=true; fetchRiskProfiles(); }
+      if(VIEW_MODE!=='client')return;
+      fetchMyData();
+    }catch(e){}
+  }
+  setInterval(liveTick,60000);
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') liveTick(); });
+  setTimeout(liveTick,2000);
+
+  /* 2) Perfis globais definidos pelo admin — lidos do servidor, com fallback
+        silencioso para os valores locais se o endpoint ainda não existir */
+  window.fetchRiskProfiles=async function(){
+    try{
+      if(!SESSION||!SESSION.token)return;
+      var r=await fetch(API+'/api/risk-profiles',{headers:{'Authorization':'Bearer '+SESSION.token}});
+      if(!r.ok)return;
+      var d=await r.json();
+      if(d&&d.profiles){
+        ['conservador','moderado','arrojado'].forEach(function(n){
+          if(d.profiles[n]&&typeof d.profiles[n]==='object') Object.assign(SR_PROFILES[n],d.profiles[n]);
+        });
+        if(CURRENT_PAGE==='config') renderPage('config');
+      }
+    }catch(e){}
+  };
+  setInterval(function(){ try{ if(SESSION&&SESSION.token&&document.visibilityState==='visible') fetchRiskProfiles(); }catch(e){} },300000);
+
+  /* 3) Admin salva os padrões globais (POST /api/admin/risk-profiles) */
+  window.saveGlobalProfiles=async function(){
+    if(!SESSION||!SESSION.token){ toast(LANG==='pt'?'Disponível apenas com login real (não demo)':LANG==='en'?'Available only with a real login':'Solo con login real','error'); return; }
+    var profiles={};
+    ['conservador','moderado','arrojado'].forEach(function(n){
+      var p={};
+      SESSION_RISK_KEYS.forEach(function(k){ var el=document.getElementById('gp-'+n+'-'+k); if(el){ var v=parseFloat(el.value); if(isFinite(v)&&v>=0&&v<=10) p[k]=v; } });
+      var rg=document.getElementById('gp-'+n+'-_risk'); if(rg){ var v=parseFloat(rg.value); if(isFinite(v)&&v>=0&&v<=10) p._risk=v; }
+      profiles[n]=p;
+    });
+    try{
+      var r=await fetch(API+'/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},body:JSON.stringify({profiles})});
+      if(r.ok){
+        ['conservador','moderado','arrojado'].forEach(function(n){ Object.assign(SR_PROFILES[n],profiles[n]); });
+        toast(LANG==='pt'?'Padrões globais salvos — já valem para todos os alunos':LANG==='en'?'Global presets saved — now live for all students':'Perfiles globales guardados','success');
+      } else if(r.status===404){
+        toast(LANG==='pt'?'O backend (worker) ainda não foi atualizado para a v18':LANG==='en'?'Backend (worker) not yet updated to v18':'El backend aún no fue actualizado (v18)','error');
+      } else {
+        toast(LANG==='pt'?'Erro ao salvar os padrões':LANG==='en'?'Error saving presets':'Error al guardar','error');
+      }
+    }catch(e){ toast(LANG==='pt'?'Sem conexão com o servidor':LANG==='en'?'No server connection':'Sin conexión','error'); }
+  };
 })();
 </script>
 </body>
