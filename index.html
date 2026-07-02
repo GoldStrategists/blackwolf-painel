@@ -2275,6 +2275,8 @@ function applySrProfile(name){ const p=SR_PROFILES[name]; if(!p) return; CFG.ses
 function srVal(k){ const sr=(CFG.sessionRisk&&typeof CFG.sessionRisk==='object')?CFG.sessionRisk:{}; return (k in sr)?sr[k]:(CFG.riskPerTrade!=null?CFG.riskPerTrade:0.5); }
 function renderConfig(){
   const c=CFG;
+  // Risco por sessão: apenas contas admin editam os % individuais; alunos escolhem entre os 3 perfis
+  const isAdm=!!(SESSION&&SESSION.role==='admin');
   const accs=cfgAccounts();
   const accLabel=(a)=>a==='_default'?(LANG==='pt'?'Padrão':LANG==='en'?'Default':'Predet.'):a;
   // seletor de conta (só aparece se houver conta vinculada)
@@ -2302,23 +2304,36 @@ function renderConfig(){
   <div class="cfg-section rv" style="padding-top:16px">
     <div class="cfg-section-head" style="margin-bottom:6px">
       <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Risco por sessão':LANG==='en'?'Per-session risk':'Riesgo por sesión'}</div><div class="cfg-section-desc">${LANG==='pt'?'Defina o risco (%) de cada sessão do robô. O robô usa o valor da sessão; se faltar, usa o risco global acima.':LANG==='en'?'Set the risk (%) for each robot session. The robot uses the session value; if missing, it uses the global risk above.':'Define el riesgo (%) de cada sesión. El robot usa el valor de la sesión; si falta, usa el riesgo global.'}</div></div>
+      <div><div class="cfg-section-title">${LANG==='pt'?'Risco por sessão':LANG==='en'?'Per-session risk':'Riesgo por sesión'}</div><div class="cfg-section-desc">${isAdm
+        ?(LANG==='pt'?'Defina o risco (%) de cada sessão do robô. O robô usa o valor da sessão; se faltar, usa o risco global. Os alunos escolhem apenas entre os 3 perfis.':LANG==='en'?'Set the risk (%) for each robot session. The robot uses the session value; if missing, it uses the global risk. Students only choose between the 3 profiles.':'Define el riesgo (%) de cada sesión. El robot usa el valor de la sesión; si falta, usa el riesgo global. Los alumnos solo eligen entre los 3 perfiles.')
+        :(LANG==='pt'?'Os percentuais de cada sessão são definidos pela equipe Black Wolf. Escolha abaixo o perfil que combina com o seu momento.':LANG==='en'?'Per-session percentages are defined by the Black Wolf team. Choose the profile that fits you below.':'Los porcentajes de cada sesión los define el equipo Black Wolf. Elige abajo el perfil que más te convenga.')}</div></div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 4px">
-      <span style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Perfis prontos:':LANG==='en'?'Presets:':'Perfiles:'}</span>
-      <button onclick="applySrProfile('conservador')" class="sr-prof" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-size:.84rem;font-weight:600;cursor:pointer">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</button>
-      <button onclick="applySrProfile('moderado')" class="sr-prof" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-size:.84rem;font-weight:600;cursor:pointer">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</button>
-      <button onclick="applySrProfile('arrojado')" class="sr-prof" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-size:.84rem;font-weight:600;cursor:pointer">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</button>
-      <span id="sr-prof-lbl" style="font-size:.8rem;color:var(--blue-l);margin-left:2px">${(function(){const p=CFG.profile; if(p==='conservador')return LANG==='pt'?'Perfil: Conservador':'Perfil: Conservative'; if(p==='moderado')return LANG==='pt'?'Perfil: Moderado':'Perfil: Moderate'; if(p==='arrojado')return LANG==='pt'?'Perfil: Arrojado':'Perfil: Aggressive'; if(p==='custom')return LANG==='pt'?'Perfil: Personalizado':'Perfil: Custom'; return '';})()}</span>
-    </div>
+    ${(function(){
+      const meta={
+        conservador:{dot:'cons',pt:'Conservador',en:'Conservative',es:'Conservador',dpt:'Risco reduzido — foco em preservar o capital.',den:'Reduced risk — focus on preserving capital.',des:'Riesgo reducido — preservar el capital.'},
+        moderado:{dot:'mod',pt:'Moderado',en:'Moderate',es:'Moderado',dpt:'Equilíbrio entre risco e retorno.',den:'Balance between risk and return.',des:'Equilibrio entre riesgo y retorno.'},
+        arrojado:{dot:'aggr',pt:'Arrojado',en:'Aggressive',es:'Agresivo',dpt:'Maior exposição — oscilações mais fortes.',den:'Higher exposure — larger swings.',des:'Mayor exposición — oscilaciones más fuertes.'}
+      };
+      const rng=function(n){const p=SR_PROFILES[n];const vs=SESSION_RISK_KEYS.map(k=>p[k]);return Math.min.apply(null,vs)+'%–'+Math.max.apply(null,vs)+'%';};
+      if(isAdm){
+        return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 4px">
+          <span style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Perfis prontos:':LANG==='en'?'Presets:':'Perfiles:'}</span>
+          ${Object.keys(meta).map(n=>{const on=CFG.profile===n;const m=meta[n];const lbl=LANG==='en'?m.en:LANG==='es'?m.es:m.pt;return `<button onclick="applySrProfile('${n}')" class="sr-prof" style="padding:7px 13px;border-radius:9px;border:1px solid ${on?'var(--blue)':'var(--bord)'};background:${on?'rgba(45,108,255,.14)':'transparent'};color:${on?'var(--blue-l)':'var(--t2)'};font-size:.84rem;font-weight:${on?'700':'600'};cursor:pointer">${lbl}</button>`;}).join('')}
+          <span id="sr-prof-lbl" style="font-size:.8rem;color:var(--blue-l);margin-left:2px">${(function(){const p=CFG.profile; if(p==='conservador')return LANG==='pt'?'Perfil: Conservador':'Perfil: Conservative'; if(p==='moderado')return LANG==='pt'?'Perfil: Moderado':'Perfil: Moderate'; if(p==='arrojado')return LANG==='pt'?'Perfil: Arrojado':'Perfil: Aggressive'; if(p==='custom')return LANG==='pt'?'Perfil: Personalizado':'Perfil: Custom'; return '';})()}</span>
+        </div>`;
+      }
+      return `<div class="preset-grid" style="margin-top:10px">
+        ${Object.keys(meta).map(n=>{const on=CFG.profile===n;const m=meta[n];const lbl=LANG==='en'?m.en:LANG==='es'?m.es:m.pt;const d=LANG==='en'?m.den:LANG==='es'?m.des:m.dpt;return `<div class="preset ${on?'on':''}" onclick="applySrProfile('${n}')"><div class="preset-name"><span class="preset-dot ${m.dot}"></span>${lbl}</div><div class="preset-desc">${d}<br><b style="color:var(--t2);font-family:var(--fm)">${rng(n)} ${LANG==='pt'?'por sessão':LANG==='en'?'per session':'por sesión'}</b></div></div>`;}).join('')}
+      </div>`;
+    })()}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px">
       ${SESSION_RISK_KEYS.map(k=>`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bd);border-radius:11px;padding:11px 13px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px">
           <div style="font-size:.86rem;color:var(--t1);font-weight:500">${sessionLabel(k)}</div>
-          <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
-            <input type="number" step="0.1" min="0" max="10" value="${srVal(k)}" onchange="srSet('${k}',this.value)" oninput="srSet('${k}',this.value)" style="width:64px;text-align:right;background:var(--s3);border:1px solid var(--bd);border-radius:8px;padding:7px 8px;color:var(--t1);font-size:.9rem;font-weight:600">
+          ${isAdm?`<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+            <input type="number" step="0.1" min="0" max="10" value="${srVal(k)}" onchange="srSet('${k}',this.value)" oninput="srSet('${k}',this.value)" style="width:64px;text-align:right;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:7px 8px;color:var(--t1);font-size:.9rem;font-weight:600">
             <span style="font-size:.85rem;color:var(--t3)">%</span>
-          </div>
+          </div>`:`<div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l);flex-shrink:0">${srVal(k)}%</div>`}
         </div>`).join('')}
     </div>
     <div class="banner info" style="margin:14px 0 0">
