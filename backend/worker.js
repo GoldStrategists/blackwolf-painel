@@ -8,6 +8,9 @@
  *  + v19: ROBÔ v1.2 — 8 sessões no Operacional 1 (3 novas) e
  *         LIGA/DESLIGA por sessão (sessionOn, chaves "on_<sessão>")
  *         controlado globalmente pelo admin. Contrato do Luiz.
+ *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
+ *         invalid_json) agora fica registrado em ea_status.last_error,
+ *         para nunca mais confundirmos "não gravou" com "não chamou".
  * ═══════════════════════════════════════════════════════════════
  *
  *  Bindings:
@@ -58,7 +61,7 @@ export default {
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
       if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v19' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v20' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -911,7 +914,16 @@ async function handleEaTrades(request, env, json, url) {
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
   if (row.license_status && row.license_status !== 'active') return json({ error:'license_revoked', active:false }, 403);
 
-  let body; try { body = await request.json(); } catch(e){ return json({ error:'invalid_json' }, 400); }
+  let body; try { body = await request.json(); } catch(e){
+    // v20: registra a tentativa rejeitada (para o diagnóstico nunca mais ficar cego)
+    try {
+      await env.DB.prepare(
+        `INSERT INTO ea_status (license_key, email, last_seen, last_error) VALUES (?,?,?,?)
+         ON CONFLICT(license_key) DO UPDATE SET last_seen=excluded.last_seen, last_error=excluded.last_error`
+      ).bind(license, row.email, new Date().toISOString(), 'invalid_json').run();
+    } catch(e2) {}
+    return json({ error:'invalid_json' }, 400);
+  }
   const account = getEaAccount(request, url, body);
   const now = new Date().toISOString();
 
@@ -919,12 +931,12 @@ async function handleEaTrades(request, env, json, url) {
   const acc = await bindOrCheckAccount(env, row, account);
   if (acc.mismatch) return json({ error:'account_mismatch', active:false, message:'Licença já vinculada a outra conta MT5' }, 403);
 
-  // heartbeat: saldo, equity e última vez online
+  // heartbeat: saldo, equity e última vez online (sucesso limpa o last_error)
   await env.DB.prepare(
-    `INSERT INTO ea_status (license_key, email, account, balance, equity, open_positions, ea_version, last_seen)
-     VALUES (?,?,?,?,?,?,?,?)
+    `INSERT INTO ea_status (license_key, email, account, balance, equity, open_positions, ea_version, last_seen, last_error)
+     VALUES (?,?,?,?,?,?,?,?,NULL)
      ON CONFLICT(license_key) DO UPDATE SET account=excluded.account, balance=excluded.balance,
-       equity=excluded.equity, open_positions=excluded.open_positions, ea_version=excluded.ea_version, last_seen=excluded.last_seen`
+       equity=excluded.equity, open_positions=excluded.open_positions, ea_version=excluded.ea_version, last_seen=excluded.last_seen, last_error=NULL`
   ).bind(license, row.email, account, num(body.balance), num(body.equity), intOrNull(body.open_positions), body.ea_version??null, now).run();
 
   // grava os trades fechados (duplicados são ignorados pelo par licença+ticket)
