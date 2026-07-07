@@ -2470,6 +2470,12 @@ const BW_SESSION_ON={'M5-01h':true,'M15-01h':true,'M1-02h':false,'M1-11h':false,
 function srSet(k,v){ if(!CFG.sessionRisk||typeof CFG.sessionRisk!=='object') CFG.sessionRisk={}; const n=parseFloat(v); CFG.sessionRisk[k]=(isFinite(n)&&n>=0&&n<=10)?n:0; CFG.profile='custom'; const el=document.getElementById('sr-prof-lbl'); if(el) el.textContent=(LANG==='pt'?'Perfil: Personalizado':LANG==='en'?'Profile: Custom':'Perfil: Personalizado'); }
 function applySrProfile(name){ const p=SR_PROFILES[name]; if(!p) return; CFG.sessionRisk={}; for(const k of SESSION_RISK_KEYS) CFG.sessionRisk[k]=p[k]; CFG.riskPerTrade=p._risk; CFG.profile=name; renderPage('config'); }
 function srVal(k){ const sr=(CFG.sessionRisk&&typeof CFG.sessionRisk==='object')?CFG.sessionRisk:{}; return (k in sr)?sr[k]:(CFG.riskPerTrade!=null?CFG.riskPerTrade:0.5); }
+// v26 (item 6): liga/desliga por sessão POR CONTA. Estado efetivo = override da
+// conta (CFG.sessionOn) se existir, senão o padrão GLOBAL (BW_SESSION_ON).
+function cfgSessionOn(k){ const so=(CFG&&CFG.sessionOn&&typeof CFG.sessionOn==='object')?CFG.sessionOn:{}; return (k in so)?!!so[k]:!!BW_SESSION_ON[k]; }
+function cfgSetSessionOn(k,on){ if(!CFG.sessionOn||typeof CFG.sessionOn!=='object')CFG.sessionOn={}; CFG.sessionOn[k]=!!on;
+  const row=document.getElementById('cfg-sess-row-'+k); if(row)row.style.opacity=on?'':'.55';
+  const badge=document.getElementById('cfg-sess-off-'+k); if(badge)badge.style.display=on?'none':''; }
 /* ═══════════════ RELATÓRIOS (semanal/mensal) — v24 ═══════════════ */
 let REP_PERIOD='month';      // 'week' | 'month'
 let REP_ACCOUNT=null;        // null = geral
@@ -2516,7 +2522,7 @@ function renderReports(){
   );
   // estados
   if(REP_LOADING && !REP_DATA) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando relatório…':LANG==='en'?'Loading report…':'Cargando…'}</div></div></div>`;
-  if(REP_DATA&&REP_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'O servidor (worker) ainda não foi atualizado para a versão com relatórios. Publique o worker v25.':LANG==='en'?'Server not updated for reports yet. Publish worker v25.':'El servidor aún no fue actualizado.'}</div></div>`;
+  if(REP_DATA&&REP_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'O servidor (worker) ainda não foi atualizado para a versão com relatórios. Publique o worker v26.':LANG==='en'?'Server not updated for reports yet. Publish worker v26.':'El servidor aún no fue actualizado.'}</div></div>`;
   if(REP_DATA&&REP_DATA.__err) return head+`<div class="banner risk rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg><div class="banner-tx">${LANG==='pt'?'Não foi possível carregar o relatório. Tente novamente.':LANG==='en'?'Could not load the report.':'No se pudo cargar.'}</div></div>`;
   const S=(REP_DATA&&REP_DATA.summary)||{result:0,trades:0,wins:0,losses:0,winRate:0,best:0,worst:0,startBalance:null,endBalance:null,resultPct:null,deposits:0};
   const per=(REP_DATA&&REP_DATA.from)?(REP_DATA.from+' → '+REP_DATA.to):'';
@@ -2590,7 +2596,7 @@ function renderConfig(){
     <div class="cfg-section-head" style="margin-bottom:6px">
       <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
       <div><div class="cfg-section-title">${LANG==='pt'?'Risco por sessão':LANG==='en'?'Per-session risk':'Riesgo por sesión'}</div><div class="cfg-section-desc">${isAdm
-        ?(LANG==='pt'?'Defina o risco (%) de cada sessão do robô. O robô usa o valor da sessão; se faltar, usa o risco global. Os alunos escolhem apenas entre os 3 perfis.':LANG==='en'?'Set the risk (%) for each robot session. The robot uses the session value; if missing, it uses the global risk. Students only choose between the 3 profiles.':'Define el riesgo (%) de cada sesión. El robot usa el valor de la sesión; si falta, usa el riesgo global. Los alumnos solo eligen entre los 3 perfiles.')
+        ?(LANG==='pt'?'Defina o risco (%) e ligue/desligue cada sessão <b>desta conta</b>. O liga/desliga vale por conta (contas de teste podem operar sessões diferentes); o que você não mexer segue o padrão global. Os alunos escolhem apenas entre os 3 perfis.':LANG==='en'?'Set the risk (%) and turn each session on/off <b>for this account</b>. On/off is per account (test accounts can run different sessions); anything you don\'t touch follows the global default. Students only choose between the 3 profiles.':'Define el riesgo (%) y activa/desactiva cada sesión <b>de esta cuenta</b>. El on/off es por cuenta; lo que no toques sigue el padrón global. Los alumnos solo eligen entre los 3 perfiles.')
         :(LANG==='pt'?'Os percentuais de cada sessão são definidos pela equipe Black Wolf. Escolha abaixo o perfil que combina com o seu momento.':LANG==='en'?'Per-session percentages are defined by the Black Wolf team. Choose the profile that fits you below.':'Los porcentajes de cada sesión los define el equipo Black Wolf. Elige abajo el perfil que más te convenga.')}</div></div>
     </div>
     ${(function(){
@@ -2612,13 +2618,14 @@ function renderConfig(){
       </div>`;
     })()}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px">
-      ${SESSION_RISK_KEYS.map(k=>{const off=SESSION_ON_KEYS.includes(k)&&!BW_SESSION_ON[k];return `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px${!isAdm&&off?';opacity:.55':''}">
-          <div style="font-size:.86rem;color:var(--t1);font-weight:500">${sessionLabel(k)}</div>
-          ${isAdm?`<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+      ${SESSION_RISK_KEYS.map(k=>{const canOnOff=SESSION_ON_KEYS.includes(k);const off=canOnOff&&!cfgSessionOn(k);return `
+        <div id="cfg-sess-row-${k}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px${off?';opacity:.55':''}">
+          <div style="font-size:.86rem;color:var(--t1);font-weight:500">${sessionLabel(k)}${canOnOff?`<span id="cfg-sess-off-${k}" style="font-family:var(--fm);font-size:.54rem;letter-spacing:.05em;color:var(--t4);background:var(--s3);padding:2px 7px;border-radius:20px;margin-left:7px;display:${off?'':'none'}">${LANG==='pt'?'DESLIGADA':LANG==='en'?'OFF':'APAGADA'}</span>`:''}</div>
+          ${isAdm?`<div style="display:flex;align-items:center;gap:9px;flex-shrink:0">
+            ${canOnOff?`<label title="${LANG==='pt'?'Ligar/desligar esta sessão nesta conta':LANG==='en'?'Turn this session on/off for this account':'Activar/desactivar esta sesión en esta cuenta'}" style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:.66rem;color:var(--t3)"><input type="checkbox" id="cfg-on-${k}" ${cfgSessionOn(k)?'checked':''} onchange="cfgSetSessionOn('${k}',this.checked)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">${LANG==='pt'?'Ativa':LANG==='en'?'On':'Activa'}</label>`:''}
             <input type="number" step="0.1" min="0" max="10" value="${srVal(k)}" onchange="srSet('${k}',this.value)" oninput="srSet('${k}',this.value)" style="width:64px;text-align:right;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:7px 8px;color:var(--t1);font-size:.9rem;font-weight:600">
             <span style="font-size:.85rem;color:var(--t3)">%</span>
-          </div>`:`<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${off?`<span style="font-family:var(--fm);font-size:.58rem;letter-spacing:.05em;color:var(--t4);background:var(--s3);padding:2px 8px;border-radius:20px">${LANG==='pt'?'DESLIGADA':LANG==='en'?'OFF':'APAGADA'}</span>`:''}<div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l)">${srVal(k)}%</div></div>`}
+          </div>`:`<div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l)">${srVal(k)}%</div></div>`}
         </div>`;}).join('')}
     </div>
     <div class="banner info" style="margin:14px 0 0">
@@ -2632,7 +2639,7 @@ function renderConfig(){
   <div class="cfg-section rv" style="border-color:rgba(255,59,71,.25)">
     <div class="cfg-section-head">
       <div class="cfg-section-ico" style="background:rgba(255,59,71,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red-l)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Controle GLOBAL do robô v1.2: ligue/desligue cada sessão e defina os valores dos 3 perfis que TODOS os alunos podem escolher. Ao salvar, os robôs aplicam na próxima consulta (~5 min).':LANG==='en'?'GLOBAL control of robot v1.2: turn each session on/off and set the values of the 3 profiles ALL students can choose. Robots apply on the next poll (~5 min).':'Control GLOBAL del robot v1.2: activa/desactiva cada sesión y define los valores de los 3 perfiles. Los robots aplican en la próxima consulta (~5 min).'}</div></div>
+      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Padrão GLOBAL (fallback) do robô v1.2: liga/desliga de sessão e os valores dos 3 perfis que TODOS os alunos podem escolher. Vale para toda conta que não tiver ajuste próprio — o liga/desliga por conta (na seção acima) vence este padrão. Ao salvar, os robôs aplicam na próxima consulta (~5 min).':LANG==='en'?'GLOBAL default (fallback) for robot v1.2: session on/off and the values of the 3 profiles ALL students can choose. Applies to any account without its own override — the per-account on/off (section above) wins over this default. Robots apply on the next poll (~5 min).':'Padrón GLOBAL (fallback) del robot v1.2: on/off de sesión y los valores de los 3 perfiles. Vale para toda cuenta sin ajuste propio — el on/off por cuenta (arriba) vence este padrón. Los robots aplican en la próxima consulta (~5 min).'}</div></div>
     </div>
     <div class="tbl-wrap"><table class="tbl" style="min-width:600px">
       <thead><tr><th>${LANG==='pt'?'Sessão':LANG==='en'?'Session':'Sesión'}</th><th>${LANG==='pt'?'Ativa':LANG==='en'?'On':'Activa'}</th><th style="color:var(--green-l)">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</th><th style="color:var(--amber-l)">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</th><th style="color:var(--red-l)">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</th></tr></thead>

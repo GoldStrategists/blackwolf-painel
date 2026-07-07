@@ -3,7 +3,19 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v25
+## Versão atual: v26
+
+### O que a v26 adiciona (liga/desliga de sessão POR CONTA — item 6 do Luiz)
+- O liga/desliga de cada sessão do robô agora pode ser definido **por conta**,
+  não só global. Serve para o Luiz ter contas de teste operando sessões
+  diferentes das de produção.
+- O padrão continua **global** (admin): toda conta que não tiver ajuste próprio
+  segue o global de hoje (retrocompatível — nada muda para os alunos).
+- Guardado no override da conta (`users.ea_config → accounts[conta].sessionOn`,
+  parcial); chave sem override herda o global. Sem migração de banco.
+- No painel: seção "Risco por sessão" (admin) ganhou o checkbox Ativa por
+  sessão, atrelado à conta selecionada. A tabela global virou "fallback".
+- Confira /api/health: deve responder `blackwolf-api-v26`.
 
 ### O que a v25 adiciona (relatórios completos)
 - GET /api/reports agora devolve também **saldo início/fim** do período

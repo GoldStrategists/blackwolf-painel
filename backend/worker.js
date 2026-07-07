@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v25 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v26 (Cloudflare Worker)
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
@@ -11,6 +11,13 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v26: LIGA/DESLIGA DE SESSÃO POR CONTA (decisão do Luiz — item 6).
+ *         O padrão continua GLOBAL (admin), mas cada conta pode ter o seu
+ *         próprio liga/desliga de sessão — contas de teste do sócio operam
+ *         sessões diferentes das de produção. Guardado no override da conta
+ *         (users.ea_config → accounts[conta].sessionOn, parcial); chave sem
+ *         override herda o padrão global. Retrocompatível: contas sem
+ *         override seguem exatamente o global de hoje.
  *  + v25: RELATÓRIOS COMPLETOS — GET /api/reports agora devolve também
  *         saldo INÍCIO/FIM do período (via balance_history), % sobre o
  *         saldo inicial e detecção de depósito/saque. (Número de versão
@@ -104,8 +111,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v25' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v25' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v26' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v26' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -264,6 +271,16 @@ async function getSessionOn(env) {
 }
 function sanitizeSessionOn(raw) {
   const out = { ...DEFAULT_SESSION_ON };
+  if (raw && typeof raw === 'object') {
+    for (const k of SESSION_ON_KEYS) if (k in raw) out[k] = !!raw[k];
+  }
+  return out;
+}
+// v26: override PARCIAL de sessionOn por CONTA. Só guarda as chaves presentes
+// (como boolean); chave ausente = a conta herda o padrão GLOBAL (KV session_on).
+// Não preenche defaults de propósito — o "vazio" significa "herdar".
+function sanitizeSessionOnPartial(raw) {
+  const out = {};
   if (raw && typeof raw === 'object') {
     for (const k of SESSION_ON_KEYS) if (k in raw) out[k] = !!raw[k];
   }
@@ -852,6 +869,11 @@ function sanitizeConfig(raw) {
       const sr = sanitizeSessionRisk(raw.sessionRisk);
       if (Object.keys(sr).length) out.sessionRisk = sr;
     }
+    // v26: liga/desliga por sessão POR CONTA (override parcial do padrão global)
+    if (raw.sessionOn && typeof raw.sessionOn === 'object') {
+      const so = sanitizeSessionOnPartial(raw.sessionOn);
+      if (Object.keys(so).length) out.sessionOn = so;
+    }
   }
   return out;
 }
@@ -1077,10 +1099,15 @@ async function handleEaConfig(request, env, json, url) {
   }
   // v19: LIGA/DESLIGA POR SESSÃO (robô v1.2) — sempre manda as 8 chaves "on_"
   // explícitas (contrato: chave ausente = robô mantém o estado atual; explícito
-  // é determinístico). Controle GLOBAL do admin, igual para todas as licenças.
+  // é determinístico).
+  // v26 (decisão do Luiz — item 6): o padrão é GLOBAL (admin), mas cada CONTA
+  // pode ter o seu próprio liga/desliga (contas de teste do sócio operam sessões
+  // diferentes das de produção). Override por conta vence; chave sem override
+  // herda o padrão global.
   const so = await getSessionOn(env);
+  const accOn = (cfg.sessionOn && typeof cfg.sessionOn === 'object') ? cfg.sessionOn : {};
   const sessionOn = {};
-  for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = !!so[k];
+  for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = (k in accOn) ? !!accOn[k] : !!so[k];
   config.sessionOn = sessionOn;
   // v23: config_version (ETag) — hash estável do config efetivo; o robô pode
   // mandar ?since=<v> e receber {changed:false} se nada mudou (economiza e é determinístico)
