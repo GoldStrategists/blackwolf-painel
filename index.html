@@ -1723,8 +1723,9 @@ async function refreshMe(){
       DATA.client.accountLimit=(SESSION.accountLimit!=null?SESSION.accountLimit:null);
       DATA.client.licenseExpiresAt=SESSION.licenseExpiresAt;
       // recarrega a configuração salva do robô (estrutura por conta) e sincroniza o formulário
+      // (se o usuário está NA página de config, preserva a conta que ele está editando)
       DATA.client.eaConfigStruct=(SESSION.eaConfig&&typeof SESSION.eaConfig==='object')?SESSION.eaConfig:{default:{},accounts:{}};
-      try{ if(typeof syncCfgFromStruct==='function') syncCfgFromStruct(false); }catch(e){}
+      try{ if(typeof syncCfgFromStruct==='function') syncCfgFromStruct(CURRENT_PAGE==='config'||CFG_PICKED); }catch(e){}
       if(SESSION.licenseKey){
         const n=planStratCount(SESSION.plan); const arr=[];
         for(let i=0;i<n;i++) arr.push({status:'active',on:true});
@@ -2230,6 +2231,7 @@ let CFG=JSON.parse(JSON.stringify(DATA.client.config)); // working copy (conta s
 let CFG_PRESET='mod';
 let CFG_STRUCT={default:{},accounts:{}};   // estrutura completa vinda do back-end
 let CFG_ACCOUNT='_default';                // conta em edição ('_default' = padrão p/ todas)
+let CFG_PICKED=false;                      // usuário já escolheu a conta manualmente nesta sessão?
 // lista de contas do usuário (para o seletor)
 function cfgAccounts(){ return (DATA.client.mt5Accounts&&DATA.client.mt5Accounts.length)?DATA.client.mt5Accounts.slice():(DATA.client.mt5Account?[String(DATA.client.mt5Account)]:[]); }
 // configuração efetiva de uma conta = base(defaults) + default-do-usuário + override-da-conta
@@ -2244,12 +2246,14 @@ function syncCfgFromStruct(keepAccount){
   CFG_STRUCT=(s&&typeof s==='object')?{default:(s.default||{}),accounts:(s.accounts||{})}:{default:{},accounts:{}};
   const accs=cfgAccounts();
   if(!(keepAccount && CFG_ACCOUNT && (CFG_ACCOUNT==='_default' || accs.indexOf(CFG_ACCOUNT)>=0))){
-    CFG_ACCOUNT = accs.length? accs[0] : '_default';
+    // preferência: a conta onde o robô está operando AGORA (evita editar a aba errada)
+    const live=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
+    CFG_ACCOUNT = (live&&accs.indexOf(live)>=0)?live:(accs.length? accs[0] : '_default');
   }
   CFG=JSON.parse(JSON.stringify(effectiveCfgFor(CFG_ACCOUNT)));
 }
 // troca a conta em edição (recarrega os valores daquela conta)
-function setCfgAccount(acc){ CFG_ACCOUNT=acc; CFG=JSON.parse(JSON.stringify(effectiveCfgFor(acc))); CFG_PRESET=''; renderPage('config'); }
+function setCfgAccount(acc){ CFG_PICKED=true; CFG_ACCOUNT=acc; CFG=JSON.parse(JSON.stringify(effectiveCfgFor(acc))); CFG_PRESET=''; renderPage('config'); }
 
 // ── RISCO POR SESSÃO ──
 // nomes EXATOS que o robô procura (não mudar sem alinhar com o robô)
@@ -2284,10 +2288,15 @@ function srSet(k,v){ if(!CFG.sessionRisk||typeof CFG.sessionRisk!=='object') CFG
 function applySrProfile(name){ const p=SR_PROFILES[name]; if(!p) return; CFG.sessionRisk={}; for(const k of SESSION_RISK_KEYS) CFG.sessionRisk[k]=p[k]; CFG.riskPerTrade=p._risk; CFG.profile=name; renderPage('config'); }
 function srVal(k){ const sr=(CFG.sessionRisk&&typeof CFG.sessionRisk==='object')?CFG.sessionRisk:{}; return (k in sr)?sr[k]:(CFG.riskPerTrade!=null?CFG.riskPerTrade:0.5); }
 function renderConfig(){
-  const c=CFG;
   // Risco por sessão: apenas contas admin editam os % individuais; alunos escolhem entre os 3 perfis
   const isAdm=!!(SESSION&&SESSION.role==='admin');
   const accs=cfgAccounts();
+  // conta onde o robô está operando AGORA (do heartbeat) — abre nela por padrão
+  const liveAcc=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
+  if(!CFG_PICKED&&liveAcc&&accs.indexOf(liveAcc)>=0&&CFG_ACCOUNT!==liveAcc){
+    CFG_ACCOUNT=liveAcc;CFG=JSON.parse(JSON.stringify(effectiveCfgFor(liveAcc)));
+  }
+  const c=CFG;
   const accLabel=(a)=>a==='_default'?(LANG==='pt'?'Padrão':LANG==='en'?'Default':'Predet.'):a;
   // seletor de conta (só aparece se houver conta vinculada)
   const accSelector = accs.length ? `
@@ -2297,9 +2306,9 @@ function renderConfig(){
       <div><div class="cfg-section-title">${LANG==='pt'?'Configuração por conta':LANG==='en'?'Per-account settings':'Configuración por cuenta'}</div><div class="cfg-section-desc">${LANG==='pt'?'Cada conta pode ter o seu próprio risco. Escolha a conta e ajuste abaixo.':LANG==='en'?'Each account can have its own risk. Pick an account and adjust below.':'Cada cuenta puede tener su propio riesgo. Elige la cuenta y ajusta abajo.'}</div></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${accs.map(a=>`<button onclick="setCfgAccount('${a}')" class="acct-chip${CFG_ACCOUNT===a?' on':''}" style="padding:9px 15px;border-radius:10px;border:1px solid ${CFG_ACCOUNT===a?'var(--blue)':'var(--bd)'};background:${CFG_ACCOUNT===a?'rgba(45,108,255,.14)':'transparent'};color:${CFG_ACCOUNT===a?'var(--blue-l)':'var(--t2)'};font-weight:${CFG_ACCOUNT===a?'700':'500'};font-size:.9rem;cursor:pointer">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'} ${a}${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[a])?' •':''}</button>`).join('')}
+      ${accs.map(a=>`<button onclick="setCfgAccount('${a}')" class="acct-chip${CFG_ACCOUNT===a?' on':''}" style="padding:9px 15px;border-radius:10px;border:1px solid ${CFG_ACCOUNT===a?'var(--blue)':'var(--bd)'};background:${CFG_ACCOUNT===a?'rgba(45,108,255,.14)':'transparent'};color:${CFG_ACCOUNT===a?'var(--blue-l)':'var(--t2)'};font-weight:${CFG_ACCOUNT===a?'700':'500'};font-size:.9rem;cursor:pointer">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'} ${a}${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[a])?' •':''}${liveAcc===a?` <span style="font-size:.62rem;color:var(--blue-l);white-space:nowrap">&#9679; ${LANG==='pt'?'robô aqui':LANG==='en'?'robot here':'robot aquí'}</span>`:''}</button>`).join('')}
     </div>
-    <p style="font-size:.8rem;color:var(--t3);margin:12px 0 0">${LANG==='pt'?'Editando a conta':LANG==='en'?'Editing account':'Editando la cuenta'} <b style="color:var(--t1)">${accLabel(CFG_ACCOUNT)}</b>${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[CFG_ACCOUNT])?'':` — ${LANG==='pt'?'usando o padrão (ainda sem ajuste próprio)':LANG==='en'?'using default (no custom setting yet)':'usando el predeterminado'}`}</p>
+    <p style="font-size:.8rem;color:var(--t3);margin:12px 0 0">${LANG==='pt'?'Editando a conta':LANG==='en'?'Editing account':'Editando la cuenta'} <b style="color:var(--t1)">${accLabel(CFG_ACCOUNT)}</b>${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[CFG_ACCOUNT])?'':` — ${LANG==='pt'?'usando o padrão (ainda sem ajuste próprio)':LANG==='en'?'using default (no custom setting yet)':'usando el predeterminado'}`}${liveAcc&&CFG_ACCOUNT!==liveAcc?` <b style="color:var(--amber-l)">— ${LANG==='pt'?'atenção: o robô está na conta '+liveAcc:LANG==='en'?'note: the robot is on account '+liveAcc:'ojo: el robot está en la cuenta '+liveAcc}</b>`:''}</p>
   </div>` : '';
   return pageHead(
     LANG==='pt'?'AJUSTES':LANG==='en'?'SETTINGS':'AJUSTES',
@@ -2466,23 +2475,33 @@ function saveConfig(){
   } else doSaveConfig();
 }
 function doSaveConfig(){
+  // salva exatamente o que está na tela: materializa TODAS as sessões
+  // (antes só as tocadas eram enviadas — as ausentes caíam no fallback do robô)
+  try{ const filled={}; SESSION_RISK_KEYS.forEach(function(k){ filled[k]=srVal(k); }); CFG.sessionRisk=filled; }catch(e){}
   const cfgCopy=JSON.parse(JSON.stringify(CFG));
   // grava a config DESTA conta na estrutura local (preserva as outras contas)
   CFG_STRUCT=CFG_STRUCT||{default:{},accounts:{}};
   if(CFG_ACCOUNT && CFG_ACCOUNT!=='_default'){ CFG_STRUCT.accounts=CFG_STRUCT.accounts||{}; CFG_STRUCT.accounts[CFG_ACCOUNT]=cfgCopy; }
   else { CFG_STRUCT.default=cfgCopy; }
   DATA.client.eaConfigStruct=CFG_STRUCT;
-  // envia ao back-end (com a conta) para o robô consultar via /api/ea/config
-  if(SESSION&&SESSION.token){
+  const acctTxt=(CFG_ACCOUNT&&CFG_ACCOUNT!=='_default')?((LANG==='pt'?' — conta ':LANG==='en'?' — account ':' — cuenta ')+CFG_ACCOUNT):'';
+  // envia ao back-end e SÓ confirma sucesso com a resposta do servidor
+  if(SESSION&&SESSION.token&&!SESSION.isDemo){
     const payload={config:cfgCopy};
     if(CFG_ACCOUNT && CFG_ACCOUNT!=='_default') payload.account=CFG_ACCOUNT;
     fetch(API+'/api/config',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
       body:JSON.stringify(payload)
-    }).catch(()=>{});
+    }).then(function(r){
+      if(r&&r.ok){ toast(t('saved')+acctTxt,'success'); }
+      else if(r&&r.status===401){ toast(LANG==='pt'?'Sessão expirada — entre de novo e salve outra vez':LANG==='en'?'Session expired — log in and save again':'Sesión expirada — entra y guarda de nuevo','error'); }
+      else{ toast(LANG==='pt'?'Falha ao salvar no servidor — tente novamente':LANG==='en'?'Server save failed — try again':'Fallo al guardar — inténtalo de nuevo','error'); }
+    }).catch(function(){
+      toast(LANG==='pt'?'Sem conexão — a configuração NÃO foi salva':LANG==='en'?'No connection — settings NOT saved':'Sin conexión — NO se guardó','error');
+    });
+  } else {
+    toast(t('saved')+acctTxt,'success');
   }
-  const acctTxt=(CFG_ACCOUNT&&CFG_ACCOUNT!=='_default')?((LANG==='pt'?' — conta ':LANG==='en'?' — account ':' — cuenta ')+CFG_ACCOUNT):'';
-  toast(t('saved')+acctTxt,'success');
 }
 
 /* ─────── CLIENT: STRATEGIES ─────── */
