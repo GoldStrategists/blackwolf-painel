@@ -1805,7 +1805,18 @@ async function fetchMyData(){
     if(!r.ok) return;
     const d=await r.json();
     // v21: status POR CONTA (robôs em contas diferentes não se sobrescrevem)
-    const statuses=(Array.isArray(d.statuses)&&d.statuses.length)?d.statuses:(d.status?[d.status]:[]);
+    let statuses=(Array.isArray(d.statuses)&&d.statuses.length)?d.statuses:(d.status?[d.status]:[]);
+    // auditoria: ignora contas que saíram da licença (exceto se vistas nas últimas 48h)
+    try{
+      const known=(DATA.client.mt5Accounts||[]).map(String);
+      if(known.length){
+        statuses=statuses.filter(function(s){
+          if(!s)return false;
+          if(known.indexOf(String(s.account))>=0)return true;
+          const seen=parseEaDate(s.last_seen);return !!(seen&&(Date.now()-seen.getTime())<48*3600000);
+        });
+      }
+    }catch(e){}
     let totalBal=0,hasBal=false;
     statuses.forEach(function(s){ if(s&&s.balance!=null&&isFinite(+s.balance)){ totalBal+=+s.balance; hasBal=true; } });
     const mapped=mapRealTrades(d.trades, hasBal?totalBal:null);
