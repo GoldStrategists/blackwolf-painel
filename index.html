@@ -481,6 +481,8 @@ img{max-width:100%}
 
 
 .cfg-save-bar{position:sticky;bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--s3);border:1px solid var(--bord2);border-radius:14px;padding:14px 18px;margin-top:18px;box-shadow:var(--shadow);flex-wrap:wrap;z-index:5}
+/* no mobile o FAB do chat (bottom-right) cobria o botão Salvar — garante espaço */
+@media(max-width:640px){.cfg-save-bar{padding-bottom:78px}}
 .cfg-save-info{font-size:.78rem;color:var(--t2)}
 .btn-primary{display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--blue),var(--blue-d));color:#fff;padding:12px 24px;border-radius:11px;font-family:var(--fh);font-weight:700;font-size:.86rem;transition:all .2s}
 .btn-primary:hover{filter:brightness(1.08);box-shadow:0 6px 22px rgba(45,108,255,.4)}
@@ -1314,6 +1316,7 @@ loginForm.addEventListener('submit',async e=>{
   const email=document.getElementById('loginEmail').value.trim().toLowerCase();
   const pass=document.getElementById('loginPass').value;
   const btn=document.getElementById('loginBtn');
+  const btnHTML=btn.innerHTML;   // preserva rótulo+ícone para restaurar (não usar textContent, que apaga os filhos)
   btn.disabled=true;
   btn.textContent='...';
   // 1) Tenta o back-end real
@@ -1342,7 +1345,7 @@ loginForm.addEventListener('submit',async e=>{
         if(u.country)ov.country=u.country; if(u.city)ov.city=u.city;
         localStorage.setItem('bw_profile_'+email,JSON.stringify(ov));
       }
-      btn.disabled=false; btn.textContent=''; enterApp(); return;
+      btn.disabled=false; btn.innerHTML=btnHTML; enterApp(); return;
     }
   }catch(netErr){
     // sem internet ou Worker offline — cai no fallback local
@@ -1352,7 +1355,7 @@ loginForm.addEventListener('submit',async e=>{
   const changedPass=localStorage.getItem('bw_pass_'+email);
   const validPass=changedPass||(acct&&acct.pass);
   if(!acct||pass!==validPass){
-    btn.disabled=false; btn.textContent='';
+    btn.disabled=false; btn.innerHTML=btnHTML;
     loginErr.classList.add('show'); setTimeout(()=>loginErr.classList.remove('show'),3000); return;
   }
   try{
@@ -1435,26 +1438,16 @@ function switchNav(){
   document.getElementById('clientNav').style.display=VIEW_MODE==='client'?'block':'none';
   document.getElementById('adminNav').style.display=VIEW_MODE==='admin'?'block':'none';
 }
-(function(){
-  // Check for password reset link from email (?reset=token)
-  const params=new URLSearchParams(window.location.search);
-  const resetToken=params.get('reset');
-  if(resetToken){
-    RESET_TOKEN=resetToken;
-    setLang(LANG);
-    document.getElementById('loginWrap').classList.add('hidden');
-    document.getElementById('resetWrap').classList.remove('hidden');
-    return;
-  }
-  const s=localStorage.getItem('bw_session');
-  let entered=false;
-  if(s){ try{ SESSION=JSON.parse(s); SESSION.isDemo=isDemoEmail(SESSION.email); enterApp(); entered=true; }catch(e){} }
-  if(!entered){ try{ const le=localStorage.getItem('bw_last_email'); if(le){ const el=document.getElementById('loginEmail'); if(el) el.value=le; } }catch(e){} }
-  setLang(LANG);
-})();
+/* O BLOCO DE INICIALIZAÇÃO (auto-login / link de reset) foi MOVIDO para o fim
+   do script (função bwBoot, chamada na última linha). Motivo: ele chamava
+   enterApp()/loadSessionData(), que usam DEMO_TRADES, ALL_TRADES, DATA — todas
+   declaradas mais abaixo. Rodando aqui, caía em Temporal Dead Zone e o
+   try/catch engolia o erro, quebrando o "Manter conectado" e o reset por e-mail. */
 
 /* ──────── RESET PASSWORD (via email link) ──────── */
-let RESET_TOKEN=null;
+/* var (não let): a IIFE de init acima atribui RESET_TOKEN antes desta linha;
+   com let isso caía em Temporal Dead Zone e quebrava todo o restante do script. */
+var RESET_TOKEN=null;
 function updateResetStrength(val){
   const box=document.getElementById('resetStrength');
   const label=document.getElementById('resetStrengthLabel');
@@ -1554,7 +1547,7 @@ function fmtD(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDat
 
 const DEMO_TRADES = genTrades();
 // derive stats from the generated trades
-function deriveStats(trades){
+function deriveStats(trades, baseBalance){
   const wins=trades.filter(t=>t.win), losses=trades.filter(t=>!t.win);
   const gross=trades.reduce((s,t)=>s+t.pnl,0);
   const grossWin=wins.reduce((s,t)=>s+t.pnl,0), grossLoss=Math.abs(losses.reduce((s,t)=>s+t.pnl,0));
@@ -1565,7 +1558,12 @@ function deriveStats(trades){
   days.forEach(d=>{ cum+=byDay[d]; curve.push(+cum.toFixed(2)); curveLabels.push(d.slice(5)); });
   // max drawdown from curve
   let peak=0,maxDD=0; curve.forEach(v=>{ if(v>peak)peak=v; const dd=peak-v; if(dd>maxDD)maxDD=dd; });
-  const maxDDpct = peak>0?(maxDD/(10000+peak)*100):0;
+  // base = saldo inicial REAL (reconstruído dos trades) — não mais 10.000 fixo,
+  // que subestimava gravemente o drawdown % de contas pequenas.
+  let base=baseBalance;
+  if(base==null){ base=(trades.length && trades[0].balance!=null)?(trades[0].balance-trades[0].pnl):10000; }
+  if(!(base>0)) base=10000;
+  const maxDDpct = (base+peak)>0?(maxDD/(base+peak)*100):0;
   const n=trades.length;
   return {
     netResult:+gross.toFixed(2), trades:n, wins:wins.length, losses:losses.length,
@@ -1722,16 +1720,18 @@ async function refreshMe(){
       DATA.client.mt5Accounts=Array.isArray(SESSION.mt5Accounts)?SESSION.mt5Accounts:(SESSION.mt5Account?[SESSION.mt5Account]:[]);
       DATA.client.accountLimit=(SESSION.accountLimit!=null?SESSION.accountLimit:null);
       DATA.client.licenseExpiresAt=SESSION.licenseExpiresAt;
-      // recarrega a configuração salva do robô (estrutura por conta) e sincroniza o formulário
-      // (se o usuário está NA página de config, preserva a conta que ele está editando)
+      // recarrega a configuração salva do robô (estrutura por conta) e sincroniza o formulário.
+      // NÃO sobrescreve se o usuário está EDITANDO a página de config (evita apagar
+      // ajustes não salvos ao clicar em "Atualizar").
       DATA.client.eaConfigStruct=(SESSION.eaConfig&&typeof SESSION.eaConfig==='object')?SESSION.eaConfig:{default:{},accounts:{}};
-      try{ if(typeof syncCfgFromStruct==='function') syncCfgFromStruct(CURRENT_PAGE==='config'||CFG_PICKED); }catch(e){}
+      const editingCfg=(CURRENT_PAGE==='config');
+      if(!editingCfg){ try{ if(typeof syncCfgFromStruct==='function') syncCfgFromStruct(CFG_PICKED); }catch(e){} }
       if(SESSION.licenseKey){
         const n=planStratCount(SESSION.plan); const arr=[];
         for(let i=0;i<n;i++) arr.push({status:'active',on:true});
         DATA.client.strategies=arr;
       }
-      if(CURRENT_PAGE==='license' || CURRENT_PAGE==='strategies' || CURRENT_PAGE==='config') renderPage(CURRENT_PAGE);
+      if(CURRENT_PAGE==='license' || CURRENT_PAGE==='strategies') renderPage(CURRENT_PAGE);
     }
     const stored=localStorage.getItem('bw_session');
     if(stored){ try{ localStorage.setItem('bw_session',JSON.stringify(SESSION)); }catch(e){} }
@@ -1750,10 +1750,10 @@ function eaStatusBanner(){
     if(seen){ online=(Date.now()-seen.getTime())<10*60000; seenTxt=fmtDT(seen).slice(5,16); }
     const dot=online?'#22c55e':'#787F91';
     const label=online?(LANG==='pt'?'Robô online':LANG==='en'?'Robot online':'Robot en línea'):(LANG==='pt'?'Robô offline':LANG==='en'?'Robot offline':'Robot desconectado');
-    const err=st.last_error?`<span style="font-size:.72rem;color:var(--red-l)">⚠ ${st.last_error}</span>`:'';
+    const err=st.last_error?`<span style="font-size:.72rem;color:var(--red-l)">⚠ ${esc(st.last_error)}</span>`:'';
     return `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:${dot};box-shadow:0 0 8px ${dot}"></span><b style="font-size:.9rem">${label}</b></div>
-      <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${st.account||'—'}</b></div>
+      <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${esc(st.account||'—')}</b></div>
       <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: <b style="color:var(--t1)">${money(st.balance)}</b></div>
       <div style="font-size:.8rem;color:var(--t3)">Equity: <b style="color:var(--t1)">${money(st.equity)}</b></div>
       <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Posições abertas':LANG==='en'?'Open positions':'Posiciones abiertas'}: <b style="color:${st.open_positions>0?'var(--blue-l)':'var(--t1)'}">${st.open_positions!=null?st.open_positions:'—'}</b></div>
@@ -1767,10 +1767,17 @@ function eaStatusBanner(){
 function parseEaDate(s){
   if(!s) return null;
   const str=String(s).trim();
+  // ISO com fuso (Z ou ±hh:mm) — ex.: last_seen do servidor: deixa o motor nativo
+  // converter para o horário local (senão o UTC era lido como local e o "Robô
+  // online" ficava aceso por horas erradas).
+  if(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(str)){ const d=new Date(str); return isNaN(d.getTime())?null:d; }
+  // formato MT5 local sem fuso: "2026.07.06 11:47:54"
   const m=str.match(/^(\d{4})[.\-](\d{2})[.\-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
   if(m) return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));
   const d=new Date(str); return isNaN(d.getTime())?null:d;
 }
+// escape de HTML para qualquer dado vindo do servidor/robô (nome, e-mail, erro...)
+function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 // mapeia os trades do back-end para o formato que o painel exibe
 function mapRealTrades(raw, endBalance){
   const list=(raw||[]).map(t=>{
@@ -1787,7 +1794,7 @@ function mapRealTrades(raw, endBalance){
       dir:(String(t.type||'').toLowerCase()==='sell')?'sell':'buy',
       lots:+(+t.lots||0), entry, exit, sl:0, tp:0, pips:0,
       commission:+(+t.commission||0), swap:+(+t.swap||0),
-      pnl, balance:0, strat:stratGenericName(0,1), dur, win: pnl>=0,
+      pnl, balance:0, strat:stratGenericName(0,1), dur, win: pnl>0,
       _sort: close?close.getTime():0
     };
   });
@@ -1823,7 +1830,16 @@ async function fetchMyData(){
     ALL_TRADES=mapped; STATS=deriveStats(mapped);
     DATA.client._eaStatus=statuses[0]||null;
     DATA.client._eaStatusAll=statuses;
-    if(['dashboard','results','history'].includes(CURRENT_PAGE)) renderPage(CURRENT_PAGE);
+    // assinatura dos dados: só re-renderiza se algo REALMENTE mudou (evita o
+    // "pulo pro topo" a cada 60s que resetava filtros/scroll do histórico)
+    const sig=(mapped.length)+'|'+(mapped.length?mapped[mapped.length-1].id:'')+'|'+(hasBal?totalBal.toFixed(2):'')+'|'+statuses.map(function(s){return (s.account||'')+':'+(s.open_positions||0)+':'+(s.last_error||'');}).join(',');
+    const changed=(DATA.client._dataSig!==sig);
+    DATA.client._dataSig=sig;
+    if(changed && ['dashboard','results','history'].includes(CURRENT_PAGE)){
+      const y=window.scrollY;
+      renderPage(CURRENT_PAGE);
+      window.scrollTo(0,y);   // preserva a posição de leitura no refresh automático
+    }
   }catch(e){}
 }
 
@@ -1831,15 +1847,21 @@ async function fetchMyData(){
 function planAccLimit(plan){ const p=String(plan||'').toLowerCase(); if(p.includes("alpha"))return 3; if(p.includes("pack"))return 2; return 1; }
 function mapBackendClient(u){
   const ob = u.onboarding || {};
+  // TODOS os campos de texto vindos do backend são escapados AQUI, na origem —
+  // eles são interpolados em innerHTML em vários pontos das telas de admin, e um
+  // nome/cidade com HTML executaria script na sessão do ADMIN (XSS armazenado).
+  const eob = {age:esc(ob.age),experience:esc(ob.experience),goal:esc(ob.goal),selfProfile:esc(ob.selfProfile),family:esc(ob.family),source:esc(ob.source),country:esc(ob.country),state:esc(ob.state),city:esc(ob.city),marketing:esc(ob.marketing)};
+  const status = u.license_status || (u.license_key ? 'active' : 'active');
+  const usedRaw = (u.accounts_used!=null)?u.accounts_used:0;
   return {
-    name: u.name || u.email, email: u.email, plan: u.plan || '—', status: 'active',
-    accUsed: 0, accLimit: planAccLimit(u.plan), pay: 'paid',
+    name: esc(u.name || u.email), email: esc(u.email), plan: esc(u.plan || '—'), status: status,
+    accUsed: usedRaw, accLimit: (u.account_limit===-1?'∞':(u.account_limit!=null?u.account_limit:planAccLimit(u.plan))), pay: (status==='revoked'?'overdue':'paid'),
     seen: '—', joined: (u.created_at||'').slice(0,10),
-    net: 0, key: u.license_key || '—', expires: u.expires || '—',
+    net: 0, key: esc(u.license_key || '—'), expires: u.license_expires_at || null,
     profile: ob.selfProfile? (String(ob.selfProfile).toLowerCase().includes('arroj')?'aggr':String(ob.selfProfile).toLowerCase().includes('conserv')?'cons':'mod') : 'cons',
     score: 0, risk: '—', lev: '—', freq: '—', hours: '—', ltv: 0, trades: 0, winrate: 0,
-    broker: '—', country: (ob.country || u.country || '—'),
-    onboarding: ob.age||ob.country||ob.marketing ? {age:ob.age,experience:ob.experience,goal:ob.goal,selfProfile:ob.selfProfile,family:ob.family,source:ob.source,country:ob.country,state:ob.state,city:ob.city,marketing:ob.marketing} : {}
+    broker: '—', country: esc(ob.country || u.country || '—'),
+    onboarding: ob.age||ob.country||ob.marketing ? eob : {}
   };
 }
 // Busca clientes reais no back-end (resiliente: se falhar, mantém vazio)
@@ -1914,7 +1936,7 @@ function renderDashboard(){
       <div class="hero-label">${LANG==='pt'?'RESULTADO ACUMULADO (30 DIAS)':LANG==='en'?'CUMULATIVE RESULT (30 DAYS)':'RESULTADO ACUMULADO (30 DÍAS)'}</div>
       <div class="hero-sync"><span class="sync-dot"></span>${LANG==='pt'?'Robô ativo':LANG==='en'?'Robot active':'Robot activo'}</div>
     </div>
-    <div class="hero-num pos" data-money="${net}" data-dec="2">US$ 0,00</div>
+    <div class="hero-num ${net<0?'neg':'pos'}" data-money="${net}" data-dec="2">US$ 0,00</div>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="hero-meta-v up" data-count="${s.winrate}" data-suffix="%" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto'}</span></div>
       <div class="hero-meta-item"><span class="hero-meta-v bl" data-count="${s.profitFactor}" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro'}</span></div>
@@ -1934,7 +1956,7 @@ function renderDashboard(){
     <div class="card grad rv">
       <div class="card-head">
         <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>${LANG==='pt'?'Curva de capital':LANG==='en'?'Equity curve':'Curva de capital'}</div>
-        <span class="pill active">+${fmtMoneyPlain(net).replace('US$ ','US$')}</span>
+        <span class="pill ${net<0?'loss':'active'}">${fmtMoney(net).replace('US$ ','US$')}</span>
       </div>
       <div class="chart-legend"><div class="lg"><span class="dot blue"></span>${LANG==='pt'?'Lucro acumulado':LANG==='en'?'Cumulative profit':'Lucro acumulado'}</div><div class="lg"><span class="dot red"></span>Drawdown</div></div>
       <div class="chart-box"><canvas id="equityChart" data-h="240" height="240" style="height:240px"></canvas></div>
@@ -2019,7 +2041,7 @@ function renderResults(){
     periodSelect()+refreshBtn()
   )+`
   <div class="kpi-grid">
-    ${kpiCard('green','M',LANG==='pt'?'Resultado líquido':LANG==='en'?'Net result':'Resultado neto',s.netResult,'money pos','',2)}
+    ${kpiCard(s.netResult<0?'red':'green','M',LANG==='pt'?'Resultado líquido':LANG==='en'?'Net result':'Resultado neto',s.netResult,s.netResult<0?'money neg':'money pos','',2)}
     ${kpiCard('blue','P',LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro',s.profitFactor,'','',2)}
     ${kpiCard('cyan','T',LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto',s.winrate,'','%',2)}
     ${kpiCard('amber','D',LANG==='pt'?'Total trades':LANG==='en'?'Total trades':'Total trades',s.trades,'','',0)}
@@ -2326,7 +2348,7 @@ function renderConfig(){
       <div><div class="cfg-section-title">${LANG==='pt'?'Configuração por conta':LANG==='en'?'Per-account settings':'Configuración por cuenta'}</div><div class="cfg-section-desc">${LANG==='pt'?'Cada conta pode ter o seu próprio risco. Escolha a conta e ajuste abaixo.':LANG==='en'?'Each account can have its own risk. Pick an account and adjust below.':'Cada cuenta puede tener su propio riesgo. Elige la cuenta y ajusta abajo.'}</div></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${accs.map(a=>`<button onclick="setCfgAccount('${a}')" class="acct-chip${CFG_ACCOUNT===a?' on':''}" style="padding:9px 15px;border-radius:10px;border:1px solid ${CFG_ACCOUNT===a?'var(--blue)':'var(--bd)'};background:${CFG_ACCOUNT===a?'rgba(45,108,255,.14)':'transparent'};color:${CFG_ACCOUNT===a?'var(--blue-l)':'var(--t2)'};font-weight:${CFG_ACCOUNT===a?'700':'500'};font-size:.9rem;cursor:pointer">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'} ${a}${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[a])?' •':''}${liveAcc===a?` <span style="font-size:.62rem;color:var(--blue-l);white-space:nowrap">&#9679; ${LANG==='pt'?'robô aqui':LANG==='en'?'robot here':'robot aquí'}</span>`:''}</button>`).join('')}
+      ${accs.map(a=>`<button onclick="setCfgAccount('${a}')" class="acct-chip${CFG_ACCOUNT===a?' on':''}" style="padding:9px 15px;border-radius:10px;border:1px solid ${CFG_ACCOUNT===a?'var(--blue)':'var(--bord)'};background:${CFG_ACCOUNT===a?'rgba(45,108,255,.14)':'transparent'};color:${CFG_ACCOUNT===a?'var(--blue-l)':'var(--t2)'};font-weight:${CFG_ACCOUNT===a?'700':'500'};font-size:.9rem;cursor:pointer">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'} ${a}${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[a])?' •':''}${liveAcc===a?` <span style="font-size:.62rem;color:var(--blue-l);white-space:nowrap">&#9679; ${LANG==='pt'?'robô aqui':LANG==='en'?'robot here':'robot aquí'}</span>`:''}</button>`).join('')}
     </div>
     <p style="font-size:.8rem;color:var(--t3);margin:12px 0 0">${LANG==='pt'?'Editando a conta':LANG==='en'?'Editing account':'Editando la cuenta'} <b style="color:var(--t1)">${accLabel(CFG_ACCOUNT)}</b>${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[CFG_ACCOUNT])?'':` — ${LANG==='pt'?'usando o padrão (ainda sem ajuste próprio)':LANG==='en'?'using default (no custom setting yet)':'usando el predeterminado'}`}${liveAcc&&CFG_ACCOUNT!==liveAcc?` <b style="color:var(--amber-l)">— ${LANG==='pt'?'atenção: o robô está na conta '+liveAcc:LANG==='en'?'note: the robot is on account '+liveAcc:'ojo: el robot está en la cuenta '+liveAcc}</b>`:''}</p>
   </div>` : '';
@@ -4562,6 +4584,14 @@ document.getElementById('switchViewBtn').addEventListener('click',()=>{
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   localStorage.removeItem('bw_session');
   SESSION=null;
+  // reseta TODO o estado por-usuário para não vazar dados de uma conta na próxima
+  try{
+    VIEW_MODE='client'; CURRENT_PAGE='dashboard';
+    RESULT_PERIOD='all'; HIST_FILTER={search:'',dir:'all',strat:'all',result:'all'};
+    CFG_PICKED=false; CFG_ACCOUNT='_default'; CFG_STRUCT={default:{},accounts:{}}; CFG_PRESET='mod';
+    CLIENT_OPEN=new Set(); _clientTradesCache={}; _clientStatsCache={}; CLIENT_RES_MONTH={};
+    ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
+  }catch(e){}
   document.getElementById('app').classList.remove('active');
   document.getElementById('loginWrap').classList.remove('hidden');
   document.getElementById('loginEmail').value='';
@@ -4882,7 +4912,26 @@ function clearNotifs(){
 }
 
 /* ═══════════════ INIT ═══════════════ */
-setLang(LANG);
+/* Boot movido para cá (depois de TODAS as declarações top-level) para evitar a
+   Temporal Dead Zone que quebrava auto-login e reset por e-mail. */
+(function bwBoot(){
+  try{
+    const params=new URLSearchParams(window.location.search);
+    const resetToken=params.get('reset');
+    if(resetToken){
+      RESET_TOKEN=resetToken;
+      setLang(LANG);
+      document.getElementById('loginWrap').classList.add('hidden');
+      document.getElementById('resetWrap').classList.remove('hidden');
+      return;
+    }
+    const s=localStorage.getItem('bw_session');
+    let entered=false;
+    if(s){ try{ SESSION=JSON.parse(s); SESSION.isDemo=isDemoEmail(SESSION.email); enterApp(); entered=true; }catch(e){} }
+    if(!entered){ try{ const le=localStorage.getItem('bw_last_email'); if(le){ const el=document.getElementById('loginEmail'); if(el) el.value=le; } }catch(e){} }
+  }catch(e){}
+  setLang(LANG);
+})();
 </script>
 
 <script>

@@ -11,6 +11,14 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v22: AUDITORIA (correções de dinheiro/segurança) —
+ *         - fixedLot/maxTrades/spreadFilter/timezone agora chegam ao robô;
+ *         - Stripe: renovação NÃO rebaixa mais o plano; plano por metadata;
+ *           replay de webhook bloqueado (timestamp);
+ *         - config validada/limitada no servidor (não confia no cliente);
+ *         - /api/admin/clients devolve licença/status/validade/contas;
+ *         - handleProfile mantém visão de licença do sócio; guardas de
+ *           row nulo; anti-enumeração de e-mail no login.
  *  + v21: CONFIABILIDADE MULTI-CONTA —
  *         (a) status por CONTA (ea_status_acc): dois robôs na mesma
  *             licença não sobrescrevem mais o saldo um do outro;
@@ -69,7 +77,7 @@ export default {
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
       if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v21' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v22' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -389,17 +397,25 @@ async function handleStripeWebhook(request, env, json) {
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
-  // Identifica o plano pelo valor ou metadata
-  let plan = 'Lone Wolf';
-  const amount = obj.amount_total || obj.amount_paid || 0;
-  if (amount >= 50000) plan = 'Alpha Pack External';
-  else if (amount >= 29790) plan = 'Alpha Pack';
-  else if (amount >= 24790) plan = 'Wolf Pack';
-  else plan = 'Lone Wolf';
+  // Identifica o plano: metadata explícita tem prioridade; valor é só fallback.
+  // (v22: evita classificar errado por moeda/centavos/plano anual)
+  let plan = (obj.metadata && obj.metadata.plan) || null;
+  if (!plan) {
+    const amount = obj.amount_total || obj.amount_paid || 0;
+    if (amount >= 50000) plan = 'Alpha Pack External';
+    else if (amount >= 29790) plan = 'Alpha Pack';
+    else if (amount >= 24790) plan = 'Wolf Pack';
+    else plan = 'Lone Wolf';
+  }
 
   if (!email) return json({ error: 'no_email' }, 400);
 
   email = email.trim().toLowerCase();
+
+  // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
+  // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
+  // o rebaixamento silencioso (Alpha 3 contas → Lone 1 conta) por valor de invoice.
+  const isCheckout = event.type === 'checkout.session.completed';
 
   // Verifica se já tem conta
   const existing = await env.DB.prepare('SELECT email, license_key FROM users WHERE email = ?').bind(email).first();
@@ -407,8 +423,15 @@ async function handleStripeWebhook(request, env, json) {
     // Cliente já tem conta — garante licença ativa e cliente Stripe salvo
     let lic = existing.license_key;
     if (!lic) { lic = generateLicenseKey(); }
-    await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-      .bind(lic, plan, planAccountLimit(plan), stripeCustomer, email).run();
+    if (isCheckout) {
+      // compra/troca explícita: pode ajustar plano e limite
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, plan, planAccountLimit(plan), stripeCustomer, email).run();
+    } else {
+      // renovação: só reafirma licença ativa e o customer, preserva plano/limite atuais
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, stripeCustomer, email).run();
+    }
     await sendWelcomeEmail(env, email, name, plan, null, lic);
     return json({ ok: true, action: 'already_exists' });
   }
@@ -441,6 +464,9 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
     if (!tPart || !v1Part) return false;
     const timestamp = tPart.split('=')[1];
     const expected = v1Part.split('=')[1];
+    // v22: rejeita webhooks antigos (proteção contra replay), como o SDK oficial do Stripe
+    const ts = parseInt(timestamp, 10);
+    if (!ts || Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) return false;
     const signed = timestamp + '.' + payload;
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -562,7 +588,9 @@ async function handleLogin(request, env, json) {
   if (!email || !password) return json({ error: 'missing_fields' }, 400);
   const e = String(email).trim().toLowerCase();
   const row = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(e).first();
-  if (!row) return json({ error: 'invalid_credentials' }, 401);
+  // v22: mesmo com usuário inexistente, roda um pbkdf2 dummy para igualar o tempo
+  // de resposta (impede enumeração de e-mails por timing).
+  if (!row) { await pbkdf2(password, 'ffffffffffffffffffffffffffffffff'); return json({ error: 'invalid_credentials' }, 401); }
   const computed = await pbkdf2(password, row.salt);
   if (!safeEqual(computed, row.password_hash)) return json({ error: 'invalid_credentials' }, 401);
   const now = new Date().toISOString();
@@ -588,6 +616,7 @@ async function handleChangePassword(request, env, json) {
   if (!current || !new_password) return json({ error: 'missing_fields' }, 400);
   if (String(new_password).length < 8) return json({ error: 'weak_password' }, 400);
   const row = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+  if (!row) return json({ error: 'unauthorized' }, 401);  // v22: sessão órfã (usuário removido)
   const computed = await pbkdf2(current, row.salt);
   if (!safeEqual(computed, row.password_hash)) return json({ error: 'wrong_current' }, 403);
   const salt = randomHex(16);
@@ -603,7 +632,8 @@ async function handleProfile(request, env, json) {
     `UPDATE users SET display_name=?,photo=?,phone=?,whatsapp=?,country=?,city=?,lang=? WHERE email=?`
   ).bind(b.display_name??null,b.photo??null,b.phone??null,b.whatsapp??null,b.country??null,b.city??null,b.lang??'pt',email).run();
   const fresh = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
-  return json({ ok: true, user: publicUser(fresh) });
+  const licP = await licenseViewFor(env, fresh);  // v22: sócio mantém a visão da licença do pool
+  return json({ ok: true, user: publicUser(fresh, licP) });
 }
 async function handleOnboarding(request, env, json) {
   const email = await getSessionEmail(request, env);
@@ -666,6 +696,7 @@ async function handleAdminClients(request, env, json) {
 
   const rows = await env.DB.prepare(
     `SELECT u.email, u.name, u.country, u.plan, u.created_at,
+            u.license_key, u.license_status, u.license_expires_at, u.mt5_accounts, u.account_limit,
             o.age, o.experience, o.goal, o.self_profile, o.family, o.source,
             o.country AS o_country, o.state, o.city, o.marketing_opt_in
      FROM users u
@@ -682,6 +713,12 @@ async function handleAdminClients(request, env, json) {
       country: r.o_country || r.country,
       plan: r.plan,
       created_at: r.created_at,
+      // v22: campos de licença que o painel admin já esperava (antes vinham vazios)
+      license_key: r.license_key || null,
+      license_status: r.license_status || (r.license_key ? 'active' : null),
+      license_expires_at: r.license_expires_at || null,
+      accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
+      account_limit: (r.account_limit != null ? r.account_limit : null),
       onboarding: (r.age || r.o_country || r.marketing_opt_in) ? {
         age: r.age, experience: r.experience, goal: r.goal,
         selfProfile: r.self_profile, family: r.family, source: r.source,
@@ -694,7 +731,9 @@ async function handleAdminClients(request, env, json) {
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────
    O ALUNO salva os parâmetros pelo painel (sessão autenticada). */
-const EA_ALLOWED_KEYS = ['riskPerTrade','lotMode','fixedLot','maxLot','leverage','dailyTarget','dailyLoss','maxTrades','maxSimultaneous','equityStop','newsPause','profile'];
+const EA_ALLOWED_KEYS = ['riskPerTrade','lotMode','fixedLot','maxLot','leverage','dailyTarget','dailyLoss','maxTrades','maxSimultaneous','equityStop','spreadFilter','timezone','newsPause','profile'];
+// v22: faixas de validação por chave numérica (o servidor NUNCA confia no cliente)
+const EA_NUM_RANGES = { riskPerTrade:[0,10], fixedLot:[0,100], maxLot:[0,100], dailyTarget:[0,100], dailyLoss:[0,100], maxTrades:[0,100], maxSimultaneous:[0,50], equityStop:[0,100], spreadFilter:[0,1000] };
 // nomes EXATOS das sessões que o robô procura no sessionRisk (não mudar sem alinhar com o robô)
 // v19: robô v1.2 tem 8 sessões no Operacional 1 (M5-09h, M5-15h30 e M1-18h são novas) + OP2
 const SESSION_RISK_KEYS = ['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h','OP2'];
@@ -713,7 +752,17 @@ function sanitizeSessionRisk(raw) {
 function sanitizeConfig(raw) {
   const out = {};
   if (raw && typeof raw === 'object') {
-    for (const k of EA_ALLOWED_KEYS) if (k in raw) out[k] = raw[k];
+    for (const k of EA_ALLOWED_KEYS) {
+      if (!(k in raw)) continue;
+      const rg = EA_NUM_RANGES[k];
+      if (rg) {
+        // campo numérico: valida tipo e faixa (bloqueia riskPerTrade:100 via API direta)
+        const v = Number(raw[k]);
+        if (Number.isFinite(v)) out[k] = Math.min(rg[1], Math.max(rg[0], v));
+      } else {
+        out[k] = raw[k]; // lotMode/leverage/timezone/newsPause/profile (não-numéricos)
+      }
+    }
     if (raw.sessionRisk && typeof raw.sessionRisk === 'object') {
       const sr = sanitizeSessionRisk(raw.sessionRisk);
       if (Object.keys(sr).length) out.sessionRisk = sr;
@@ -895,12 +944,16 @@ async function handleEaConfig(request, env, json, url) {
     profile: cfg.profile ?? null,
     riskPerTrade: cfg.riskPerTrade ?? 1.0,
     lotMode: cfg.lotMode ?? 'percent',
+    fixedLot: cfg.fixedLot ?? 0.1,
     maxLot: cfg.maxLot ?? 0.5,
     leverage: cfg.leverage ?? '1:100',
     dailyTarget: cfg.dailyTarget ?? 0,
     dailyLoss: cfg.dailyLoss ?? 0,
+    maxTrades: cfg.maxTrades ?? 0,
     maxSimultaneous: cfg.maxSimultaneous ?? 1,
     equityStop: cfg.equityStop ?? 0,
+    spreadFilter: cfg.spreadFilter ?? null,
+    timezone: cfg.timezone ?? null,
     newsPause: cfg.newsPause ?? true,
   };
   // risco POR SESSÃO (o robô usa cada valor na sua sessão; se faltar, cai no riskPerTrade)
@@ -1032,9 +1085,11 @@ async function handleMyData(request, env, json) {
   const tr = await env.DB.prepare(
     `SELECT ticket, symbol, type, lots, open_time, close_time, open_price, close_price,
             profit, commission, swap, created_at, account
-     FROM trades WHERE email = ? ORDER BY id ASC LIMIT 1000`
+     FROM trades WHERE email = ? ORDER BY id DESC LIMIT 1000`
   ).bind(target).all();
-  return json({ status: status || null, statuses, trades: tr.results || [], shared: !!(u && u.results_source) });
+  // v22: DESC pega os 1000 MAIS RECENTES; o painel reordena por data ao exibir.
+  // (antes: ASC congelava o painel nos 1000 trades mais antigos)
+  return json({ status: status || null, statuses, trades: (tr.results || []).reverse(), shared: !!(u && u.results_source) });
 }
 
 /* O ALUNO informa/confirma o número da conta MT5 pelo painel (sessão autenticada).
