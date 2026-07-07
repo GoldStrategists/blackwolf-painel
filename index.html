@@ -1266,6 +1266,55 @@ function setLang(lang){
 
 /* ──────── AUTH (front-end demo) ──────── */
 const API = 'https://blackwolf-api.contact-1f3.workers.dev';
+
+/* ══ v23: wrapper central de rede — trata sessão expirada e rastreia conexão ══
+   - 401 → sessão morta: mostra aviso e volta ao login (não fica exibindo dado velho)
+   - marca a última sincronização OK e o estado online/offline (indicador honesto) */
+let LAST_SYNC_OK=null;      // timestamp (ms) do último fetch bem-sucedido
+let CONN_STATE='ok';        // 'ok' | 'stale' | 'offline'
+let SESSION_DEAD=false;
+async function apiFetch(path, opts){
+  opts=opts||{};
+  const headers=Object.assign({}, opts.headers||{});
+  if(SESSION&&SESSION.token) headers['Authorization']='Bearer '+SESSION.token;
+  let r;
+  try{
+    r=await fetch(API+path, Object.assign({}, opts, {headers}));
+  }catch(netErr){
+    CONN_STATE='offline'; updateConnBanner(); throw netErr;
+  }
+  if(r.status===401 && SESSION && !SESSION.isDemo){ handleSessionExpired(); throw new Error('session_expired'); }
+  if(r.ok){ LAST_SYNC_OK=Date.now(); CONN_STATE='ok'; }
+  updateConnBanner();
+  return r;
+}
+function handleSessionExpired(){
+  if(SESSION_DEAD) return; SESSION_DEAD=true;
+  try{ localStorage.removeItem('bw_session'); }catch(e){}
+  const msg=LANG==='pt'?'Sua sessão expirou. Entre novamente.':LANG==='en'?'Your session expired. Please sign in again.':'Tu sesión expiró. Entra de nuevo.';
+  try{ toast(msg,'error'); }catch(e){}
+  setTimeout(function(){
+    SESSION=null;
+    const app=document.getElementById('app'); if(app)app.classList.remove('active');
+    const lw=document.getElementById('loginWrap'); if(lw)lw.classList.remove('hidden');
+    SESSION_DEAD=false;
+  },1200);
+}
+// banner discreto de "sem conexão / dados desatualizados" no topo do app
+function updateConnBanner(){
+  let el=document.getElementById('connBanner');
+  const stale = LAST_SYNC_OK && (Date.now()-LAST_SYNC_OK>150000); // >2,5 min sem sync
+  const show = CONN_STATE==='offline' || stale;
+  if(!show){ if(el) el.style.display='none'; return; }
+  if(!el){
+    el=document.createElement('div'); el.id='connBanner';
+    el.style.cssText='position:fixed;top:var(--nav-h,62px);left:0;right:0;z-index:45;background:rgba(245,158,11,.14);border-bottom:1px solid rgba(245,158,11,.4);color:var(--amber-l,#fbbf24);font-family:var(--fh);font-size:.78rem;font-weight:600;text-align:center;padding:7px 12px';
+    document.body.appendChild(el);
+  }
+  const mins = LAST_SYNC_OK?Math.round((Date.now()-LAST_SYNC_OK)/60000):null;
+  el.textContent = (LANG==='pt'?'⚠ Sem conexão com o servidor — dados podem estar desatualizados':LANG==='en'?'⚠ No server connection — data may be outdated':'⚠ Sin conexión — los datos pueden estar desactualizados')+(mins!=null?(LANG==='pt'?' (última sync há '+mins+' min)':' ('+mins+' min ago)'):'');
+  el.style.display='block';
+}
 const USERS = {
   // Fallback local apenas para uso offline/demo — login real usa o back-end
   'demo.admin@blackwolfea.com':{pass:'DemoWolf2026',name:'Demo Administrador',role:'admin'},
@@ -1701,8 +1750,8 @@ function planStratCount(plan){ const p=String(plan||'').toLowerCase(); if(p.incl
 async function refreshMe(){
   if(!SESSION || !SESSION.token) return;
   try{
-    const r=await fetch(API+'/api/me',{headers:{'Authorization':'Bearer '+SESSION.token}});
-    if(!r.ok) return;
+    const r=await apiFetch('/api/me');
+    if(!r.ok) return false;
     const d=await r.json(); const u=d.user||{};
     SESSION.licenseKey=u.license_key||null;
     SESSION.licenseStatus=u.license_status||null;
@@ -1737,7 +1786,8 @@ async function refreshMe(){
     if(stored){ try{ localStorage.setItem('bw_session',JSON.stringify(SESSION)); }catch(e){} }
     // busca os trades/saldo reais (cliente, ou admin/dono que esteja na visão de cliente)
     if(VIEW_MODE==='client') fetchMyData();
-  }catch(e){}
+    return true;
+  }catch(e){ return false; }
 }
 // banner de status do robô (online/saldo) no topo do dashboard — UMA LINHA POR CONTA
 function eaStatusBanner(){
@@ -1808,8 +1858,8 @@ function mapRealTrades(raw, endBalance){
 async function fetchMyData(){
   if(!SESSION || !SESSION.token || SESSION.isDemo) return;
   try{
-    const r=await fetch(API+'/api/my-data',{headers:{'Authorization':'Bearer '+SESSION.token}});
-    if(!r.ok) return;
+    const r=await apiFetch('/api/my-data');
+    if(!r.ok) return false;
     const d=await r.json();
     // v21: status POR CONTA (robôs em contas diferentes não se sobrescrevem)
     let statuses=(Array.isArray(d.statuses)&&d.statuses.length)?d.statuses:(d.status?[d.status]:[]);
@@ -1840,7 +1890,8 @@ async function fetchMyData(){
       renderPage(CURRENT_PAGE);
       window.scrollTo(0,y);   // preserva a posição de leitura no refresh automático
     }
-  }catch(e){}
+    return true;
+  }catch(e){ return false; }
 }
 
 // Converte um usuário do banco em um "cliente" para os cards do admin
@@ -1867,7 +1918,7 @@ function mapBackendClient(u){
 // Busca clientes reais no back-end (resiliente: se falhar, mantém vazio)
 async function fetchRealClients(){
   try{
-    const r = await fetch(API+'/api/admin/clients',{ headers:{'Authorization':'Bearer '+SESSION.token} });
+    const r = await apiFetch('/api/admin/clients');
     if(!r.ok) return;
     const d = await r.json();
     if(d && Array.isArray(d.clients)){
@@ -1934,7 +1985,17 @@ function renderDashboard(){
     <div class="hero-glow"></div>
     <div class="hero-top">
       <div class="hero-label">${LANG==='pt'?'RESULTADO ACUMULADO (30 DIAS)':LANG==='en'?'CUMULATIVE RESULT (30 DAYS)':'RESULTADO ACUMULADO (30 DÍAS)'}</div>
-      <div class="hero-sync"><span class="sync-dot"></span>${LANG==='pt'?'Robô ativo':LANG==='en'?'Robot active':'Robot activo'}</div>
+      ${(function(){
+        // v23: badge derivado do status REAL do robô (antes era verde fixo,
+        // mentindo "ativo" mesmo com o robô parado há horas)
+        const all=(DATA.client&&DATA.client._eaStatusAll)||[]; let online=false, seen=null;
+        all.forEach(function(s){ const d=parseEaDate(s.last_seen); if(d&&(!seen||d>seen))seen=d; });
+        if(seen) online=(Date.now()-seen.getTime())<10*60000;
+        if(SESSION&&SESSION.isDemo) online=true; // demo sempre "ativo"
+        const col=online?'var(--green)':'var(--t3)'; const bg=online?'rgba(34,197,94,.1)':'rgba(120,127,145,.12)'; const bd=online?'rgba(34,197,94,.22)':'var(--bord)';
+        const lbl=online?(LANG==='pt'?'Robô ativo':LANG==='en'?'Robot active':'Robot activo'):(LANG==='pt'?'Robô offline':LANG==='en'?'Robot offline':'Robot desconectado');
+        return `<div class="hero-sync" style="color:${col};background:${bg};border-color:${bd}"><span class="sync-dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${lbl}</div>`;
+      })()}
     </div>
     <div class="hero-num ${net<0?'neg':'pos'}" data-money="${net}" data-dec="2">US$ 0,00</div>
     <div class="hero-meta">
@@ -2516,33 +2577,35 @@ function saveConfig(){
     );
   } else doSaveConfig();
 }
-function doSaveConfig(){
+let CFG_SAVING=false;
+async function doSaveConfig(){
+  if(CFG_SAVING) return;            // v23: guarda contra clique duplo / POSTs concorrentes
   // salva exatamente o que está na tela: materializa TODAS as sessões
-  // (antes só as tocadas eram enviadas — as ausentes caíam no fallback do robô)
   try{ const filled={}; SESSION_RISK_KEYS.forEach(function(k){ filled[k]=srVal(k); }); CFG.sessionRisk=filled; }catch(e){}
   const cfgCopy=JSON.parse(JSON.stringify(CFG));
-  // grava a config DESTA conta na estrutura local (preserva as outras contas)
-  CFG_STRUCT=CFG_STRUCT||{default:{},accounts:{}};
-  if(CFG_ACCOUNT && CFG_ACCOUNT!=='_default'){ CFG_STRUCT.accounts=CFG_STRUCT.accounts||{}; CFG_STRUCT.accounts[CFG_ACCOUNT]=cfgCopy; }
-  else { CFG_STRUCT.default=cfgCopy; }
-  DATA.client.eaConfigStruct=CFG_STRUCT;
-  const acctTxt=(CFG_ACCOUNT&&CFG_ACCOUNT!=='_default')?((LANG==='pt'?' — conta ':LANG==='en'?' — account ':' — cuenta ')+CFG_ACCOUNT):'';
-  // envia ao back-end e SÓ confirma sucesso com a resposta do servidor
-  if(SESSION&&SESSION.token&&!SESSION.isDemo){
-    const payload={config:cfgCopy};
-    if(CFG_ACCOUNT && CFG_ACCOUNT!=='_default') payload.account=CFG_ACCOUNT;
-    fetch(API+'/api/config',{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
-      body:JSON.stringify(payload)
-    }).then(function(r){
-      if(r&&r.ok){ toast(t('saved')+acctTxt,'success'); }
-      else if(r&&r.status===401){ toast(LANG==='pt'?'Sessão expirada — entre de novo e salve outra vez':LANG==='en'?'Session expired — log in and save again':'Sesión expirada — entra y guarda de nuevo','error'); }
-      else{ toast(LANG==='pt'?'Falha ao salvar no servidor — tente novamente':LANG==='en'?'Server save failed — try again':'Fallo al guardar — inténtalo de nuevo','error'); }
-    }).catch(function(){
-      toast(LANG==='pt'?'Sem conexão — a configuração NÃO foi salva':LANG==='en'?'No connection — settings NOT saved':'Sin conexión — NO se guardó','error');
-    });
-  } else {
-    toast(t('saved')+acctTxt,'success');
+  const acct=(CFG_ACCOUNT && CFG_ACCOUNT!=='_default')?CFG_ACCOUNT:null;
+  const acctTxt=acct?((LANG==='pt'?' — conta ':LANG==='en'?' — account ':' — cuenta ')+acct):'';
+  // helper: só grava no estado LOCAL depois que o servidor confirmar (sem divergência)
+  const commitLocal=function(){
+    CFG_STRUCT=CFG_STRUCT||{default:{},accounts:{}};
+    if(acct){ CFG_STRUCT.accounts=CFG_STRUCT.accounts||{}; CFG_STRUCT.accounts[acct]=cfgCopy; }
+    else { CFG_STRUCT.default=cfgCopy; }
+    DATA.client.eaConfigStruct=CFG_STRUCT;
+  };
+  if(!(SESSION&&SESSION.token&&!SESSION.isDemo)){ commitLocal(); toast(t('saved')+acctTxt,'success'); return; }
+  CFG_SAVING=true;
+  const btns=document.querySelectorAll('.cfg-save-bar .btn-primary'); btns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
+  try{
+    const payload={config:cfgCopy}; if(acct) payload.account=acct;
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r.ok){ commitLocal(); toast(t('saved')+acctTxt,'success'); }
+    else if(r.status===409){ toast(LANG==='pt'?'A config foi alterada em outro lugar — clique em Atualizar e salve de novo':LANG==='en'?'Config changed elsewhere — refresh and save again':'La config cambió en otro lugar — actualiza y guarda','error'); }
+    else{ toast(LANG==='pt'?'Falha ao salvar no servidor — tente novamente':LANG==='en'?'Server save failed — try again':'Fallo al guardar','error'); }
+  }catch(e){
+    if(String(e&&e.message)!=='session_expired') toast(LANG==='pt'?'Sem conexão — a configuração NÃO foi salva':LANG==='en'?'No connection — settings NOT saved':'Sin conexión — NO se guardó','error');
+  }finally{
+    CFG_SAVING=false;
+    document.querySelectorAll('.cfg-save-bar .btn-primary').forEach(function(b){b.disabled=false;b.style.opacity='';});
   }
 }
 
@@ -4665,8 +4728,18 @@ function doRefresh(btn){
     jobs.push(refreshMe());
     if(VIEW_MODE==='admin' && SESSION.role==='admin') jobs.push(fetchRealClients());
   }
-  Promise.allSettled(jobs).then(()=>{
+  if(!jobs.length){ // demo: nada a buscar
     setTimeout(()=>{ renderPage(CURRENT_PAGE); toast(LANG==='pt'?'Dados atualizados':LANG==='en'?'Data updated':'Datos actualizados','success'); },150);
+    return;
+  }
+  Promise.allSettled(jobs).then((results)=>{
+    // v23: toast HONESTO — só diz "atualizado" se realmente sincronizou
+    const ok=results.every(r=>r.status==='fulfilled' && r.value!==false);
+    setTimeout(()=>{
+      renderPage(CURRENT_PAGE);
+      if(ok) toast(LANG==='pt'?'Dados atualizados':LANG==='en'?'Data updated':'Datos actualizados','success');
+      else toast(LANG==='pt'?'Não foi possível atualizar — mostrando dados anteriores':LANG==='en'?'Could not update — showing previous data':'No se pudo actualizar — mostrando datos anteriores','error');
+    },150);
   });
 }
 
@@ -4675,12 +4748,26 @@ function contactClient(email){
   // Abre o cliente de email de forma controlada (evita o glitch de mailto inline)
   try{ window.location.href = 'mailto:' + email; }catch(e){}
 }
+// v23: revogar/reativar agora PERSISTE no servidor (antes era só cosmético em memória)
+async function adminLicenseAction(c, action){
+  if(SESSION&&SESSION.isDemo){ c.status=(action==='revoke'?'revoked':'active'); c.pay=(action==='revoke'?'overdue':'paid'); renderPage(CURRENT_PAGE); toast(LANG==='pt'?'(demo) aplicado localmente':'(demo) applied locally','info'); return; }
+  try{
+    const r=await apiFetch('/api/admin/license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:c.email,action:action})});
+    if(r.ok){
+      const d=await r.json(); c.status=d.license_status; c.pay=(d.license_status==='revoked'?'overdue':'paid');
+      renderPage(CURRENT_PAGE);
+      toast(action==='revoke'?(LANG==='pt'?'Licença revogada — robô parará na próxima consulta':LANG==='en'?'License revoked — robot stops on next poll':'Licencia revocada'):(LANG==='pt'?'Licença reativada':LANG==='en'?'License reactivated':'Licencia reactivada'), action==='revoke'?'error':'success');
+    } else {
+      toast(LANG==='pt'?'Falha ao aplicar no servidor':LANG==='en'?'Server action failed':'Fallo en el servidor','error');
+    }
+  }catch(e){ toast(LANG==='pt'?'Sem conexão — nada foi alterado':LANG==='en'?'No connection — nothing changed':'Sin conexión','error'); }
+}
 function revokeClient(i){
   const c=DATA.admin.clients[i];
   showModal(
     LANG==='pt'?'Revogar licença':LANG==='en'?'Revoke license':'Revocar licencia',
-    (LANG==='pt'?`Tem certeza que deseja revogar a licença de <b>${c.name}</b>? O robô deixará de operar imediatamente nas contas deste cliente.`:LANG==='en'?`Are you sure you want to revoke <b>${c.name}</b>'s license? The robot will stop trading immediately on this client's accounts.`:`¿Seguro que deseas revocar la licencia de <b>${c.name}</b>? El robot dejará de operar de inmediato.`),
-    ()=>{ c.status='revoked'; c.pay='overdue'; renderPage(CURRENT_PAGE); toast(LANG==='pt'?'Licença revogada':LANG==='en'?'License revoked':'Licencia revocada','error'); },
+    (LANG==='pt'?`Tem certeza que deseja revogar a licença de <b>${c.name}</b>? O robô deixará de operar nas contas deste cliente na próxima consulta.`:LANG==='en'?`Are you sure you want to revoke <b>${c.name}</b>'s license? The robot will stop trading on this client's accounts on the next poll.`:`¿Seguro que deseas revocar la licencia de <b>${c.name}</b>?`),
+    ()=>{ adminLicenseAction(c,'revoke'); },
     'danger'
   );
 }
@@ -4689,7 +4776,7 @@ function reissueClient(i){
   showModal(
     LANG==='pt'?'Reativar licença':LANG==='en'?'Reactivate license':'Reactivar licencia',
     (LANG==='pt'?`Reativar a licença de <b>${c.name}</b>? O cliente poderá voltar a operar.`:LANG==='en'?`Reactivate <b>${c.name}</b>'s license? The client will be able to trade again.`:`¿Reactivar la licencia de <b>${c.name}</b>?`),
-    ()=>{ c.status='active'; c.pay='paid'; renderPage(CURRENT_PAGE); toast(LANG==='pt'?'Licença reativada':LANG==='en'?'License reactivated':'Licencia reactivada','success'); },
+    ()=>{ adminLicenseAction(c,'reactivate'); },
     'blue'
   );
 }
@@ -4959,12 +5046,16 @@ function clearNotifs(){
 
   /* 1) Tempo quase-real: busca trades/status do robô a cada 60s
         (só logado com conta real, em modo cliente e com a aba visível) */
+  var meTick=0;
   function liveTick(){
     try{
       if(!SESSION||!SESSION.token||SESSION.isDemo)return;
       if(!document.getElementById('app').classList.contains('active'))return;
       if(document.visibilityState!=='visible')return;
       if(!profilesFetched){ profilesFetched=true; fetchRiskProfiles(); }
+      // v23: a cada ~3 min revalida licença/status (detecta revogação/expiração
+      // no meio da sessão — antes o painel podia mostrar "ativa" por horas/dias)
+      meTick++; if(meTick%3===0){ try{ refreshMe(); }catch(e){} }
       if(VIEW_MODE!=='client')return;
       fetchMyData();
     }catch(e){}
@@ -4977,8 +5068,8 @@ function clearNotifs(){
         silencioso para os valores locais se o endpoint ainda não existir */
   window.fetchRiskProfiles=async function(){
     try{
-      if(!SESSION||!SESSION.token)return;
-      var r=await fetch(API+'/api/risk-profiles',{headers:{'Authorization':'Bearer '+SESSION.token}});
+      if(!SESSION||!SESSION.token||SESSION.isDemo)return;
+      var r=await apiFetch('/api/risk-profiles');
       if(!r.ok)return;
       var d=await r.json();
       var changed=false;
@@ -4998,8 +5089,10 @@ function clearNotifs(){
   setInterval(function(){ try{ if(SESSION&&SESSION.token&&document.visibilityState==='visible') fetchRiskProfiles(); }catch(e){} },300000);
 
   /* 3) Admin salva os padrões globais (POST /api/admin/risk-profiles) */
+  var GP_SAVING=false;
   window.saveGlobalProfiles=async function(){
-    if(!SESSION||!SESSION.token){ toast(LANG==='pt'?'Disponível apenas com login real (não demo)':LANG==='en'?'Available only with a real login':'Solo con login real','error'); return; }
+    if(GP_SAVING) return;   // guarda contra clique duplo (afeta TODOS os alunos)
+    if(!SESSION||!SESSION.token||SESSION.isDemo){ toast(LANG==='pt'?'Disponível apenas com login real (não demo)':LANG==='en'?'Available only with a real login':'Solo con login real','error'); return; }
     var profiles={};
     ['conservador','moderado','arrojado'].forEach(function(n){
       var p={};
@@ -5010,18 +5103,22 @@ function clearNotifs(){
     // liga/desliga das 8 sessões do robô v1.2 (checkboxes gp-on-*)
     var sessionOn={};
     SESSION_ON_KEYS.forEach(function(k){ var el=document.getElementById('gp-on-'+k); sessionOn[k]=el?!!el.checked:!!BW_SESSION_ON[k]; });
+    GP_SAVING=true;
+    var gbtns=document.querySelectorAll('button[onclick="saveGlobalProfiles()"]'); gbtns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
     try{
-      var r=await fetch(API+'/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},body:JSON.stringify({profiles:profiles,sessionOn:sessionOn})});
+      var r=await apiFetch('/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profiles:profiles,sessionOn:sessionOn})});
       if(r.ok){
+        // só aplica no estado local APÓS o servidor confirmar (sem divergência)
         ['conservador','moderado','arrojado'].forEach(function(n){ Object.assign(SR_PROFILES[n],profiles[n]); });
         SESSION_ON_KEYS.forEach(function(k){ BW_SESSION_ON[k]=sessionOn[k]; });
         toast(LANG==='pt'?'Padrões e sessões salvos — os robôs aplicam na próxima consulta (~5 min)':LANG==='en'?'Presets & sessions saved — robots apply on next poll (~5 min)':'Perfiles y sesiones guardados','success');
       } else if(r.status===404){
-        toast(LANG==='pt'?'O backend (worker) ainda não foi atualizado para a v18':LANG==='en'?'Backend (worker) not yet updated to v18':'El backend aún no fue actualizado (v18)','error');
+        toast(LANG==='pt'?'O backend (worker) ainda não foi atualizado':LANG==='en'?'Backend (worker) not yet updated':'El backend aún no fue actualizado','error');
       } else {
         toast(LANG==='pt'?'Erro ao salvar os padrões':LANG==='en'?'Error saving presets':'Error al guardar','error');
       }
-    }catch(e){ toast(LANG==='pt'?'Sem conexão com o servidor':LANG==='en'?'No server connection':'Sin conexión','error'); }
+    }catch(e){ if(String(e&&e.message)!=='session_expired') toast(LANG==='pt'?'Sem conexão com o servidor':LANG==='en'?'No server connection':'Sin conexión','error'); }
+    finally{ GP_SAVING=false; document.querySelectorAll('button[onclick="saveGlobalProfiles()"]').forEach(function(b){b.disabled=false;b.style.opacity='';}); }
   };
 })();
 </script>
