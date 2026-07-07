@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v19 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v25 (Cloudflare Worker)
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
@@ -11,6 +11,11 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v25: RELATÓRIOS COMPLETOS — GET /api/reports agora devolve também
+ *         saldo INÍCIO/FIM do período (via balance_history), % sobre o
+ *         saldo inicial e detecção de depósito/saque. (Número de versão
+ *         subiu p/ v25 só para confirmar o deploy: o v24 já tinha a aba,
+ *         faltavam esses campos extras.)
  *  + v23: ROBUSTEZ DE PRODUÇÃO (auditoria arquitetural) —
  *         - vínculo de conta ATÔMICO (tabela license_accounts) — sem corrida
  *           entre robôs simultâneos; o SQLite arbitra o limite;
@@ -99,8 +104,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v24' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v24' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v25' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v25' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {

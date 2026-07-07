@@ -3,7 +3,16 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v24
+## Versão atual: v25
+
+### O que a v25 adiciona (relatórios completos)
+- GET /api/reports agora devolve também **saldo início/fim** do período
+  (via balance_history), **% sobre o saldo inicial** e **detecção de
+  depósito/saque**. Isso liga os cartões "Saldo início/fim" e o % na aba
+  Relatórios do painel.
+- O número subiu para v25 só para **confirmar o deploy**: o v24 já tinha a
+  aba (resultado, trades, ganhos/perdas, melhor/pior), faltavam esses extras.
+- Confira /api/health: deve responder `blackwolf-api-v25`.
 
 ### O que a v24 adiciona (ajustes do Luiz + auditoria)
 - /api/admin/clients agora inclui as licenças de ADMIN (a do Luiz aparece na
