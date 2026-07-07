@@ -99,8 +99,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v23' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v23' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v24' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v24' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -766,14 +766,19 @@ async function handleAdminClients(request, env, json) {
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
 
+  // v24 (item 2 do Luiz): a visão geral inclui TODA licença ativa — inclusive as
+  // contas de admin que também são clientes (a do próprio Luiz). Antes filtrava só
+  // role='client' e a licença do admin não aparecia no "quartel general".
   const rows = await env.DB.prepare(
-    `SELECT u.email, u.name, u.country, u.plan, u.created_at,
+    `SELECT u.email, u.name, u.role, u.country, u.plan, u.created_at,
             u.license_key, u.license_status, u.license_expires_at, u.mt5_accounts, u.account_limit,
             o.age, o.experience, o.goal, o.self_profile, o.family, o.source,
-            o.country AS o_country, o.state, o.city, o.marketing_opt_in
+            o.country AS o_country, o.state, o.city, o.marketing_opt_in,
+            (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email = u.email) AS last_seen,
+            (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email) AS acc_online
      FROM users u
      LEFT JOIN onboarding o ON o.email = u.email
-     WHERE u.role = 'client'
+     WHERE u.role = 'client' OR u.license_key IS NOT NULL
      ORDER BY u.created_at DESC`
   ).all();
 
@@ -785,12 +790,14 @@ async function handleAdminClients(request, env, json) {
       country: r.o_country || r.country,
       plan: r.plan,
       created_at: r.created_at,
-      // v22: campos de licença que o painel admin já esperava (antes vinham vazios)
+      is_admin: r.role === 'admin',
       license_key: r.license_key || null,
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
       accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
       account_limit: (r.account_limit != null ? r.account_limit : null),
+      last_seen: r.last_seen || null,
+      accounts_reporting: r.acc_online || 0,
       onboarding: (r.age || r.o_country || r.marketing_opt_in) ? {
         age: r.age, experience: r.experience, goal: r.goal,
         selfProfile: r.self_profile, family: r.family, source: r.source,

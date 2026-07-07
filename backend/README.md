@@ -3,7 +3,13 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v23
+## Versão atual: v24
+
+### O que a v24 adiciona (ajustes do Luiz + auditoria)
+- /api/admin/clients agora inclui as licenças de ADMIN (a do Luiz aparece na
+  visão geral) + status online por cliente (last_seen) e contas reportando.
+- Tudo o mais do v23 continua igual (colar este worker cobre v23+v24).
+
 
 ### O que a v23 adiciona (ROBUSTEZ DE PRODUÇÃO — deploy obrigatório)
 

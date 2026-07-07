@@ -1379,7 +1379,7 @@ loginForm.addEventListener('submit',async e=>{
       const data=await res.json();
       const u=data.user;
       SESSION={email:u.email,name:u.name,role:u.role,token:data.token,fromBackend:true,isDemo:isDemoEmail(u.email),
-        licenseKey:u.license_key||null,licenseStatus:u.license_status||null,plan:u.plan||null,mt5Account:u.mt5_account||null,mt5Accounts:Array.isArray(u.mt5_accounts)?u.mt5_accounts:[],accountLimit:(u.account_limit!=null?u.account_limit:null),eaConfig:(u.ea_config&&typeof u.ea_config==='object')?u.ea_config:null,licenseExpiresAt:u.license_expires_at||null};
+        licenseKey:u.license_key||null,licenseStatus:u.license_status||null,plan:u.plan||null,mt5Account:u.mt5_account||null,mt5Accounts:Array.isArray(u.mt5_accounts)?u.mt5_accounts:[],accountLimit:(u.account_limit!=null?u.account_limit:null),eaConfig:(u.ea_config&&typeof u.ea_config==='object')?u.ea_config:null,licenseExpiresAt:u.license_expires_at||null,prevLogin:u.prev_login||null};
       // aplica preferências salvas no servidor
       if(u.lang&&u.lang!==LANG)setLang(u.lang);
       // armazena token se "lembrar"
@@ -1735,6 +1735,8 @@ function loadSessionData(){
       DATA.client.mt5Account = SESSION.mt5Account || null;
       DATA.client.mt5Accounts = Array.isArray(SESSION.mt5Accounts)?SESSION.mt5Accounts:(SESSION.mt5Account?[SESSION.mt5Account]:[]);
       DATA.client.accountLimit = (SESSION.accountLimit!=null?SESSION.accountLimit:null);
+      DATA.client.accountsUsed = DATA.client.mt5Accounts.length;
+      DATA.client.expiresAt=(function(){ const x=SESSION.licenseExpiresAt; if(!x)return null; const d=(/^\d+$/.test(String(x)))?new Date(Number(x)*(String(x).length<=10?1000:1)):new Date(x); return isNaN(d.getTime())?null:d.toISOString(); })();
       DATA.client.licenseExpiresAt = SESSION.licenseExpiresAt || null;
       DATA.client.eaConfigStruct = (SESSION.eaConfig&&typeof SESSION.eaConfig==='object')?SESSION.eaConfig:{default:{},accounts:{}};
       if(SESSION.licenseKey){
@@ -1768,7 +1770,11 @@ async function refreshMe(){
       DATA.client.mt5Account=SESSION.mt5Account;
       DATA.client.mt5Accounts=Array.isArray(SESSION.mt5Accounts)?SESSION.mt5Accounts:(SESSION.mt5Account?[SESSION.mt5Account]:[]);
       DATA.client.accountLimit=(SESSION.accountLimit!=null?SESSION.accountLimit:null);
+      // v24: card do dashboard mostrava sempre 0/N e "Expira —" — agora reflete o real
+      DATA.client.accountsUsed=DATA.client.mt5Accounts.length;
+      DATA.client.expiresAt=(function(){ const x=SESSION.licenseExpiresAt; if(!x)return null; const d=(/^\d+$/.test(String(x)))?new Date(Number(x)*(String(x).length<=10?1000:1)):new Date(x); return isNaN(d.getTime())?null:d.toISOString(); })();
       DATA.client.licenseExpiresAt=SESSION.licenseExpiresAt;
+      SESSION.prevLogin=u.prev_login||SESSION.prevLogin||null;
       // recarrega a configuração salva do robô (estrutura por conta) e sincroniza o formulário.
       // NÃO sobrescreve se o usuário está EDITANDO a página de config (evita apagar
       // ajustes não salvos ao clicar em "Atualizar").
@@ -1885,7 +1891,12 @@ async function fetchMyData(){
     const sig=(mapped.length)+'|'+(mapped.length?mapped[mapped.length-1].id:'')+'|'+(hasBal?totalBal.toFixed(2):'')+'|'+statuses.map(function(s){return (s.account||'')+':'+(s.open_positions||0)+':'+(s.last_error||'');}).join(',');
     const changed=(DATA.client._dataSig!==sig);
     DATA.client._dataSig=sig;
-    if(changed && ['dashboard','results','history'].includes(CURRENT_PAGE)){
+    // v24: no HISTÓRICO, não re-renderiza no polling se o usuário está digitando/filtrando
+    // (o open_positions muda a cada minuto e apagava a busca). Só atualiza quando o Nº de
+    // trades muda de verdade nessa tela.
+    const tradesChanged=(DATA.client._tradesN!==mapped.length); DATA.client._tradesN=mapped.length;
+    const okToRender = CURRENT_PAGE==='history' ? tradesChanged : changed;
+    if(okToRender && ['dashboard','results','history'].includes(CURRENT_PAGE)){
       const y=window.scrollY;
       renderPage(CURRENT_PAGE);
       window.scrollTo(0,y);   // preserva a posição de leitura no refresh automático
@@ -1904,10 +1915,14 @@ function mapBackendClient(u){
   const eob = {age:esc(ob.age),experience:esc(ob.experience),goal:esc(ob.goal),selfProfile:esc(ob.selfProfile),family:esc(ob.family),source:esc(ob.source),country:esc(ob.country),state:esc(ob.state),city:esc(ob.city),marketing:esc(ob.marketing)};
   const status = u.license_status || (u.license_key ? 'active' : 'active');
   const usedRaw = (u.accounts_used!=null)?u.accounts_used:0;
+  // v24: status online real do cliente (último heartbeat de qualquer conta dele)
+  const seenD = u.last_seen?parseEaDate(u.last_seen):null;
+  const online = !!(seenD && (Date.now()-seenD.getTime())<10*60000);
   return {
     name: esc(u.name || u.email), email: esc(u.email), plan: esc(u.plan || '—'), status: status,
+    isAdmin: !!u.is_admin, online: online, accReporting: (u.accounts_reporting||0),
     accUsed: usedRaw, accLimit: (u.account_limit===-1?'∞':(u.account_limit!=null?u.account_limit:planAccLimit(u.plan))), pay: (status==='revoked'?'overdue':'paid'),
-    seen: '—', joined: (u.created_at||'').slice(0,10),
+    seen: seenD?fmtDT(seenD).slice(5,16):'—', joined: (u.created_at||'').slice(0,10),
     net: 0, key: esc(u.license_key || '—'), expires: u.license_expires_at || null,
     profile: ob.selfProfile? (String(ob.selfProfile).toLowerCase().includes('arroj')?'aggr':String(ob.selfProfile).toLowerCase().includes('conserv')?'cons':'mod') : 'cons',
     score: 0, risk: '—', lev: '—', freq: '—', hours: '—', ltv: 0, trades: 0, winrate: 0,
@@ -1926,6 +1941,7 @@ async function fetchRealClients(){
       DATA.admin.totalClients = DATA.admin.clients.length;
       DATA.admin.activeLicenses = DATA.admin.clients.filter(c=>c.status==='active').length;
       DATA.admin.totalAccounts = DATA.admin.clients.reduce((s,c)=>s+(c.accUsed||0),0);
+      DATA.admin.onlineRobots = DATA.admin.clients.filter(c=>c.online).length;
       _clientTradesCache = {}; _clientStatsCache = {};
       // re-renderiza se o admin estiver vendo uma tela que usa esses dados
       if(typeof CURRENT_PAGE==='string' && CURRENT_PAGE.indexOf('admin')===0) renderPage(CURRENT_PAGE);
@@ -1964,10 +1980,66 @@ function pageHead(eyebrow,title,sub,actions){
 }
 function refreshBtn(){ return `<button class="refresh-btn" onclick="doRefresh(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${t('refresh')}</button>`; }
 
+/* ─────── DASHBOARD: seleção de conta + agregação GERAL (v24) ─────── */
+let DASH_ACCOUNT=null;   // null = GERAL (todas as contas somadas)
+function setDashAccount(a){ DASH_ACCOUNT=(a==='__all__'||a==null)?null:String(a); renderPage('dashboard'); }
+// lista de contas conhecidas (status do robô ∪ contas com trades ∪ contas da licença)
+function dashAccounts(){
+  const set={};
+  ((DATA.client&&DATA.client._eaStatusAll)||[]).forEach(function(st){ if(st&&st.account!=null)set[String(st.account)]=1; });
+  (ALL_TRADES||[]).forEach(function(t){ if(t&&t.account!=null)set[String(t.account)]=1; });
+  ((DATA.client&&DATA.client.mt5Accounts)||[]).forEach(function(a){ if(a!=null)set[String(a)]=1; });
+  return Object.keys(set);
+}
+// calcula o escopo atual (geral ou conta selecionada): trades, stats, saldo, P&L dia/mês
+function computeDash(){
+  const acc=DASH_ACCOUNT;
+  const allTr=ALL_TRADES||[];
+  const trades=acc?allTr.filter(function(t){return String(t.account)===acc;}):allTr;
+  const stats=acc?deriveStats(trades):STATS;
+  const statuses=((DATA.client&&DATA.client._eaStatusAll)||[]).filter(function(st){return acc?String(st.account)===acc:true;});
+  let bal=0,eq=0,hasBal=false,hasEq=false;
+  statuses.forEach(function(st){ if(st&&st.balance!=null&&isFinite(+st.balance)){bal+=+st.balance;hasBal=true;} if(st&&st.equity!=null&&isFinite(+st.equity)){eq+=+st.equity;hasEq=true;} });
+  const now=new Date();
+  const dayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1).getTime();
+  let dayPnL=0,monthPnL=0;
+  trades.forEach(function(t){ const ts=t._sort||0; if(ts>=dayStart)dayPnL+=t.pnl; if(ts>=monthStart)monthPnL+=t.pnl; });
+  return {acc:acc,trades:trades,stats:stats,statuses:statuses,balance:hasBal?bal:null,equity:hasEq?eq:null,dayPnL:dayPnL,monthPnL:monthPnL,accounts:dashAccounts()};
+}
+// linha de resumo GERAL: P&L dia/mês, saldo total, equity total
+function dashSummaryRow(D){
+  const money=function(v){ return v==null?'—':(v<0?'−':'')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const signed=function(v){ return (v<0?'−':'+')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const cls=function(v){ return v<0?'neg':'pos'; };
+  const scopeLbl=D.acc?(LANG==='pt'?'Conta '+D.acc:'Account '+D.acc):(LANG==='pt'?'Todas as contas':LANG==='en'?'All accounts':'Todas las cuentas');
+  return `<div class="kpi-grid rv" style="margin-bottom:14px">
+    <div class="kpi"><div class="kpi-ico blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kpi-label">${LANG==='pt'?'Resultado do dia':LANG==='en'?"Today's result":'Resultado del día'}</div><div class="kpi-val ${cls(D.dayPnL)}">${signed(D.dayPnL)}</div><div class="kpi-sub">${scopeLbl}</div></div>
+    <div class="kpi"><div class="kpi-ico purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="kpi-label">${LANG==='pt'?'Resultado do mês':LANG==='en'?'Month result':'Resultado del mes'}</div><div class="kpi-val ${cls(D.monthPnL)}">${signed(D.monthPnL)}</div><div class="kpi-sub">${scopeLbl}</div></div>
+    <div class="kpi"><div class="kpi-ico green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kpi-label">${LANG==='pt'?'Saldo total':LANG==='en'?'Total balance':'Saldo total'}</div><div class="kpi-val">${money(D.balance)}</div><div class="kpi-sub">${D.acc?scopeLbl:(D.accounts.length+' '+(LANG==='pt'?'contas':LANG==='en'?'accounts':'cuentas'))}</div></div>
+    <div class="kpi"><div class="kpi-ico cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="kpi-label">Equity ${LANG==='pt'?'total':LANG==='en'?'total':'total'}</div><div class="kpi-val">${money(D.equity)}</div><div class="kpi-sub">${LANG==='pt'?'em tempo real':LANG==='en'?'real-time':'en tiempo real'}</div></div>
+  </div>`;
+}
+// seletor de conta (Geral + uma aba por conta) — só aparece com 2+ contas
+function dashAccountSelector(D){
+  if(!D.accounts||D.accounts.length<2) return '';
+  const chip=function(val,lbl,on){ return `<button onclick="setDashAccount('${val}')" style="padding:8px 15px;border-radius:10px;border:1px solid ${on?'var(--blue)':'var(--bord)'};background:${on?'rgba(45,108,255,.14)':'transparent'};color:${on?'var(--blue-l)':'var(--t2)'};font-family:var(--fh);font-weight:${on?'700':'500'};font-size:.84rem;cursor:pointer;white-space:nowrap">${lbl}</button>`; };
+  const live=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
+  return `<div class="rv" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+    <span style="font-family:var(--fm);font-size:.68rem;letter-spacing:.08em;color:var(--t3);margin-right:2px">${LANG==='pt'?'CONTA':LANG==='en'?'ACCOUNT':'CUENTA'}</span>
+    ${chip('__all__',(LANG==='pt'?'Geral':LANG==='en'?'Overall':'General'),!D.acc)}
+    ${D.accounts.map(function(a){ return chip(a,(LANG==='pt'?'Conta ':'')+a+(live===a?' •':''),D.acc===a); }).join('')}
+  </div>`;
+}
+
 /* ─────── CLIENT: DASHBOARD ─────── */
 function renderDashboard(){
-  const c=DATA.client, s=STATS;
-  EQUITY_OVERRIDE=null;
+  const c=DATA.client;
+  // v24: escopo (geral ou conta selecionada). Se a conta selecionada sumiu, volta ao geral.
+  if(DASH_ACCOUNT && dashAccounts().indexOf(DASH_ACCOUNT)<0) DASH_ACCOUNT=null;
+  const D=computeDash();
+  const s=DASH_ACCOUNT?D.stats:STATS;
+  EQUITY_OVERRIDE=DASH_ACCOUNT?D.stats:null;   // o gráfico de capital segue o escopo
   const net=c.clients?0:s.netResult;
   return pageHead(
     LANG==='pt'?'PAINEL DO CLIENTE':LANG==='en'?'CLIENT PANEL':'PANEL DEL CLIENTE',
@@ -1976,6 +2048,8 @@ function renderDashboard(){
     refreshBtn()
   )+`
   ${eaStatusBanner()}
+  ${dashAccountSelector(D)}
+  ${dashSummaryRow(D)}
   <div class="banner risk rv">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     <div class="banner-tx">${t('risk_warning')}</div>
@@ -1984,7 +2058,7 @@ function renderDashboard(){
   <div class="hero-card rv">
     <div class="hero-glow"></div>
     <div class="hero-top">
-      <div class="hero-label">${LANG==='pt'?'RESULTADO ACUMULADO (30 DIAS)':LANG==='en'?'CUMULATIVE RESULT (30 DAYS)':'RESULTADO ACUMULADO (30 DÍAS)'}</div>
+      <div class="hero-label">${(DASH_ACCOUNT?(LANG==='pt'?'RESULTADO — CONTA '+DASH_ACCOUNT:'RESULT — ACCOUNT '+DASH_ACCOUNT):(LANG==='pt'?'RESULTADO ACUMULADO — GERAL':LANG==='en'?'CUMULATIVE RESULT — OVERALL':'RESULTADO ACUMULADO — GENERAL'))}</div>
       ${(function(){
         // v23: badge derivado do status REAL do robô (antes era verde fixo,
         // mentindo "ativo" mesmo com o robô parado há horas)
@@ -2247,7 +2321,10 @@ function renderHistory(){
     </select>
     <select class="filter-sel" id="histStrat" onchange="histFilterChange()">
       <option value="all">${LANG==='pt'?'Estratégia: Todas':LANG==='en'?'Strategy: All':'Estrategia: Todas'}</option>
-      ${STRATS.map(s=>`<option value="${s}">${s}</option>`).join('')}
+      ${(function(){ // v24: opções derivadas dos trades reais (antes usava nomes demo → filtro nunca casava)
+        const src=(SESSION&&SESSION.isDemo)?STRATS:[...new Set((ALL_TRADES||[]).map(function(t){return t.strat;}).filter(Boolean))];
+        return src.map(s=>`<option value="${esc(s)}"${HIST_FILTER.strat===s?' selected':''}>${esc(s)}</option>`).join('');
+      })()}
     </select>
   </div>
   <div class="card rv" style="padding-top:14px">
@@ -2396,8 +2473,12 @@ function renderConfig(){
   const accs=cfgAccounts();
   // conta onde o robô está operando AGORA (do heartbeat) — abre nela por padrão
   const liveAcc=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
-  if(!CFG_PICKED&&liveAcc&&accs.indexOf(liveAcc)>=0&&CFG_ACCOUNT!==liveAcc){
-    CFG_ACCOUNT=liveAcc;CFG=JSON.parse(JSON.stringify(effectiveCfgFor(liveAcc)));
+  if(!CFG_PICKED){
+    // v24 (item 3): abre na conta do robô e TRAVA nela — nunca mais alterna sozinha.
+    // Se não houver conta ao vivo, trava na 1ª conta vinculada. A troca é só manual.
+    const pick=(liveAcc&&accs.indexOf(liveAcc)>=0)?liveAcc:(accs.length?accs[0]:'_default');
+    if(pick!=='_default'&&CFG_ACCOUNT!==pick){ CFG_ACCOUNT=pick; CFG=JSON.parse(JSON.stringify(effectiveCfgFor(pick))); }
+    CFG_PICKED=true;
   }
   const c=CFG;
   const accLabel=(a)=>a==='_default'?(LANG==='pt'?'Padrão':LANG==='en'?'Default':'Predet.'):a;
@@ -2494,36 +2575,19 @@ function renderConfig(){
     </div>
   </div>
 
-  <!-- RISK -->
-  <div class="cfg-section rv">
-    <div class="cfg-section-head">
-      <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Gestão de risco':LANG==='en'?'Risk management':'Gestión de riesgo'}</div><div class="cfg-section-desc">${LANG==='pt'?'O quanto o robô arrisca em cada operação.':LANG==='en'?'How much the robot risks per trade.':'Cuánto arriesga el robot por operación.'}</div></div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Risco por operação':LANG==='en'?'Risk per trade':'Riesgo por operación'}</div><div class="cfg-row-hint">${LANG==='pt'?'% do saldo arriscado em cada trade. Acima de 2% é considerado agressivo.':LANG==='en'?'% of balance risked per trade. Above 2% is aggressive.':'% del saldo arriesgado por trade. Más de 2% es agresivo.'}</div></div>
-      <div class="cfg-control">${numInput('riskPerTrade',c.riskPerTrade,0.1,'%',0.1,10)}</div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Tamanho do lote':LANG==='en'?'Lot sizing':'Tamaño del lote'}</div><div class="cfg-row-hint">${LANG==='pt'?'Lote fixo ou proporcional ao saldo.':LANG==='en'?'Fixed lot or proportional to balance.':'Lote fijo o proporcional al saldo.'}</div></div>
-      <div class="cfg-control"><select class="cfg-select" id="cfg-lotMode" onchange="cfgChange('lotMode',this.value)"><option value="percent" ${c.lotMode==='percent'?'selected':''}>${LANG==='pt'?'% do saldo':LANG==='en'?'% of balance':'% del saldo'}</option><option value="fixed" ${c.lotMode==='fixed'?'selected':''}>${LANG==='pt'?'Lote fixo':LANG==='en'?'Fixed lot':'Lote fijo'}</option></select></div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Lote máximo':LANG==='en'?'Max lot':'Lote máximo'}</div><div class="cfg-row-hint">${LANG==='pt'?'Limite de tamanho por posição.':LANG==='en'?'Maximum size per position.':'Límite de tamaño por posición.'}</div></div>
-      <div class="cfg-control">${numInput('maxLot',c.maxLot,0.01,'',0.01,5)}</div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Alavancagem':LANG==='en'?'Leverage':'Apalancamiento'}</div><div class="cfg-row-hint">${LANG==='pt'?'Definida pela sua corretora. Maior = mais risco.':LANG==='en'?'Set by your broker. Higher = more risk.':'Definida por tu bróker. Mayor = más riesgo.'}</div></div>
-      <div class="cfg-control"><select class="cfg-select" id="cfg-leverage" onchange="cfgChange('leverage',this.value)">${['1:30','1:50','1:100','1:200','1:500'].map(l=>`<option ${c.leverage===l?'selected':''}>${l}</option>`).join('')}</select></div>
-    </div>
-  </div>
+  <!-- v24 (item 4 do Luiz): a seção "Gestão de risco / risco por operação" foi
+       REMOVIDA da interface — o lote é decidido pelo risco por sessão acima.
+       O campo riskPerTrade CONTINUA no contrato: o servidor usa o _risk do perfil
+       como fallback quando uma sessão não tem valor (ver /api/ea/config). -->
 
-  <!-- TARGETS -->
-  <div class="cfg-section rv">
+  <!-- TARGETS — item 5: mantida visível, porém marcada EM BREVE (o robô v1.2 ainda
+       não lê estes campos; deixá-los ativos seria prometer proteção que não existe) -->
+  <div class="cfg-section rv" style="opacity:.7">
     <div class="cfg-section-head">
       <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Metas e limites diários':LANG==='en'?'Daily targets & limits':'Metas y límites diarios'}</div><div class="cfg-section-desc">${LANG==='pt'?'O robô para automaticamente ao atingir estes limites.':LANG==='en'?'The robot stops automatically when these limits are hit.':'El robot se detiene al alcanzar estos límites.'}</div></div>
+      <div><div class="cfg-section-title">${LANG==='pt'?'Metas e limites diários':LANG==='en'?'Daily targets & limits':'Metas y límites diarios'} <span style="font-family:var(--fm);font-size:.58rem;letter-spacing:.06em;color:var(--amber-l);background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.3);padding:2px 8px;border-radius:20px;vertical-align:middle;margin-left:6px">${LANG==='pt'?'EM BREVE':LANG==='en'?'SOON':'PRONTO'}</span></div><div class="cfg-section-desc">${LANG==='pt'?'Funcionalidade em desenvolvimento — ainda não está ativa no robô.':LANG==='en'?'Feature in development — not active in the robot yet.':'Función en desarrollo — aún no activa en el robot.'}</div></div>
     </div>
+    <div style="pointer-events:none;filter:saturate(.6)">
     <div class="cfg-row">
       <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Meta de lucro diária':LANG==='en'?'Daily profit target':'Meta de ganancia diaria'}</div><div class="cfg-row-hint">${LANG==='pt'?'Para de operar ao atingir esse ganho no dia.':LANG==='en'?'Stops trading when this gain is reached.':'Deja de operar al alcanzar esta ganancia.'}</div></div>
       <div class="cfg-control">${numInput('dailyTarget',c.dailyTarget,0.5,'%',0.5,50)}</div>
@@ -2539,6 +2603,7 @@ function renderConfig(){
     <div class="cfg-row">
       <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Proteção de capital (equity stop)':LANG==='en'?'Equity stop':'Protección de capital'}</div><div class="cfg-row-hint">${LANG==='pt'?'Desliga o robô se o capital cair esse % do pico.':LANG==='en'?'Shuts robot off if equity drops this % from peak.':'Apaga el robot si el capital cae ese % del pico.'}</div></div>
       <div class="cfg-control">${numInput('equityStop',c.equityStop,1,'%',1,50)}</div>
+    </div>
     </div>
   </div>
 
@@ -2681,7 +2746,7 @@ function renderLicense(){
       ? `<span class="pill" style="background:rgba(255,59,71,.13);color:var(--red-l);border-color:rgba(255,59,71,.3)">${LANG==='pt'?'Inativa':LANG==='en'?'Inactive':'Inactiva'}</span>`
       : `<span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span>`;
     let paidUntil='—';
-    if(c.licenseExpiresAt){ try{ paidUntil=new Date(c.licenseExpiresAt*1000).toLocaleDateString(LANG==='pt'?'pt-BR':LANG==='en'?'en-US':'es-ES'); }catch(e){} }
+    if(c.licenseExpiresAt){ try{ const _d=(typeof c.licenseExpiresAt==='number'||/^\d+$/.test(String(c.licenseExpiresAt)))?new Date(Number(c.licenseExpiresAt)*(String(c.licenseExpiresAt).length<=10?1000:1)):new Date(c.licenseExpiresAt); if(!isNaN(_d.getTime())) paidUntil=_d.toLocaleDateString(LANG==='pt'?'pt-BR':LANG==='en'?'en-US':'es-ES'); }catch(e){} }
     const acc=c.mt5Account;
     const accList=Array.isArray(c.mt5Accounts)&&c.mt5Accounts.length?c.mt5Accounts:(acc?[acc]:[]);
     const lim=(c.accountLimit!=null?c.accountLimit:planStratCount(c.plan));
@@ -2956,7 +3021,8 @@ function fmtLoginTime(iso){
   }catch(e){ return '—'; }
 }
 function getPrevLogin(){
-  const prev=localStorage.getItem('bw_prevlogin_'+SESSION.email);
+  // v24: usa o prev_login do servidor (login real) além do fallback local
+  const prev=(SESSION&&SESSION.prevLogin)||localStorage.getItem('bw_prevlogin_'+SESSION.email);
   const L={pt:'Este é seu primeiro acesso',en:'This is your first access',es:'Este es tu primer acceso'};
   if(!prev)return L[LANG]||L.pt;
   return fmtLoginTime(prev);
@@ -3253,9 +3319,9 @@ function renderAdminOverview(){
   )+`
   ${banner}
   <div class="admin-stats">
-    ${astat('blue','users',LANG==='pt'?'Clientes':LANG==='en'?'Clients':'Clientes',a.totalClients,dv.u,demo?'up':'')}
-    ${astat('green','check',LANG==='pt'?'Licenças ativas':LANG==='en'?'Active licenses':'Licencias activas',a.activeLicenses,dv.c,demo?'up':'')}
-    ${astat('amber','clock',LANG==='pt'?'Expirando':LANG==='en'?'Expiring':'Expirando',a.expiringSoon,'','')}
+    ${astat('blue','users',LANG==='pt'?'Licenças':LANG==='en'?'Licenses':'Licencias',a.totalClients,dv.u,demo?'up':'')}
+    ${astat('green','check',LANG==='pt'?'Ativas':LANG==='en'?'Active':'Activas',a.activeLicenses,dv.c,demo?'up':'')}
+    ${astat('green','server',LANG==='pt'?'Robôs online':LANG==='en'?'Robots online':'Robots en línea',(demo?a.totalClients:(a.onlineRobots||0)),'','')}
     ${astat('blue','server',LANG==='pt'?'Contas MT5':LANG==='en'?'MT5 accounts':'Cuentas MT5',a.totalAccounts,dv.s,demo?'up':'')}
   </div>
   <div class="admin-stats">
@@ -3280,9 +3346,11 @@ function astatMoney(color,ico,label,val,delta,dir){
   return `<div class="astat rv"><div class="astat-ico" style="background:${colors[color]||colors.blue}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icons[ico]}</svg></div><div class="astat-label">${label}</div><div class="astat-val ${color}" data-money="${val}" data-dec="2">US$ 0</div>${delta?`<div class="astat-delta ${dir}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="18 15 12 9 6 15"/></svg>${delta}</div>`:''}</div>`;
 }
 function statusPill(s){
-  const m={active:['active',LANG==='pt'?'Ativo':LANG==='en'?'Active':'Activo'],due:['due',LANG==='pt'?'A vencer':LANG==='en'?'Due':'Por vencer'],revoked:['revoked',LANG==='pt'?'Revogado':LANG==='en'?'Revoked':'Revocado']};
+  const m={active:['active',LANG==='pt'?'Ativo':LANG==='en'?'Active':'Activo'],due:['due',LANG==='pt'?'A vencer':LANG==='en'?'Due':'Por vencer'],revoked:['revoked',LANG==='pt'?'Revogado':LANG==='en'?'Revoked':'Revocado'],expired:['revoked',LANG==='pt'?'Expirado':LANG==='en'?'Expired':'Expirado'],trial:['due',LANG==='pt'?'Teste':LANG==='en'?'Trial':'Prueba']};
   const [cls,lbl]=m[s]||m.active; return `<span class="pill ${cls}">${lbl}</span>`;
 }
+// v24: formata data de expiração aceitando ISO, epoch(s) ou epoch(ms); '—' se vazio/inválido
+function fmtExpires(x){ if(!x)return '—'; try{ const d=(/^\d+$/.test(String(x)))?new Date(Number(x)*(String(x).length<=10?1000:1)):new Date(x); return isNaN(d.getTime())?'—':d.toISOString().slice(0,10); }catch(e){ return '—'; } }
 function payPill(p){
   const m={paid:['paid',LANG==='pt'?'Pago':LANG==='en'?'Paid':'Pagado'],due:['due',LANG==='pt'?'A vencer':LANG==='en'?'Due':'Por vencer'],overdue:['overdue',LANG==='pt'?'Atrasado':LANG==='en'?'Overdue':'Atrasado']};
   const [cls,lbl]=m[p]||m.paid; return `<span class="pill ${cls}">${lbl}</span>`;
@@ -3682,7 +3750,7 @@ function renderAdminLicenses(){
   ${clients.length? clients.map((c,i)=>`<tr>
     <td class="tbl-name">${c.name}</td>
     <td class="mono" style="font-size:.76rem">${c.key}</td>
-    <td class="mono" style="font-size:.78rem">${c.expires}</td>
+    <td class="mono" style="font-size:.78rem">${fmtExpires(c.expires)}</td>
     <td>${statusPill(c.status)}</td>
     <td><div style="display:flex;gap:8px">${c.status!=='revoked'?`<button class="revoke-btn" onclick="revokeClient(${DATA.admin.clients.indexOf(c)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>${t('revoke')}</button>`:`<button class="mini-btn" onclick="reissueClient(${DATA.admin.clients.indexOf(c)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>${LANG==='pt'?'Reativar':LANG==='en'?'Reactivate':'Reactivar'}</button>`}</div></td>
   </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Nenhuma licença emitida ainda':LANG==='en'?'No licenses issued yet':'Aún no hay licencias'}</td></tr>`}
@@ -4653,6 +4721,7 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{
     RESULT_PERIOD='all'; HIST_FILTER={search:'',dir:'all',strat:'all',result:'all'};
     CFG_PICKED=false; CFG_ACCOUNT='_default'; CFG_STRUCT={default:{},accounts:{}}; CFG_PRESET='mod';
     CLIENT_OPEN=new Set(); _clientTradesCache={}; _clientStatsCache={}; CLIENT_RES_MONTH={};
+    DASH_ACCOUNT=null;
     ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
   }catch(e){}
   document.getElementById('app').classList.remove('active');
