@@ -1248,13 +1248,44 @@ async function handleReports(request, env, json, url) {
   // curva de evolução: 1 ponto por dia (soma de trades acumulada — nunca saldo)
   const days = Object.keys(byDay).sort();
   let cum = 0; const curve = days.map(d => { cum += byDay[d]; return { day: d, pnl: +byDay[d].toFixed(2), cumulative: +cum.toFixed(2) }; });
+
+  // v24: saldo INÍCIO/FIM do período via balance_history (informativo). O % é
+  // sobre o saldo INICIAL (regra do Luiz), NUNCA por diferença de saldo.
+  let startBalance = null, endBalance = null, deposits = null;
+  try {
+    let bsql = "SELECT balance, ts FROM balance_history WHERE email = ? AND substr(ts,1,10) >= ? AND substr(ts,1,10) < ?";
+    const bb = [target, from, to];
+    if (account) { bsql += ' AND account = ?'; bb.push(String(account)); }
+    bsql += ' ORDER BY ts ASC';
+    const bh = await env.DB.prepare(bsql).bind(...bb).all();
+    const brows = (bh.results || []).filter(r => r.balance != null);
+    if (brows.length) {
+      // com uma conta: primeiro/último direto. Com várias (geral): soma por conta
+      if (account) { startBalance = +brows[0].balance; endBalance = +brows[brows.length - 1].balance; }
+      else {
+        // agrega por conta o primeiro e o último ponto de cada uma
+        const firstByAcc = {}, lastByAcc = {};
+        const bh2 = await env.DB.prepare("SELECT account, balance, ts FROM balance_history WHERE email = ? AND substr(ts,1,10) >= ? AND substr(ts,1,10) < ? AND balance IS NOT NULL ORDER BY ts ASC").bind(target, from, to).all();
+        (bh2.results || []).forEach(r => { const a = String(r.account); if (!(a in firstByAcc)) firstByAcc[a] = +r.balance; lastByAcc[a] = +r.balance; });
+        startBalance = Object.values(firstByAcc).reduce((s, v) => s + v, 0);
+        endBalance = Object.values(lastByAcc).reduce((s, v) => s + v, 0);
+      }
+      startBalance = +startBalance.toFixed(2); endBalance = +endBalance.toFixed(2);
+      // discrepância entre variação de saldo e soma de trades = depósito/saque
+      const drift = endBalance - startBalance - gross;
+      deposits = Math.abs(drift) > 0.5 ? +drift.toFixed(2) : 0;
+    }
+  } catch (e) { logEvent({ evt: 'reports_balance_fail', target }); }
+  const resultPct = (startBalance && startBalance > 0) ? +(gross / startBalance * 100).toFixed(2) : null;
+
   return json({
     ok: true, period, from, to, account: account || null, shared: !!(u && u.results_source),
     summary: {
-      result: +gross.toFixed(2), trades: n, wins, losses,
+      result: +gross.toFixed(2), resultPct, trades: n, wins, losses,
       winRate: n ? +(wins / n * 100).toFixed(2) : 0,
       best: best != null ? +best.toFixed(2) : 0,
       worst: worst != null ? +worst.toFixed(2) : 0,
+      startBalance, endBalance, deposits,
     },
     curve,
   });
