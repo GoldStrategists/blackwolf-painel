@@ -3,7 +3,24 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v19
+## Versão atual: v21
+
+### O que a v21 adiciona (CONFIABILIDADE — deploy obrigatório)
+
+1. **Status por conta (`ea_status_acc`)**: dois robôs na mesma licença não
+   sobrescrevem mais o saldo/status um do outro. `/api/my-data` devolve
+   `statuses` (lista, uma por conta). Tabela já criada no D1.
+2. **Trilha de auditoria (`config_log`)**: todo salvamento de config fica
+   registrado (quem, quando, qual conta, o quê). Tabela já criada no D1.
+3. **`account_mismatch` registrado** em `last_error` (visível no painel).
+4. **Perfis globais só se aplicam a ALUNOS** (role=client): a conta do
+   admin nunca tem a config sobrescrita por perfil.
+5. v20 incluída: POST rejeitado (invalid_json) fica registrado.
+6. `/api/health` responde `blackwolf-api-v21`.
+
+As tabelas novas JÁ EXISTEM no banco (criadas via D1) — é só colar e
+publicar o worker, sem nenhuma migração manual.
+
 
 ### O que a v19 adiciona (sobre a v18) — contrato do robô v1.2
 

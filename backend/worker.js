@@ -11,6 +11,14 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v21: CONFIABILIDADE MULTI-CONTA —
+ *         (a) status por CONTA (ea_status_acc): dois robôs na mesma
+ *             licença não sobrescrevem mais o saldo um do outro;
+ *         (b) trilha de auditoria de config (config_log): todo save
+ *             fica registrado com quem/quando/o quê;
+ *         (c) account_mismatch fica registrado em last_error;
+ *         (d) perfis globais só se aplicam a ALUNOS (role=client) —
+ *             conta admin nunca tem a config sobrescrita por perfil.
  * ═══════════════════════════════════════════════════════════════
  *
  *  Bindings:
@@ -61,7 +69,7 @@ export default {
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
       if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v20' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v21' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -742,6 +750,11 @@ async function handleSaveConfig(request, env, json) {
 
   await env.DB.prepare('UPDATE users SET ea_config = ? WHERE email = ?')
     .bind(JSON.stringify(struct), target).run();
+  // v21: trilha de auditoria — todo salvamento fica registrado (quem/quando/o quê)
+  try {
+    await env.DB.prepare('INSERT INTO config_log (email, target, account, config_json, created_at) VALUES (?,?,?,?,?)')
+      .bind(email, target, account || '_default', JSON.stringify(cfg), now).run();
+  } catch (e) {}
   return json({ ok: true, account: account || null, config: cfg, ea_config: struct });
 }
 
@@ -828,7 +841,33 @@ async function touchEaSeen(env, license, email, account) {
          email   = COALESCE(ea_status.email, excluded.email),
          last_seen = excluded.last_seen`
     ).bind(license, email || null, account != null ? String(account) : null, now).run();
+    // v21: presença POR CONTA (multi-conta na mesma licença não se sobrescreve)
+    if (account != null && String(account).trim() !== '') {
+      await env.DB.prepare(
+        `INSERT INTO ea_status_acc (license_key, account, email, last_seen)
+         VALUES (?,?,?,?)
+         ON CONFLICT(license_key, account) DO UPDATE SET
+           email = COALESCE(ea_status_acc.email, excluded.email),
+           last_seen = excluded.last_seen`
+      ).bind(license, String(account), email || null, now).run();
+    }
   } catch (e) { /* nunca quebra a resposta ao robô por causa do heartbeat */ }
+}
+// v21: registra um erro de comunicação do robô (visível no diagnóstico)
+async function recordEaError(env, license, email, account, err) {
+  try {
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO ea_status (license_key, email, last_seen, last_error) VALUES (?,?,?,?)
+       ON CONFLICT(license_key) DO UPDATE SET last_seen=excluded.last_seen, last_error=excluded.last_error`
+    ).bind(license, email || null, now, err).run();
+    if (account != null && String(account).trim() !== '') {
+      await env.DB.prepare(
+        `INSERT INTO ea_status_acc (license_key, account, email, last_seen, last_error) VALUES (?,?,?,?,?)
+         ON CONFLICT(license_key, account) DO UPDATE SET last_seen=excluded.last_seen, last_error=excluded.last_error`
+      ).bind(license, String(account), email || null, now, err).run();
+    }
+  } catch (e) {}
 }
 
 /* O ROBÔ lê a configuração de risco do aluno.
@@ -837,14 +876,17 @@ async function handleEaConfig(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
-  const row = await env.DB.prepare('SELECT email, ea_config, plan, license_status, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
+  const row = await env.DB.prepare('SELECT email, role, ea_config, plan, license_status, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active: false }, 404);
   if (row.license_status && row.license_status !== 'active')
     return json({ error: 'license_revoked', active: false, status: row.license_status }, 403);
   // trava: 1 licença = 1 conta
   const account = getEaAccount(request, url, null);
   const acc = await bindOrCheckAccount(env, row, account);
-  if (acc.mismatch) return json({ error: 'account_mismatch', active: false, message: 'Licença já vinculada a outra conta MT5' }, 403);
+  if (acc.mismatch) {
+    await recordEaError(env, license, row.email, account, 'account_mismatch');
+    return json({ error: 'account_mismatch', active: false, message: 'Licença já vinculada a outra conta MT5' }, 403);
+  }
   await touchEaSeen(env, license, row.email, acc.bound || account);   // marca robô online já na checagem
   // config específica DESTA conta (o robô manda a conta em toda chamada)
   const struct = normalizeEaConfig(row.ea_config);
@@ -866,7 +908,8 @@ async function handleEaConfig(request, env, json, url) {
     config.sessionRisk = cfg.sessionRisk;
   // v18: PERFIS GLOBAIS — se o aluno está em um dos 3 padrões (não 'custom'),
   // usa os valores ATUAIS definidos pelo admin (mudou o padrão → muda para todos)
-  if (config.profile && RISK_PROFILE_NAMES.includes(String(config.profile))) {
+  // v21: SÓ para alunos (role=client) — a conta do admin NUNCA é sobrescrita por perfil
+  if (row.role === 'client' && config.profile && RISK_PROFILE_NAMES.includes(String(config.profile))) {
     const profs = await getRiskProfiles(env);
     const p = profs[String(config.profile)];
     if (p) {
@@ -915,13 +958,8 @@ async function handleEaTrades(request, env, json, url) {
   if (row.license_status && row.license_status !== 'active') return json({ error:'license_revoked', active:false }, 403);
 
   let body; try { body = await request.json(); } catch(e){
-    // v20: registra a tentativa rejeitada (para o diagnóstico nunca mais ficar cego)
-    try {
-      await env.DB.prepare(
-        `INSERT INTO ea_status (license_key, email, last_seen, last_error) VALUES (?,?,?,?)
-         ON CONFLICT(license_key) DO UPDATE SET last_seen=excluded.last_seen, last_error=excluded.last_error`
-      ).bind(license, row.email, new Date().toISOString(), 'invalid_json').run();
-    } catch(e2) {}
+    // v20/v21: registra a tentativa rejeitada (diagnóstico nunca mais fica cego)
+    await recordEaError(env, license, row.email, getEaAccount(request, url, null), 'invalid_json');
     return json({ error:'invalid_json' }, 400);
   }
   const account = getEaAccount(request, url, body);
@@ -929,7 +967,10 @@ async function handleEaTrades(request, env, json, url) {
 
   // trava: 1 licença = 1 conta (rejeita se outra conta usar a mesma licença)
   const acc = await bindOrCheckAccount(env, row, account);
-  if (acc.mismatch) return json({ error:'account_mismatch', active:false, message:'Licença já vinculada a outra conta MT5' }, 403);
+  if (acc.mismatch) {
+    await recordEaError(env, license, row.email, account, 'account_mismatch');
+    return json({ error:'account_mismatch', active:false, message:'Licença já vinculada a outra conta MT5' }, 403);
+  }
 
   // heartbeat: saldo, equity e última vez online (sucesso limpa o last_error)
   await env.DB.prepare(
@@ -938,6 +979,15 @@ async function handleEaTrades(request, env, json, url) {
      ON CONFLICT(license_key) DO UPDATE SET account=excluded.account, balance=excluded.balance,
        equity=excluded.equity, open_positions=excluded.open_positions, ea_version=excluded.ea_version, last_seen=excluded.last_seen, last_error=NULL`
   ).bind(license, row.email, account, num(body.balance), num(body.equity), intOrNull(body.open_positions), body.ea_version??null, now).run();
+  // v21: heartbeat POR CONTA — dois robôs na mesma licença não se sobrescrevem
+  if (account != null && String(account).trim() !== '') {
+    await env.DB.prepare(
+      `INSERT INTO ea_status_acc (license_key, account, email, balance, equity, open_positions, ea_version, last_seen, last_error)
+       VALUES (?,?,?,?,?,?,?,?,NULL)
+       ON CONFLICT(license_key, account) DO UPDATE SET email=excluded.email, balance=excluded.balance,
+         equity=excluded.equity, open_positions=excluded.open_positions, ea_version=excluded.ea_version, last_seen=excluded.last_seen, last_error=NULL`
+    ).bind(license, String(account), row.email, num(body.balance), num(body.equity), intOrNull(body.open_positions), body.ea_version??null, now).run();
+  }
 
   // grava os trades fechados (duplicados são ignorados pelo par licença+ticket)
   let received = 0;
@@ -968,15 +1018,23 @@ async function handleMyData(request, env, json) {
   const u = await env.DB.prepare('SELECT results_source FROM users WHERE email = ?')
     .bind(email).first();
   const target = (u && u.results_source) ? u.results_source : email;
-  const status = await env.DB.prepare(
+  // v21: status POR CONTA (todas as contas do alvo), mais recente primeiro
+  let statuses = [];
+  try {
+    const st = await env.DB.prepare(
+      'SELECT account, balance, equity, open_positions, ea_version, last_seen, last_error FROM ea_status_acc WHERE email = ? ORDER BY last_seen DESC'
+    ).bind(target).all();
+    statuses = st.results || [];
+  } catch (e) { statuses = []; }
+  const status = statuses.length ? statuses[0] : await env.DB.prepare(
     'SELECT account, balance, equity, open_positions, ea_version, last_seen FROM ea_status WHERE email = ?'
   ).bind(target).first();
   const tr = await env.DB.prepare(
     `SELECT ticket, symbol, type, lots, open_time, close_time, open_price, close_price,
-            profit, commission, swap, created_at
+            profit, commission, swap, created_at, account
      FROM trades WHERE email = ? ORDER BY id ASC LIMIT 1000`
   ).bind(target).all();
-  return json({ status: status || null, trades: tr.results || [], shared: !!(u && u.results_source) });
+  return json({ status: status || null, statuses, trades: tr.results || [], shared: !!(u && u.results_source) });
 }
 
 /* O ALUNO informa/confirma o número da conta MT5 pelo painel (sessão autenticada).
