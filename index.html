@@ -1739,24 +1739,29 @@ async function refreshMe(){
     if(VIEW_MODE==='client') fetchMyData();
   }catch(e){}
 }
-// banner de status do robô (online/saldo) no topo do dashboard
+// banner de status do robô (online/saldo) no topo do dashboard — UMA LINHA POR CONTA
 function eaStatusBanner(){
-  const st=DATA.client&&DATA.client._eaStatus;
-  if(!st) return '';
-  let online=false, seenTxt='—';
-  const seen=parseEaDate(st.last_seen);
-  if(seen){ online=(Date.now()-seen.getTime())<10*60000; seenTxt=fmtDT(seen).slice(5,16); }
+  const all=(DATA.client&&DATA.client._eaStatusAll&&DATA.client._eaStatusAll.length)?DATA.client._eaStatusAll:(DATA.client&&DATA.client._eaStatus?[DATA.client._eaStatus]:[]);
+  if(!all.length) return '';
   const money=v=>v!=null?('$'+(+v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
-  const dot=online?'#22c55e':'#787F91';
-  const label=online?(LANG==='pt'?'Robô online':LANG==='en'?'Robot online':'Robot en línea'):(LANG==='pt'?'Robô offline':LANG==='en'?'Robot offline':'Robot desconectado');
-  return `<div class="card rv" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px">
-    <div style="display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:${dot};box-shadow:0 0 8px ${dot}"></span><b style="font-size:.9rem">${label}</b></div>
-    <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${st.account||'—'}</b></div>
-    <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: <b style="color:var(--t1)">${money(st.balance)}</b></div>
-    <div style="font-size:.8rem;color:var(--t3)">Equity: <b style="color:var(--t1)">${money(st.equity)}</b></div>
-    <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Posições abertas':LANG==='en'?'Open positions':'Posiciones abiertas'}: <b style="color:${st.open_positions>0?'var(--blue-l)':'var(--t1)'}">${st.open_positions!=null?st.open_positions:'—'}</b></div>
-    <div style="font-size:.74rem;color:var(--t3);margin-left:auto">${LANG==='pt'?'Visto':LANG==='en'?'Seen':'Visto'}: ${seenTxt}</div>
-  </div>`;
+  const rows=all.map(function(st){
+    let online=false, seenTxt='—';
+    const seen=parseEaDate(st.last_seen);
+    if(seen){ online=(Date.now()-seen.getTime())<10*60000; seenTxt=fmtDT(seen).slice(5,16); }
+    const dot=online?'#22c55e':'#787F91';
+    const label=online?(LANG==='pt'?'Robô online':LANG==='en'?'Robot online':'Robot en línea'):(LANG==='pt'?'Robô offline':LANG==='en'?'Robot offline':'Robot desconectado');
+    const err=st.last_error?`<span style="font-size:.72rem;color:var(--red-l)">⚠ ${st.last_error}</span>`:'';
+    return `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:${dot};box-shadow:0 0 8px ${dot}"></span><b style="font-size:.9rem">${label}</b></div>
+      <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${st.account||'—'}</b></div>
+      <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: <b style="color:var(--t1)">${money(st.balance)}</b></div>
+      <div style="font-size:.8rem;color:var(--t3)">Equity: <b style="color:var(--t1)">${money(st.equity)}</b></div>
+      <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Posições abertas':LANG==='en'?'Open positions':'Posiciones abiertas'}: <b style="color:${st.open_positions>0?'var(--blue-l)':'var(--t1)'}">${st.open_positions!=null?st.open_positions:'—'}</b></div>
+      ${err}
+      <div style="font-size:.74rem;color:var(--t3);margin-left:auto">${LANG==='pt'?'Visto':LANG==='en'?'Seen':'Visto'}: ${seenTxt}</div>
+    </div>`;
+  }).join('<div style="height:1px;background:var(--bord);margin:11px 0"></div>');
+  return `<div class="card rv" style="margin-bottom:14px">${rows}</div>`;
 }
 // converte data do robô (MT5 "2026.06.30 14:00:00" ou ISO) para Date
 function parseEaDate(s){
@@ -1799,10 +1804,14 @@ async function fetchMyData(){
     const r=await fetch(API+'/api/my-data',{headers:{'Authorization':'Bearer '+SESSION.token}});
     if(!r.ok) return;
     const d=await r.json();
-    const status=d.status||null;
-    const mapped=mapRealTrades(d.trades, status&&status.balance!=null?+status.balance:null);
+    // v21: status POR CONTA (robôs em contas diferentes não se sobrescrevem)
+    const statuses=(Array.isArray(d.statuses)&&d.statuses.length)?d.statuses:(d.status?[d.status]:[]);
+    let totalBal=0,hasBal=false;
+    statuses.forEach(function(s){ if(s&&s.balance!=null&&isFinite(+s.balance)){ totalBal+=+s.balance; hasBal=true; } });
+    const mapped=mapRealTrades(d.trades, hasBal?totalBal:null);
     ALL_TRADES=mapped; STATS=deriveStats(mapped);
-    DATA.client._eaStatus=status;
+    DATA.client._eaStatus=statuses[0]||null;
+    DATA.client._eaStatusAll=statuses;
     if(['dashboard','results','history'].includes(CURRENT_PAGE)) renderPage(CURRENT_PAGE);
   }catch(e){}
 }
