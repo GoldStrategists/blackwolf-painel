@@ -795,6 +795,7 @@ async function handleAdminClients(request, env, json) {
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
       accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
+      mt5_accounts: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch(e){ return []; } })(),
       account_limit: (r.account_limit != null ? r.account_limit : null),
       last_seen: r.last_seen || null,
       accounts_reporting: r.acc_online || 0,

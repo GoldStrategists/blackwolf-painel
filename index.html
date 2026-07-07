@@ -1921,6 +1921,8 @@ function mapBackendClient(u){
   return {
     name: esc(u.name || u.email), email: esc(u.email), plan: esc(u.plan || '—'), status: status,
     isAdmin: !!u.is_admin, online: online, accReporting: (u.accounts_reporting||0),
+    mt5Accounts: Array.isArray(u.mt5_accounts)?u.mt5_accounts.map(String):[],
+    rawEmail: String(u.email||''),
     accUsed: usedRaw, accLimit: (u.account_limit===-1?'∞':(u.account_limit!=null?u.account_limit:planAccLimit(u.plan))), pay: (status==='revoked'?'overdue':'paid'),
     seen: seenD?fmtDT(seenD).slice(5,16):'—', joined: (u.created_at||'').slice(0,10),
     net: 0, key: esc(u.license_key || '—'), expires: u.license_expires_at || null,
@@ -3758,17 +3760,71 @@ function renderAdminLicenses(){
 }
 
 /* ─────── ADMIN: ACCOUNTS ─────── */
+// v24: gerência REAL de contas MT5 da licença (desamarra revenda/erro).
+// op: 'remove' (tira 1 conta) | 'clear' (tira todas) | 'set' (deixa só 1).
+async function adminMt5Action(email, op, account){
+  const doIt=async function(){
+    if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) ação simulada':'(demo) simulated','info'); return; }
+    try{
+      const body={email:email, op:op}; if(account) body.account=account;
+      const r=await apiFetch('/api/admin/mt5-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(r.ok){
+        const d=await r.json();
+        const c=DATA.admin.clients.find(function(x){return x.rawEmail===email;});
+        if(c){ c.mt5Accounts=Array.isArray(d.mt5_accounts)?d.mt5_accounts.map(String):[]; c.accUsed=c.mt5Accounts.length; }
+        renderPage('admin-accounts');
+        toast(LANG==='pt'?'Contas atualizadas':LANG==='en'?'Accounts updated':'Cuentas actualizadas','success');
+      } else { toast(LANG==='pt'?'Falha no servidor':LANG==='en'?'Server failed':'Fallo del servidor','error'); }
+    }catch(e){ if(String(e&&e.message)!=='session_expired') toast(LANG==='pt'?'Sem conexão':LANG==='en'?'No connection':'Sin conexión','error'); }
+  };
+  const msg = op==='clear'
+    ? (LANG==='pt'?'Desamarrar TODAS as contas MT5 desta licença? O robô só voltará a operar quando reconectar uma conta.':LANG==='en'?'Unbind ALL MT5 accounts from this license?':'¿Desvincular TODAS las cuentas de esta licencia?')
+    : (LANG==='pt'?('Desamarrar a conta <b>'+esc(account)+'</b>? A licença fica livre para outra conta reconectar.'):LANG==='en'?('Unbind account <b>'+esc(account)+'</b>?'):('¿Desvincular la cuenta <b>'+esc(account)+'</b>?'));
+  showModal(LANG==='pt'?'Gerenciar contas MT5':LANG==='en'?'Manage MT5 accounts':'Gestionar cuentas MT5', msg, doIt, 'danger');
+}
+function adminSetMt5(email){
+  const inp=document.getElementById('setmt5-'+email);
+  const v=inp?String(inp.value||'').trim():'';
+  if(!v){ toast(LANG==='pt'?'Digite o número da conta':LANG==='en'?'Enter the account number':'Escribe el número','error'); return; }
+  adminMt5Action(email,'set',v);
+}
 function renderAdminAccounts(){
-  const accs=[];
-  DATA.admin.clients.forEach(c=>{ for(let i=0;i<c.accUsed;i++){ accs.push({client:c.name,login:(8000000+Math.floor(Math.random()*999999)),broker:c.broker,status:c.status}); } });
+  const demo=!!(SESSION&&SESSION.isDemo);
+  // no demo, sintetiza contas estáveis (não aleatórias) só para ilustrar a tela
+  const clients=(DATA.admin.clients||[]).map(function(c,i){
+    let list=c.mt5Accounts||[];
+    if(demo && !list.length && c.accUsed){ list=[]; for(let k=0;k<c.accUsed;k++) list.push(String(80722+i*10+k)); }
+    return {c:c,list:list};
+  });
+  const totalAcc=clients.reduce(function(s,x){return s+x.list.length;},0);
+  const cards=clients.filter(function(x){return x.c.license_key||x.list.length||x.c.key;}).map(function(x){
+    const c=x.c, list=x.list;
+    const lim=(c.accLimit==='∞')?'∞':c.accLimit;
+    const chips=list.length? list.map(function(a){
+      return `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--s3);border:1px solid var(--bord2);border-radius:9px;padding:6px 8px 6px 12px;font-family:var(--fm);font-size:.82rem;color:var(--t1)">${esc(a)}<button title="${LANG==='pt'?'Desamarrar':'Unbind'}" onclick="adminMt5Action('${esc(c.rawEmail)}','remove','${esc(a)}')" style="width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,59,71,.3);background:transparent;color:var(--red-l);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;line-height:1">✕</button></span>`;
+    }).join('') : `<span style="font-size:.82rem;color:var(--t3)">${LANG==='pt'?'Nenhuma conta amarrada':LANG==='en'?'No accounts bound':'Sin cuentas'}</span>`;
+    return `<div class="client-card rv" style="padding:16px 18px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="cc-avatar">${esc((c.name||'?').slice(0,2).toUpperCase())}</div>
+        <div style="flex:1;min-width:160px"><div style="font-family:var(--fh);font-weight:700;font-size:.92rem">${c.name}${c.isAdmin?' <span class="pill current" style="font-size:.55rem">ADMIN</span>':''}</div><div style="font-size:.72rem;color:var(--t3)">${c.email} · ${c.plan}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">${statusPill(c.status)}<span style="font-family:var(--fm);font-size:.72rem;color:var(--t3)">${list.length}/${lim} ${LANG==='pt'?'contas':'accts'}</span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${chips}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--bord);padding-top:12px">
+        <input id="setmt5-${esc(c.rawEmail)}" placeholder="${LANG==='pt'?'nº da conta':LANG==='en'?'account #':'nº cuenta'}" inputmode="numeric" style="background:var(--bg);border:1px solid var(--bord);border-radius:9px;padding:8px 11px;color:var(--t1);font-family:var(--fm);font-size:.82rem;width:130px">
+        <button class="mini-btn" onclick="adminSetMt5('${esc(c.rawEmail)}')">${LANG==='pt'?'Definir só esta':LANG==='en'?'Set only this':'Solo esta'}</button>
+        ${list.length?`<button class="revoke-btn" onclick="adminMt5Action('${esc(c.rawEmail)}','clear')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>${LANG==='pt'?'Limpar todas':LANG==='en'?'Clear all':'Limpiar todas'}</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
   return pageHead(
     LANG==='pt'?'INFRAESTRUTURA':LANG==='en'?'INFRASTRUCTURE':'INFRAESTRUCTURA',
     LANG==='pt'?'Contas MT5':LANG==='en'?'MT5 Accounts':'Cuentas MT5',
-    LANG==='pt'?'Todas as contas MetaTrader vinculadas às licenças.':LANG==='en'?'All MetaTrader accounts linked to licenses.':'Todas las cuentas vinculadas.',
+    LANG==='pt'?'Contas MetaTrader vinculadas a cada licença. Desamarre uma conta para liberar a vaga (revenda/erro).':LANG==='en'?'MetaTrader accounts bound to each license. Unbind to free a slot.':'Cuentas vinculadas a cada licencia.',
     refreshBtn()
-  )+`<div class="card rv" style="padding-top:14px"><div class="tbl-wrap"><table class="tbl" style="min-width:640px"><thead><tr><th>Login</th><th>${LANG==='pt'?'Cliente':LANG==='en'?'Client':'Cliente'}</th><th>${LANG==='pt'?'Corretora':LANG==='en'?'Broker':'Bróker'}</th><th>Status</th></tr></thead><tbody>
-  ${accs.length? accs.map(a=>`<tr><td class="mono tbl-name">${a.login}</td><td>${a.client}</td><td>${a.broker}</td><td>${statusPill(a.status)}</td></tr>`).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Nenhuma conta MT5 vinculada ainda':LANG==='en'?'No MT5 accounts linked yet':'Aún no hay cuentas MT5'}</td></tr>`}
-  </tbody></table></div></div>`;
+  )+`
+  <div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">${LANG==='pt'?'Ao <b>desamarrar</b> uma conta, a vaga fica livre e a próxima conta que o robô conectar assume o lugar. Use quando um aluno trocou de conta ou em caso de revenda.':LANG==='en'?'Unbinding frees the slot; the next account the robot connects takes it.':'Al desvincular, el cupo queda libre.'}</div></div>
+  <div class="client-cards">${cards || `<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Nenhuma conta MT5 vinculada ainda':LANG==='en'?'No MT5 accounts linked yet':'Aún no hay cuentas'}</div></div></div>`}</div>`;
 }
 
 /* ─────── ADMIN: EA FILES ─────── */
