@@ -3,7 +3,41 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v21
+## Versão atual: v23
+
+### O que a v23 adiciona (ROBUSTEZ DE PRODUÇÃO — deploy obrigatório)
+
+Tabelas novas JÁ criadas no D1 (license_accounts, balance_history,
+license_events + índices) e coluna users.ea_config_version. É só colar e
+publicar o worker.
+
+1. **Vínculo de conta ATÔMICO** (tabela license_accounts): sem corrida
+   entre robôs simultâneos; o SQLite arbitra o limite (fim do estouro/perda
+   de vínculo).
+2. **POST /api/ea/trades atômico** (env.DB.batch): heartbeat + trades +
+   histórico de saldo num commit tudo-ou-nada. COALESCE preserva o último
+   saldo bom em heartbeat parcial. ACK com lista de tickets persistidos
+   (retry seguro). Teto de 500 trades/POST.
+3. **Dedupe por (licença, CONTA, ticket)**: contas diferentes com o mesmo
+   número de ticket não se atropelam mais.
+4. **EXPIRAÇÃO de licença** verificada nas 3 rotas do robô (antes nunca
+   parava). Helper licenseState() unifica status+expiração; webhook grava
+   expiração em ISO.
+5. **GET /api/reports?period=week|month&from=&to=&account=**: relatório
+   agregado no servidor — resultado = SOMA de trades (nunca diferença de
+   saldo). Base: balance_history + índices.
+6. **POST /api/admin/license** {email,action}: revoga/reativa DE VERDADE
+   (com trilha em license_events).
+7. **POST /api/admin/mt5-account** {email,account,op}: admin gerencia as
+   contas da licença (desamarrar revenda/erro).
+8. **Config versionada** (ea_config_version): UPDATE condicional → 409 em
+   salvamento concorrente (last-write não vence em silêncio).
+9. **Rate limiting** por IP/e-mail (login, forgot-password) via KV.
+10. **config_version (ETag)** em /api/ea/config: robô manda ?since=<v> e
+    recebe {changed:false} quando nada mudou.
+11. Logs estruturados (console.log JSON) para diagnóstico sem abrir o banco.
+12. /api/health → v23; /api/version novo.
+
 
 ### O que a v21 adiciona (CONFIABILIDADE — deploy obrigatório)
 
