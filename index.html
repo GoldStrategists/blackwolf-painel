@@ -1289,6 +1289,20 @@ async function apiFetch(path, opts){
   updateConnBanner();
   return r;
 }
+// P0-G: zera TODO o estado por-usuário. Chamado no logout E no 401 (antes o 401
+// não limpava nada e o logout esquecia REP_DATA/CFG/EQUITY_OVERRIDE → em PC
+// compartilhado o próximo usuário via o relatório/config do anterior).
+function resetUserState(){
+  try{
+    VIEW_MODE='client'; CURRENT_PAGE='dashboard';
+    RESULT_PERIOD='all'; HIST_FILTER={search:'',dir:'all',strat:'all',result:'all'};
+    CFG_PICKED=false; CFG_ACCOUNT='_default'; CFG_STRUCT={default:{},accounts:{}}; CFG_PRESET='mod'; CFG={};
+    CLIENT_OPEN=new Set(); _clientTradesCache={}; _clientStatsCache={}; CLIENT_RES_MONTH={};
+    DASH_ACCOUNT=null; EQUITY_OVERRIDE=null;
+    REP_DATA=null; REP_ACCOUNT=null; REP_PERIOD='month'; REP_LOADING=false;
+    ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
+  }catch(e){}
+}
 function handleSessionExpired(){
   if(SESSION_DEAD) return; SESSION_DEAD=true;
   try{ localStorage.removeItem('bw_session'); }catch(e){}
@@ -1296,6 +1310,7 @@ function handleSessionExpired(){
   try{ toast(msg,'error'); }catch(e){}
   setTimeout(function(){
     SESSION=null;
+    resetUserState(); // P0-G: não deixa dados do usuário anterior na memória
     const app=document.getElementById('app'); if(app)app.classList.remove('active');
     const lw=document.getElementById('loginWrap'); if(lw)lw.classList.remove('hidden');
     SESSION_DEAD=false;
@@ -1435,7 +1450,7 @@ function enterApp(){
   // Welcome toast
   setTimeout(()=>{
     const hi = LANG==='pt'?'Bem-vindo de volta':LANG==='en'?'Welcome back':'Bienvenido de nuevo';
-    toast(hi+', '+getDisplayName().split(' ')[0]+'! 👋','success');
+    toast(hi+', '+esc(String(getDisplayName()||'').split(' ')[0])+'! 👋','success');
   },600);
   // Show onboarding survey for first-time client logins
   if(SESSION.role==='client'){
@@ -1618,7 +1633,7 @@ function deriveStats(trades, baseBalance){
   return {
     netResult:+gross.toFixed(2), trades:n, wins:wins.length, losses:losses.length,
     winrate: n?+(wins.length/n*100).toFixed(2):0,
-    profitFactor: grossLoss?+(grossWin/grossLoss).toFixed(2):0,
+    profitFactor: grossLoss?+(grossWin/grossLoss).toFixed(2):(grossWin>0?Infinity:0), // ∞ quando só há ganhos (antes mostrava 0,00 = pior valor possível)
     avgWin: wins.length?+(grossWin/wins.length).toFixed(2):0,
     avgLoss: losses.length?+(-grossLoss/losses.length).toFixed(2):0,
     bestTrade: n?+Math.max(...trades.map(t=>t.pnl)).toFixed(2):0,
@@ -1846,6 +1861,7 @@ function mapRealTrades(raw, endBalance){
     const exit=t.close_price!=null?+t.close_price:entry;
     return {
       id:t.ticket||0,
+      account:(t.account!=null&&String(t.account).trim()!=='')?String(t.account):null, // P0-F: sem isto as abas por conta ficavam zeradas
       openT:open?fmtDT(open):'', closeT:close?fmtDT(close):'',
       day:close?fmtD(close):'', symbol:t.symbol||'XAUUSD',
       dir:(String(t.type||'').toLowerCase()==='sell')?'sell':'buy',
@@ -1960,6 +1976,9 @@ function profileClass(p){ return p==='aggr'?'aggr':p==='mod'?'mod':'cons'; }
 
 /* ═══════════════ PAGE ROUTER ═══════════════ */
 function renderPage(page){
+  // robustez: nunca renderiza página do app sem sessão (evita crash pós-logout/401,
+  // ex.: um tick de polling que dispara renderDashboard com SESSION já nulo)
+  if(!SESSION){ return; }
   CURRENT_PAGE=page;
   const m=document.getElementById('mainContent');
   const map={
@@ -2015,7 +2034,7 @@ function dashSummaryRow(D){
   const money=function(v){ return v==null?'—':(v<0?'−':'')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   const signed=function(v){ return (v<0?'−':'+')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   const cls=function(v){ return v<0?'neg':'pos'; };
-  const scopeLbl=D.acc?(LANG==='pt'?'Conta '+D.acc:'Account '+D.acc):(LANG==='pt'?'Todas as contas':LANG==='en'?'All accounts':'Todas las cuentas');
+  const scopeLbl=D.acc?((LANG==='pt'?'Conta ':LANG==='en'?'Account ':'Cuenta ')+D.acc):(LANG==='pt'?'Todas as contas':LANG==='en'?'All accounts':'Todas las cuentas');
   return `<div class="kpi-grid rv" style="margin-bottom:14px">
     <div class="kpi"><div class="kpi-ico blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kpi-label">${LANG==='pt'?'Resultado do dia':LANG==='en'?"Today's result":'Resultado del día'}</div><div class="kpi-val ${cls(D.dayPnL)}">${signed(D.dayPnL)}</div><div class="kpi-sub">${scopeLbl}</div></div>
     <div class="kpi"><div class="kpi-ico purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="kpi-label">${LANG==='pt'?'Resultado do mês':LANG==='en'?'Month result':'Resultado del mes'}</div><div class="kpi-val ${cls(D.monthPnL)}">${signed(D.monthPnL)}</div><div class="kpi-sub">${scopeLbl}</div></div>
@@ -2046,7 +2065,7 @@ function renderDashboard(){
   const net=c.clients?0:s.netResult;
   return pageHead(
     LANG==='pt'?'PAINEL DO CLIENTE':LANG==='en'?'CLIENT PANEL':'PANEL DEL CLIENTE',
-    (LANG==='pt'?'Olá, ':LANG==='en'?'Hello, ':'Hola, ')+SESSION.name.split(' ')[0]+' 👋',
+    (LANG==='pt'?'Olá, ':LANG==='en'?'Hello, ':'Hola, ')+esc(String(SESSION.name||'').split(' ')[0])+' 👋',
     LANG==='pt'?'Aqui está o resumo do seu robô Black Wolf hoje.':LANG==='en'?'Here is your Black Wolf robot summary today.':'Aquí está el resumen de tu robot Black Wolf hoy.',
     refreshBtn()
   )+`
@@ -2061,7 +2080,7 @@ function renderDashboard(){
   <div class="hero-card rv">
     <div class="hero-glow"></div>
     <div class="hero-top">
-      <div class="hero-label">${(DASH_ACCOUNT?(LANG==='pt'?'RESULTADO — CONTA '+DASH_ACCOUNT:'RESULT — ACCOUNT '+DASH_ACCOUNT):(LANG==='pt'?'RESULTADO ACUMULADO — GERAL':LANG==='en'?'CUMULATIVE RESULT — OVERALL':'RESULTADO ACUMULADO — GENERAL'))}</div>
+      <div class="hero-label">${(DASH_ACCOUNT?((LANG==='pt'?'RESULTADO — CONTA ':LANG==='en'?'RESULT — ACCOUNT ':'RESULTADO — CUENTA ')+DASH_ACCOUNT):(LANG==='pt'?'RESULTADO ACUMULADO — GERAL':LANG==='en'?'CUMULATIVE RESULT — OVERALL':'RESULTADO ACUMULADO — GENERAL'))}</div>
       ${(function(){
         // v23: badge derivado do status REAL do robô (antes era verde fixo,
         // mentindo "ativo" mesmo com o robô parado há horas)
@@ -2077,7 +2096,7 @@ function renderDashboard(){
     <div class="hero-num ${net<0?'neg':'pos'}" data-money="${net}" data-dec="2">US$ 0,00</div>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="hero-meta-v up" data-count="${s.winrate}" data-suffix="%" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto'}</span></div>
-      <div class="hero-meta-item"><span class="hero-meta-v bl" data-count="${s.profitFactor}" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro'}</span></div>
+      <div class="hero-meta-item">${isFinite(s.profitFactor)?`<span class="hero-meta-v bl" data-count="${s.profitFactor}" data-dec="2">0</span>`:`<span class="hero-meta-v bl">∞</span>`}<span class="hero-meta-l">${LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro'}</span></div>
       <div class="hero-meta-item"><span class="hero-meta-v" data-count="${s.trades}">0</span><span class="hero-meta-l">${LANG==='pt'?'Operações':LANG==='en'?'Trades':'Operaciones'}</span></div>
       <div class="hero-meta-item"><span class="hero-meta-v dn" data-count="${s.maxDrawdown}" data-suffix="%" data-dec="1">0</span><span class="hero-meta-l">${LANG==='pt'?'Drawdown máx':LANG==='en'?'Max drawdown':'Drawdown máx'}</span></div>
     </div>
@@ -2180,7 +2199,7 @@ function renderResults(){
   )+`
   <div class="kpi-grid">
     ${kpiCard(s.netResult<0?'red':'green','M',LANG==='pt'?'Resultado líquido':LANG==='en'?'Net result':'Resultado neto',s.netResult,s.netResult<0?'money neg':'money pos','',2)}
-    ${kpiCard('blue','P',LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro',s.profitFactor,'','',2)}
+    ${kpiCard('blue','P',LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro',isFinite(s.profitFactor)?s.profitFactor:0,'','',2,isFinite(s.profitFactor)?undefined:'∞')}
     ${kpiCard('cyan','T',LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto',s.winrate,'','%',2)}
     ${kpiCard('amber','D',LANG==='pt'?'Total trades':LANG==='en'?'Total trades':'Total trades',s.trades,'','',0)}
   </div>
@@ -2364,7 +2383,7 @@ function buildHistTable(){
       html+=`<tr onclick="toggleTradeRow('${tr.id}')" style="cursor:pointer">
         <td class="mono">#${tr.id}</td>
         <td class="mono" style="font-size:.76rem">${tr.openT.slice(11,16)}</td>
-        <td class="tbl-name">${tr.symbol}</td>
+        <td class="tbl-name">${esc(tr.symbol)}</td>
         <td><span class="pill ${tr.dir}">${tr.dir.toUpperCase()}</span></td>
         <td class="mono">${tr.lots.toFixed(2)}</td>
         <td class="${tr.pips>=0?'pos':'neg'}">${tr.pips>=0?'+':''}${tr.pips}</td>
@@ -2380,7 +2399,7 @@ function buildHistTable(){
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission.toFixed(2)}</div></div>
         <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap.toFixed(2)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.dur} min</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Estratégia':LANG==='en'?'Strategy':'Estrategia'}</div><div class="v" style="font-size:.72rem">${tr.strat}</div></div>
+        <div class="expand-cell"><div class="l">${LANG==='pt'?'Estratégia':LANG==='en'?'Strategy':'Estrategia'}</div><div class="v" style="font-size:.72rem">${esc(tr.strat)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saldo após':LANG==='en'?'Balance after':'Saldo después'}</div><div class="v">${fmtMoneyPlain(tr.balance)}</div></div>
       </div></div></td></tr>`;
     });
@@ -2548,7 +2567,7 @@ function renderReports(){
     ${kpiCard('blue','B',LANG==='pt'?'Saldo início':LANG==='en'?'Start balance':'Saldo inicio',null,'','',0,money(S.startBalance))}
     ${kpiCard('cyan','B',LANG==='pt'?'Saldo fim':LANG==='en'?'End balance':'Saldo fin',null,'','',0,money(S.endBalance))}
   </div>
-  ${S.deposits?`<div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><div class="banner-tx">${LANG==='pt'?'Depósitos/saques detectados no período':LANG==='en'?'Deposits/withdrawals detected in the period':'Depósitos/retiros detectados'}: <b>${signed(S.deposits)}</b> ${LANG==='pt'?'(não contam como resultado).':'(not counted as result).'}</div></div>`:''}
+  ${S.deposits?`<div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><div class="banner-tx">${LANG==='pt'?'Depósitos/saques detectados no período':LANG==='en'?'Deposits/withdrawals detected in the period':'Depósitos/retiros detectados'}: <b>${signed(S.deposits)}</b> ${LANG==='pt'?'(não contam como resultado).':LANG==='en'?'(not counted as result).':'(no cuentan como resultado).'}</div></div>`:''}
   <div class="card grad rv">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>${LANG==='pt'?'Evolução (soma de trades por dia)':LANG==='en'?'Evolution (trade sum per day)':'Evolución'}</div></div>
     ${empty?`<div class="empty" style="padding:32px 20px"><div class="empty-t">${LANG==='pt'?'0 trades no período':LANG==='en'?'0 trades in the period':'0 trades en el período'}</div><div class="empty-d">${LANG==='pt'?'Assim que o robô operar neste período, o resultado aparece aqui.':LANG==='en'?'Once the robot trades in this period, the result shows here.':'Cuando el robot opere, aparecerá aquí.'}</div></div>`:`<div class="chart-box"><canvas id="reportChart" data-h="220" height="220" style="height:220px"></canvas></div>`}
@@ -2798,18 +2817,17 @@ function renderStrategies(){
   <div class="card rv">${strats.map((s,i)=>`
     <div class="strat-item">
       <div class="strat-top">
-        <div class="strat-check ${s.on?'on':''}" onclick="toggleStrat(${i},this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="strat-check on" style="cursor:default" title="${LANG==='pt'?'Gerida automaticamente pelo robô':LANG==='en'?'Managed automatically by the robot':'Gestionada por el robot'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
         <div class="strat-body">
-          <div class="strat-name">${stratGenericName(i,total)}<span class="strat-tag">XAUUSD</span>${s.on?'<span class="pill active">'+(LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa')+'</span>':'<span class="pill available">'+(LANG==='pt'?'Pausada':LANG==='en'?'Paused':'Pausada')+'</span>'}</div>
+          <div class="strat-name">${stratGenericName(i,total)}<span class="strat-tag">XAUUSD</span><span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span></div>
           <div class="strat-desc">${stratGenericDesc()}</div>
           <div class="strat-info"><span class="strat-info-item">${LANG==='pt'?'Gestão':LANG==='en'?'Management':'Gestión'}: <b>${LANG==='pt'?'Automática (robô)':LANG==='en'?'Automatic (robot)':'Automática (robot)'}</b></span></div>
         </div>
       </div>
     </div>`).join('')}
-    <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn-primary" onclick="toast(t('saved'),'success')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${LANG==='pt'?'Salvar estratégias':LANG==='en'?'Save strategies':'Guardar estrategias'}</button></div>
+    <p style="font-size:.8rem;color:var(--t3);margin:10px 2px 0;text-align:center">${LANG==='pt'?'As estratégias são geridas automaticamente pelo robô e não podem ser ligadas/desligadas individualmente pelo painel. O controle de risco fica em Configurar Robô.':LANG==='en'?'Strategies are managed automatically by the robot and cannot be toggled individually from the panel. Risk control is in Configure Robot.':'Las estrategias las gestiona el robot y no se activan/desactivan individualmente desde el panel. El control de riesgo está en Configurar Robot.'}</p>
   </div>`;
 }
-function toggleStrat(i,el){ DATA.client.strategies[i].on=!DATA.client.strategies[i].on; el.classList.toggle('on'); }
 
 /* ─────── CLIENT: LICENSE & ACCOUNTS ─────── */
 function renderLicense(){
@@ -3611,7 +3629,7 @@ function buildClientResultsInner(idx){
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
       <div class="kpi" style="padding:14px"><div class="kpi-label">${LANG==='pt'?'Resultado':'Result'}</div><div class="kpi-val ${cs.netResult>=0?'pos':'neg'}" style="font-size:1.1rem">${fmtMoney(cs.netResult)}</div></div>
       <div class="kpi" style="padding:14px"><div class="kpi-label">Win rate</div><div class="kpi-val" style="font-size:1.1rem">${cs.winrate}%</div></div>
-      <div class="kpi" style="padding:14px"><div class="kpi-label">${LANG==='pt'?'Fator de lucro':'Profit factor'}</div><div class="kpi-val" style="font-size:1.1rem">${cs.profitFactor}</div></div>
+      <div class="kpi" style="padding:14px"><div class="kpi-label">${LANG==='pt'?'Fator de lucro':'Profit factor'}</div><div class="kpi-val" style="font-size:1.1rem">${isFinite(cs.profitFactor)?cs.profitFactor:'∞'}</div></div>
       <div class="kpi" style="padding:14px"><div class="kpi-label">Trades</div><div class="kpi-val" style="font-size:1.1rem">${cs.trades}</div></div>
     </div>
     <div class="chart-box" style="margin-top:8px">
@@ -4920,15 +4938,7 @@ document.getElementById('switchViewBtn').addEventListener('click',()=>{
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   localStorage.removeItem('bw_session');
   SESSION=null;
-  // reseta TODO o estado por-usuário para não vazar dados de uma conta na próxima
-  try{
-    VIEW_MODE='client'; CURRENT_PAGE='dashboard';
-    RESULT_PERIOD='all'; HIST_FILTER={search:'',dir:'all',strat:'all',result:'all'};
-    CFG_PICKED=false; CFG_ACCOUNT='_default'; CFG_STRUCT={default:{},accounts:{}}; CFG_PRESET='mod';
-    CLIENT_OPEN=new Set(); _clientTradesCache={}; _clientStatsCache={}; CLIENT_RES_MONTH={};
-    DASH_ACCOUNT=null;
-    ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
-  }catch(e){}
+  resetUserState(); // P0-G: reset completo por-usuário (inclui REP_DATA/CFG/EQUITY_OVERRIDE)
   document.getElementById('app').classList.remove('active');
   document.getElementById('loginWrap').classList.remove('hidden');
   document.getElementById('loginEmail').value='';
