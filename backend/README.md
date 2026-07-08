@@ -3,7 +3,24 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v26
+## Versão atual: v27
+
+### O que a v27 adiciona (auditoria profunda — segurança + dados de dinheiro)
+- **Não perde mais trade com licença vencida**: `POST /api/ea/trades` grava o
+  histórico mesmo com licença expirada/revogada e devolve `active:false` (antes
+  respondia 403 e os trades sumiam pra sempre).
+- **Dedup mais seguro**: nunca grava trade SEM conta (NULL furava o índice único
+  e duplicaria o lucro); backlog ordenado p/ o corte de 500 descartar os mais
+  novos. *(Pendente, precisa checar o índice no D1: trocar INSERT OR IGNORE por
+  ON CONFLICT DO UPDATE p/ curar swap/commissão que liquidam depois.)*
+- **Webhook do Stripe falha FECHADO** (segredo ausente = recusa, não aceita
+  cobrança forjada).
+- **Relatório soma no SQL** (SUM/COUNT/MAX/MIN) sem LIMIT — antes truncava em
+  5000 e mostrava total errado a menos.
+- **Senha inicial por CSPRNG** (>64 bits) no lugar de Math.random.
+- Erro 500 não vaza detalhe interno; forgot-password sem oráculo de timing;
+  limites de tamanho/enum em config/perfil/onboarding (anti-DoS).
+- Confira /api/health: deve responder `blackwolf-api-v27`.
 
 ### O que a v26 adiciona (liga/desliga de sessão POR CONTA — item 6 do Luiz)
 - O liga/desliga de cada sessão do robô agora pode ser definido **por conta**,
