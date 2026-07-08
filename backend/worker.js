@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v26 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v27 (Cloudflare Worker)
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
@@ -11,6 +11,22 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v27: AUDITORIA PROFUNDA — correções de segurança e de dados (money):
+ *         - P0-A: POST /api/ea/trades NÃO perde mais dados com licença vencida/
+ *           revogada — grava o histórico e devolve active:false (antes: 403 e
+ *           os trades sumiam para sempre). Ingestão de dados ≠ permissão de operar.
+ *         - P0-B (parte segura): nunca grava trade SEM conta (NULL furava o dedup
+ *           e duplicaria a cada reenvio → lucro dobrado); backlog ordenado p/ o
+ *           corte de 500 descartar os mais NOVOS. [ON CONFLICT DO UPDATE pendente
+ *           de verificar o índice único no D1.]
+ *         - P0-D: webhook do Stripe FALHA FECHADO (segredo ausente = recusa, não
+ *           aceita cobrança forjada).
+ *         - P0-E: /api/reports agrega no SQL (SUM/COUNT/MAX/MIN) SEM LIMIT — antes
+ *           truncava em 5000 e mostrava total ERRADO a menos.
+ *         - P0-H: senha inicial por CSPRNG (>64 bits) em vez de Math.random.
+ *         - Segurança: erro 500 não vaza err.message; forgot-password sem oráculo
+ *           de timing (envio via waitUntil); limites de tamanho/enum em config,
+ *           profile e onboarding (anti-DoS/inflar banco).
  *  + v26: LIGA/DESLIGA DE SESSÃO POR CONTA (decisão do Luiz — item 6).
  *         O padrão continua GLOBAL (admin), mas cada conta pode ter o seu
  *         próprio liga/desliga de sessão — contas de teste do sócio operam
@@ -74,7 +90,7 @@
 const PBKDF2_ITER = 100000;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const origin = request.headers.get('Origin') || '*';
@@ -96,7 +112,7 @@ export default {
       if (path === '/api/change-password' && request.method === 'POST')  return await handleChangePassword(request, env, json);
       if (path === '/api/profile' && request.method === 'POST')          return await handleProfile(request, env, json);
       if (path === '/api/onboarding' && request.method === 'POST')       return await handleOnboarding(request, env, json);
-      if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json);
+      if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
@@ -111,12 +127,14 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v26' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v26' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v27' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v27' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
-      return json({ error: 'server_error', detail: String(err && err.message || err) }, 500);
+      // v27: não vaza detalhe interno (schema/SQL) ao cliente; registra no log estruturado
+      try { logEvent({ evt: 'server_error', detail: String(err && err.message || err), stack: String(err && err.stack || '').slice(0, 500) }); } catch (e) {}
+      return json({ error: 'server_error' }, 500);
     }
   },
 };
@@ -148,13 +166,24 @@ function safeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
-// gera senha legível ex: Wolf#4829Azul
+// v27: inteiro aleatório [0,max) por CSPRNG, SEM viés de módulo (rejection sampling)
+function randInt(max) {
+  if (max <= 0) return 0;
+  const limit = Math.floor(0xffffffff / max) * max;
+  const buf = new Uint32Array(1);
+  let x;
+  do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return x % max;
+}
+// v27: senha legível E FORTE. Antes usava Math.random() (~900k combinações,
+// formato público) → conta de cliente novo era adivinhável. Agora tudo por
+// CSPRNG + sufixo de 48 bits → >64 bits de entropia, mantendo a parte legível.
 function generatePassword() {
   const words = ['Wolf','Gold','Pack','Lone','Alpha','Star','Moon','Dark','Blue','Fire'];
-  const w1 = words[Math.floor(Math.random()*words.length)];
-  const w2 = words[Math.floor(Math.random()*words.length)];
-  const num = String(Math.floor(Math.random()*9000)+1000);
-  return w1 + '#' + num + w2;
+  const w1 = words[randInt(words.length)];
+  const w2 = words[randInt(words.length)];
+  const num = String(1000 + randInt(9000));
+  return w1 + '#' + num + w2 + '-' + randomHex(6); // ex: Wolf#4829Gold-a7f3c9d21b4e
 }
 // gera uma chave de licença de alta entropia, ex: BW-7F3A-9C21-E40B-5D8A-1F2C
 // (a própria chave funciona como credencial/token do robô — por isso é aleatória e secreta)
@@ -426,11 +455,15 @@ async function handleStripeWebhook(request, env, json) {
   const body = await request.text();
   const sig = request.headers.get('stripe-signature') || '';
 
-  // Verifica assinatura do Stripe (segurança)
-  if (env.STRIPE_WEBHOOK_SECRET) {
-    const valid = await verifyStripeSignature(body, sig, env.STRIPE_WEBHOOK_SECRET);
-    if (!valid) return json({ error: 'invalid_signature' }, 400);
+  // v27: FALHA FECHADO. Se o segredo não estiver configurado, RECUSA o webhook
+  // em vez de aceitar sem verificar (antes: um segredo ausente aceitava qualquer
+  // POST forjado → criava/upgradava/revogava licença de graça).
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    try { logEvent({ evt: 'stripe_webhook_misconfigured' }); } catch (e) {}
+    return json({ error: 'webhook_not_configured' }, 500);
   }
+  const valid = await verifyStripeSignature(body, sig, env.STRIPE_WEBHOOK_SECRET);
+  if (!valid) return json({ error: 'invalid_signature' }, 400);
 
   let event;
   try { event = JSON.parse(body); } catch(e) { return json({ error: 'invalid_json' }, 400); }
@@ -715,13 +748,16 @@ async function handleChangePassword(request, env, json) {
   await env.DB.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE email = ?').bind(hash, salt, email).run();
   return json({ ok: true });
 }
+// v27: limita tamanho de campo de texto (evita gravar blob de MB → DoS/inflar banco)
+function capStr(v, max) { if (v == null) return null; const s = String(v); return s.length > max ? s.slice(0, max) : s; }
 async function handleProfile(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const b = await request.json();
+  const lang = ['pt','en','es'].includes(b.lang) ? b.lang : 'pt';
   await env.DB.prepare(
     `UPDATE users SET display_name=?,photo=?,phone=?,whatsapp=?,country=?,city=?,lang=? WHERE email=?`
-  ).bind(b.display_name??null,b.photo??null,b.phone??null,b.whatsapp??null,b.country??null,b.city??null,b.lang??'pt',email).run();
+  ).bind(capStr(b.display_name,80),capStr(b.photo,2048),capStr(b.phone,40),capStr(b.whatsapp,40),capStr(b.country,60),capStr(b.city,60),lang,email).run();
   const fresh = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
   const licP = await licenseViewFor(env, fresh);  // v22: sócio mantém a visão da licença do pool
   return json({ ok: true, user: publicUser(fresh, licP) });
@@ -737,15 +773,15 @@ async function handleOnboarding(request, env, json) {
      ON CONFLICT(email) DO UPDATE SET age=excluded.age,experience=excluded.experience,
        goal=excluded.goal,self_profile=excluded.self_profile,family=excluded.family,source=excluded.source,
        country=excluded.country,state=excluded.state,city=excluded.city,marketing_opt_in=excluded.marketing_opt_in`
-  ).bind(email,b.age??null,b.experience??null,b.goal??null,b.self_profile??null,b.family??null,b.source??null,b.country??null,b.state??null,b.city??null,b.marketing_opt_in??null,now).run();
+  ).bind(email,capStr(b.age,20),capStr(b.experience,60),capStr(b.goal,60),capStr(b.self_profile,60),capStr(b.family,60),capStr(b.source,60),capStr(b.country,60),capStr(b.state,60),capStr(b.city,60),(b.marketing_opt_in?1:0),now).run();
   // mantém o país/cidade do cadastro do usuário em sincronia com o questionário
   if (b.country || b.city) {
     await env.DB.prepare('UPDATE users SET country=COALESCE(?,country), city=COALESCE(?,city) WHERE email=?')
-      .bind(b.country??null, b.city??null, email).run();
+      .bind(capStr(b.country,60), capStr(b.city,60), email).run();
   }
   return json({ ok: true });
 }
-async function handleForgot(request, env, json) {
+async function handleForgot(request, env, json, ctx) {
   const { email } = await request.json();
   const e = String(email || '').trim().toLowerCase();
   const generic = { ok: true };
@@ -754,14 +790,19 @@ async function handleForgot(request, env, json) {
   // continua genérica, então não vaza se o rate limit bateu)
   if (await rateLimited(env, 'forgot:' + e, 1, 900)) return json(generic);
   const row = await env.DB.prepare('SELECT email, name FROM users WHERE email = ?').bind(e).first();
-  if (!row) return json(generic);
-  const token = randomHex(32);
-  await env.SESSIONS.put('reset:' + token, e, { expirationTtl: 60 * 60 });
-  const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
-  const link = `${panelUrl}/?reset=${token}`;
-  if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-    const html = resetEmailHtml(row.name, link);
-    await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({from:env.EMAIL_FROM,to:[e],subject:'Redefinir sua senha — Black Wolf',html})});
+  if (row) {
+    const token = randomHex(32);
+    await env.SESSIONS.put('reset:' + token, e, { expirationTtl: 60 * 60 });
+    const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+    const link = `${panelUrl}/?reset=${token}`;
+    if (env.RESEND_API_KEY && env.EMAIL_FROM) {
+      const html = resetEmailHtml(row.name, link);
+      // v27: NÃO aguarda o envio (era um oráculo de timing: e-mail existente
+      // demorava mais → dava pra enumerar clientes). waitUntil solta em segundo
+      // plano; a resposta volta no mesmo tempo, exista o e-mail ou não.
+      const send = fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({from:env.EMAIL_FROM,to:[e],subject:'Redefinir sua senha — Black Wolf',html})}).catch(()=>{});
+      if (ctx && ctx.waitUntil) ctx.waitUntil(send);
+    }
   }
   return json(generic);
 }
@@ -862,7 +903,13 @@ function sanitizeConfig(raw) {
         const v = Number(raw[k]);
         if (Number.isFinite(v)) out[k] = Math.min(rg[1], Math.max(rg[0], v));
       } else {
-        out[k] = raw[k]; // lotMode/leverage/timezone/newsPause/profile (não-numéricos)
+        // v27: campos não-numéricos — valida tipo/enum/tamanho (antes gravava
+        // qualquer coisa, inclusive um blob de MB → inflava o banco / DoS).
+        const val = raw[k];
+        if (k === 'newsPause') { out[k] = !!val; }
+        else if (k === 'lotMode') { if (['percent','fixed'].includes(val)) out[k] = val; }
+        else if (k === 'profile') { if (typeof val === 'string' && val.length <= 32) out[k] = val; }
+        else if (typeof val === 'string') { out[k] = val.slice(0, 64); } // leverage/timezone
       }
     }
     if (raw.sessionRisk && typeof raw.sessionRisk === 'object') {
@@ -1150,17 +1197,24 @@ async function handleEaTrades(request, env, json, url) {
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
   const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
+  // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
+  // trades é o CANAL DE DADOS, não a permissão de operar. Rejeitar perderia PARA
+  // SEMPRE os trades que o robô ainda está fechando (buraco no histórico + falso
+  // depósito no relatório). Gravamos o histórico e devolvemos active:false — o robô
+  // deve parar de ABRIR trades novos, mas continuar reportando até receber o ACK.
   const lt = licenseState(row);
-  if (!lt.active) return json({ error:'license_' + lt.status, active:false, status: lt.status }, 403);
+  const licenseActive = lt.active;
 
   let body; try { body = await request.json(); } catch(e){
     await recordEaError(env, license, row.email, getEaAccount(request, url, null), 'invalid_json');
     return json({ error:'invalid_json' }, 400);
   }
   const account = getEaAccount(request, url, body);
+  const hasAccount = account != null && String(account).trim() !== '';
   const now = new Date().toISOString();
 
-  // trava: 1 licença = 1 conta (rejeita se outra conta usar a mesma licença)
+  // trava ANTI-REVENDA: 1 licença = 1 conta. Mismatch continua rejeitando (é a
+  // fronteira de autorização; o robô legítimo da conta vinculada segue normal).
   const acc = await bindOrCheckAccount(env, row, account);
   if (acc.mismatch) {
     await recordEaError(env, license, row.email, account, 'account_mismatch');
@@ -1200,16 +1254,33 @@ async function handleEaTrades(request, env, json, url) {
   }
   // trades fechados — dedupe por (licença, CONTA, ticket)
   const persisted = [];
-  const trades = Array.isArray(body.trades) ? body.trades : [];
-  const capped = trades.slice(0, 500); // teto por POST; o robô pagina backlog maior
+  let tradesArr = Array.isArray(body.trades) ? body.trades.filter(t => t && t.ticket != null) : [];
+  const totalTrades = tradesArr.length;
+  // v27 (P0-B): NUNCA gravar trade sem CONTA. No SQLite, NULL é distinto no índice
+  // UNIQUE, então trade sem conta furaria o dedup e DUPLICARIA a cada reenvio
+  // (lucro dobrado no relatório). Sem conta: não grava e não dá ACK → o robô
+  // reenvia quando incluir a conta. Fica registrado em last_error p/ o admin ver.
+  let missingAccount = false;
+  if (totalTrades && !hasAccount) {
+    missingAccount = true;
+    tradesArr = [];
+    await recordEaError(env, license, row.email, account, 'missing_account');
+  }
+  // v27 (H1): ordena mais ANTIGO primeiro; se truncar em 500, os descartados são os
+  // mais NOVOS (que o robô ainda tem na fila) — nunca perde o começo do backlog.
+  tradesArr.sort((a, b) => {
+    const ka = String(a.closeTime ?? a.close_time ?? ''), kb = String(b.closeTime ?? b.close_time ?? '');
+    if (!ka && !kb) return 0; if (!ka) return 1; if (!kb) return -1;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  const capped = tradesArr.slice(0, 500); // teto por POST; o robô pagina backlog maior
+  const remaining = Math.max(0, tradesArr.length - capped.length);
   for (const tr of capped) {
-    if (!tr) continue;
-    const ticket = tr.ticket != null ? String(tr.ticket) : null;
-    if (!ticket) continue;
+    const ticket = String(tr.ticket);
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO trades (license_key,email,account,ticket,symbol,type,lots,open_time,close_time,open_price,close_price,profit,commission,swap,created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(license, row.email, account, ticket, tr.symbol??null, tr.type??null, num(tr.lots),
+    ).bind(license, row.email, String(account), ticket, tr.symbol??null, tr.type??null, num(tr.lots),
            tr.openTime??tr.open_time??null, tr.closeTime??tr.close_time??null,
            num(tr.openPrice??tr.open_price), num(tr.closePrice??tr.close_price),
            num(tr.profit), num(tr.commission), num(tr.swap), now));
@@ -1221,11 +1292,14 @@ async function handleEaTrades(request, env, json, url) {
     // falha do banco: NÃO confirma nada; o robô mantém a fila e reenvia (idempotente)
     await recordEaError(env, license, row.email, account, 'db_batch_fail');
     logEvent({ evt:'ea_trades_fail', lic: license.slice(-6), acc: account, n: capped.length, err: String(e && e.message || e) });
-    return json({ error:'server_busy', active:true, persisted: [], retry: true }, 503);
+    return json({ error:'server_busy', active: licenseActive, persisted: [], retry: true }, 503);
   }
-  logEvent({ evt:'ea_trades', lic: license.slice(-6), acc: account, persisted: persisted.length, truncated: trades.length > 500 });
-  // ACK: o robô só remove da fila os tickets que voltarem em "persisted"
-  return json({ ok: true, received: persisted.length, persisted, account: acc.bound || null, truncated: trades.length > 500 });
+  logEvent({ evt:'ea_trades', lic: license.slice(-6), acc: account, persisted: persisted.length, remaining, active: licenseActive, missing_account: missingAccount });
+  // ACK: o robô só remove da fila os tickets que voltarem em "persisted".
+  // active:false = licença vencida/revogada → robô para de ABRIR, mas segue reportando.
+  const resp = { ok: true, active: licenseActive, status: lt.status, received: persisted.length, persisted, account: acc.bound || null, truncated: remaining > 0, remaining };
+  if (missingAccount) resp.warning = 'missing_account';
+  return json(resp);
 }
 
 /* ─────────────── RELATÓRIOS (v23) ───────────────
@@ -1254,32 +1328,40 @@ async function handleReports(request, env, json, url) {
       to = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10);
     }
   }
-  // trades no período — filtro por close_time (usa índice). close_time do MT5 é
+  // v27 (P0-E): AGREGA NO SQL (SUM/COUNT/MAX/MIN), SEM teto. Antes puxava as linhas
+  // e somava em JS com LIMIT 5000, o que TRUNCAVA silenciosamente e mostrava total
+  // ERRADO (a menos) numa conta muito ativa. Agora soma tudo. close_time do MT5 é
   // "YYYY.MM.DD ..."; comparamos pelo prefixo de data normalizado.
   const fromN = from.replace(/-/g, '.'), toN = to.replace(/-/g, '.');
-  let sql = `SELECT account, symbol, type, lots, close_time, profit, commission, swap
-             FROM trades WHERE email = ?
-             AND replace(substr(close_time,1,10),'-','.') >= ? AND replace(substr(close_time,1,10),'-','.') < ?`;
+  const NET = '(COALESCE(profit,0)+COALESCE(commission,0)+COALESCE(swap,0))';
+  let where = `email = ? AND replace(substr(close_time,1,10),'-','.') >= ? AND replace(substr(close_time,1,10),'-','.') < ?`;
   const binds = [target, fromN, toN];
-  if (account) { sql += ' AND account = ?'; binds.push(String(account)); }
-  sql += ' ORDER BY close_time ASC LIMIT 5000';
-  const tr = await env.DB.prepare(sql).bind(...binds).all();
-  const rows = tr.results || [];
-  let gross = 0, wins = 0, losses = 0, best = null, worst = null;
-  const byDay = {};
-  for (const t of rows) {
-    const net = (+t.profit || 0) + (+t.commission || 0) + (+t.swap || 0);
-    gross += net;
-    if (net > 0) wins++; else if (net < 0) losses++;
-    if (best == null || net > best) best = net;
-    if (worst == null || net < worst) worst = net;
-    const day = String(t.close_time || '').slice(0, 10).replace(/\./g, '-');
-    byDay[day] = (byDay[day] || 0) + net;
-  }
-  const n = rows.length;
-  // curva de evolução: 1 ponto por dia (soma de trades acumulada — nunca saldo)
-  const days = Object.keys(byDay).sort();
-  let cum = 0; const curve = days.map(d => { cum += byDay[d]; return { day: d, pnl: +byDay[d].toFixed(2), cumulative: +cum.toFixed(2) }; });
+  if (account) { where += ' AND account = ?'; binds.push(String(account)); }
+  const agg = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS gross,
+            SUM(CASE WHEN ${NET} > 0 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN ${NET} < 0 THEN 1 ELSE 0 END) AS losses,
+            MAX(${NET}) AS best, MIN(${NET}) AS worst
+     FROM trades WHERE ${where}`
+  ).bind(...binds).first();
+  const n = agg && agg.n ? +agg.n : 0;
+  const gross = agg ? (+agg.gross || 0) : 0;
+  const wins = agg && agg.wins ? +agg.wins : 0;
+  const losses = agg && agg.losses ? +agg.losses : 0;
+  const best = (n && agg.best != null) ? +agg.best : null;
+  const worst = (n && agg.worst != null) ? +agg.worst : null;
+  // curva de evolução: soma de trades por dia no SQL (nunca saldo), acumulada
+  const dayRows = await env.DB.prepare(
+    `SELECT substr(close_time,1,10) AS d, SUM(${NET}) AS pnl
+     FROM trades WHERE ${where} GROUP BY d ORDER BY d ASC`
+  ).bind(...binds).all();
+  let cum = 0;
+  const curve = (dayRows.results || []).map(r => {
+    const day = String(r.d || '').replace(/\./g, '-');
+    const pnl = +(+r.pnl || 0).toFixed(2);
+    cum += pnl;
+    return { day, pnl, cumulative: +cum.toFixed(2) };
+  });
 
   // v24: saldo INÍCIO/FIM do período via balance_history (informativo). O % é
   // sobre o saldo INICIAL (regra do Luiz), NUNCA por diferença de saldo.
