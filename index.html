@@ -1089,7 +1089,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
         <div class="nav-item" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg><span data-i18n="nav_history">Histórico de Trades</span></div>
         <div class="nav-item" data-page="reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="nav_reports">Relatórios</span></div>
         <div class="nav-item" data-page="strategies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg><span data-i18n="nav_strategies">Estratégias</span></div>
-        <div class="nav-item" data-page="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span data-i18n="nav_config">Configurar Robô</span></div>
         <div class="side-sec" data-i18n="nav_section_account">CONTA</div>
         <div class="nav-item" data-page="license"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="nav_license">Licença & Contas</span></div>
         <div class="nav-item" data-page="downloads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span data-i18n="nav_downloads">Downloads</span></div>
@@ -1983,7 +1982,7 @@ function renderPage(page){
   const m=document.getElementById('mainContent');
   const map={
     dashboard:renderDashboard, results:renderResults, history:renderHistory, strategies:renderStrategies, reports:renderReports,
-    config:renderConfig, license:renderLicense, downloads:renderDownloads, setup:renderSetup, faq:renderFaq, legal:renderLegalPage, settings:renderSettings,
+    license:renderLicense, downloads:renderDownloads, setup:renderSetup, faq:renderFaq, legal:renderLegalPage, settings:renderSettings,
     'admin-overview':renderAdminOverview,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
     'admin-licenses':renderAdminLicenses,'admin-accounts':renderAdminAccounts,'admin-files':renderAdminFiles,'admin-payments':renderAdminPayments,
   };
@@ -2434,67 +2433,10 @@ let CFG_PRESET='mod';
 let CFG_STRUCT={default:{},accounts:{}};   // estrutura completa vinda do back-end
 let CFG_ACCOUNT='_default';                // conta em edição ('_default' = padrão p/ todas)
 let CFG_PICKED=false;                      // usuário já escolheu a conta manualmente nesta sessão?
-// lista de contas do usuário (para o seletor)
-function cfgAccounts(){ return (DATA.client.mt5Accounts&&DATA.client.mt5Accounts.length)?DATA.client.mt5Accounts.slice():(DATA.client.mt5Account?[String(DATA.client.mt5Account)]:[]); }
-// configuração efetiva de uma conta = base(defaults) + default-do-usuário + override-da-conta
-function effectiveCfgFor(acctKey){
-  const base=(CFG_STRUCT&&CFG_STRUCT.default&&typeof CFG_STRUCT.default==='object')?CFG_STRUCT.default:{};
-  const acc=(acctKey&&acctKey!=='_default'&&CFG_STRUCT&&CFG_STRUCT.accounts&&CFG_STRUCT.accounts[acctKey])?CFG_STRUCT.accounts[acctKey]:{};
-  return Object.assign({}, DATA.client.config, base, acc);
-}
-// sincroniza CFG_STRUCT/CFG_ACCOUNT/CFG a partir do que veio do back-end
-function syncCfgFromStruct(keepAccount){
-  const s=DATA.client.eaConfigStruct;
-  CFG_STRUCT=(s&&typeof s==='object')?{default:(s.default||{}),accounts:(s.accounts||{})}:{default:{},accounts:{}};
-  const accs=cfgAccounts();
-  if(!(keepAccount && CFG_ACCOUNT && (CFG_ACCOUNT==='_default' || accs.indexOf(CFG_ACCOUNT)>=0))){
-    // preferência: a conta onde o robô está operando AGORA (evita editar a aba errada)
-    const live=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
-    CFG_ACCOUNT = (live&&accs.indexOf(live)>=0)?live:(accs.length? accs[0] : '_default');
-  }
-  CFG=JSON.parse(JSON.stringify(effectiveCfgFor(CFG_ACCOUNT)));
-}
-// troca a conta em edição (recarrega os valores daquela conta)
-function setCfgAccount(acc){ CFG_PICKED=true; CFG_ACCOUNT=acc; CFG=JSON.parse(JSON.stringify(effectiveCfgFor(acc))); CFG_PRESET=''; renderPage('config'); }
-
-// ── RISCO POR SESSÃO ──
-// nomes EXATOS que o robô procura (não mudar sem alinhar com o robô)
-// robô v1.2: 8 sessões no Operacional 1 (M5-09h, M5-15h30 e M1-18h são novas) + OP2
-const SESSION_RISK_KEYS=['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h','OP2'];
-function sessionLabel(k){
-  const map={
-    'M5-01h': {pt:'Sessão M5 · 01:00', en:'M5 session · 01:00', es:'Sesión M5 · 01:00'},
-    'M15-01h':{pt:'Sessão M15 · 01:00', en:'M15 session · 01:00', es:'Sesión M15 · 01:00'},
-    'M1-02h': {pt:'Sessão M1 · 02:00', en:'M1 session · 02:00', es:'Sesión M1 · 02:00'},
-    'M1-11h': {pt:'Sessão M1 · 11:00', en:'M1 session · 11:00', es:'Sesión M1 · 11:00'},
-    'M1-17h': {pt:'Sessão M1 · 17:00', en:'M1 session · 17:00', es:'Sesión M1 · 17:00'},
-    'M5-09h': {pt:'Sessão M5 · 09:00', en:'M5 session · 09:00', es:'Sesión M5 · 09:00'},
-    'M5-15h30':{pt:'Sessão M5 · 15:30', en:'M5 session · 15:30', es:'Sesión M5 · 15:30'},
-    'M1-18h': {pt:'Sessão M1 · 18:00', en:'M1 session · 18:00', es:'Sesión M1 · 18:00'},
-    'OP2':    {pt:'Operacional 2 · 20h–05h', en:'Operational 2 · 8pm–5am', es:'Operacional 2 · 20h–05h'},
-  };
-  const m=map[k]||{pt:k,en:k,es:k}; return LANG==='en'?m.en:LANG==='es'?m.es:m.pt;
-}
-// perfis prontos (preenchem as sessões + o risco global)
-const SR_PROFILES={
-  conservador:{'M5-01h':0.2,'M15-01h':0.2,'M1-02h':0.3,'M1-11h':0.3,'M1-17h':0.5,'M5-09h':0.2,'M5-15h30':0.2,'M1-18h':0.3,'OP2':0.3,_risk:0.3},
-  moderado:   {'M5-01h':0.3,'M15-01h':0.3,'M1-02h':0.5,'M1-11h':0.5,'M1-17h':1.0,'M5-09h':0.3,'M5-15h30':0.3,'M1-18h':0.5,'OP2':0.5,_risk:0.5},
-  arrojado:   {'M5-01h':0.5,'M15-01h':0.5,'M1-02h':0.8,'M1-11h':0.8,'M1-17h':1.5,'M5-09h':0.5,'M5-15h30':0.5,'M1-18h':0.8,'OP2':0.8,_risk:0.8},
-};
-// liga/desliga por sessão do robô v1.2 (controle GLOBAL do admin; OP2 fica no robô).
-// Padrão de fábrica: só M5-01h e M15-01h ligadas. Sincronizado com o servidor
-// pelo bloco BW LIVE (GET/POST /api/risk-profiles ↔ sessionOn).
-const SESSION_ON_KEYS=['M5-01h','M15-01h','M1-02h','M1-11h','M1-17h','M5-09h','M5-15h30','M1-18h'];
-const BW_SESSION_ON={'M5-01h':true,'M15-01h':true,'M1-02h':false,'M1-11h':false,'M1-17h':false,'M5-09h':false,'M5-15h30':false,'M1-18h':false};
-function srSet(k,v){ if(!CFG.sessionRisk||typeof CFG.sessionRisk!=='object') CFG.sessionRisk={}; const n=parseFloat(v); CFG.sessionRisk[k]=(isFinite(n)&&n>=0&&n<=10)?n:0; CFG.profile='custom'; const el=document.getElementById('sr-prof-lbl'); if(el) el.textContent=(LANG==='pt'?'Perfil: Personalizado':LANG==='en'?'Profile: Custom':'Perfil: Personalizado'); }
-function applySrProfile(name){ const p=SR_PROFILES[name]; if(!p) return; CFG.sessionRisk={}; for(const k of SESSION_RISK_KEYS) CFG.sessionRisk[k]=p[k]; CFG.riskPerTrade=p._risk; CFG.profile=name; renderPage('config'); }
-function srVal(k){ const sr=(CFG.sessionRisk&&typeof CFG.sessionRisk==='object')?CFG.sessionRisk:{}; return (k in sr)?sr[k]:(CFG.riskPerTrade!=null?CFG.riskPerTrade:0.5); }
-// v26 (item 6): liga/desliga por sessão POR CONTA. Estado efetivo = override da
-// conta (CFG.sessionOn) se existir, senão o padrão GLOBAL (BW_SESSION_ON).
-function cfgSessionOn(k){ const so=(CFG&&CFG.sessionOn&&typeof CFG.sessionOn==='object')?CFG.sessionOn:{}; return (k in so)?!!so[k]:!!BW_SESSION_ON[k]; }
-function cfgSetSessionOn(k,on){ if(!CFG.sessionOn||typeof CFG.sessionOn!=='object')CFG.sessionOn={}; CFG.sessionOn[k]=!!on;
-  const row=document.getElementById('cfg-sess-row-'+k); if(row)row.style.opacity=on?'':'.55';
-  const badge=document.getElementById('cfg-sess-off-'+k); if(badge)badge.style.display=on?'none':''; }
+// Black Wolf 2.0: a configuração do robô (risco/sessões/perfis/metas) saiu do site
+// e passou a ser feita nos parâmetros do próprio robô no MetaTrader. As funções e
+// perfis de config foram REMOVIDOS daqui. O site agora é vitrine: licenças +
+// resultados/relatórios. (Ver README do backend — /api/ea/config só entrega active.)
 /* ═══════════════ RELATÓRIOS (semanal/mensal) — v24 ═══════════════ */
 let REP_PERIOD='month';      // 'week' | 'month'
 let REP_ACCOUNT=null;        // null = geral
@@ -2541,7 +2483,7 @@ function renderReports(){
   );
   // estados
   if(REP_LOADING && !REP_DATA) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando relatório…':LANG==='en'?'Loading report…':'Cargando…'}</div></div></div>`;
-  if(REP_DATA&&REP_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'O servidor (worker) ainda não foi atualizado para a versão com relatórios. Publique o worker v26.':LANG==='en'?'Server not updated for reports yet. Publish worker v26.':'El servidor aún no fue actualizado.'}</div></div>`;
+  if(REP_DATA&&REP_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'O servidor (worker) ainda não foi atualizado para a versão com relatórios. Publique o worker v27.':LANG==='en'?'Server not updated for reports yet. Publish worker v27.':'El servidor aún no fue actualizado.'}</div></div>`;
   if(REP_DATA&&REP_DATA.__err) return head+`<div class="banner risk rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg><div class="banner-tx">${LANG==='pt'?'Não foi possível carregar o relatório. Tente novamente.':LANG==='en'?'Could not load the report.':'No se pudo cargar.'}</div></div>`;
   const S=(REP_DATA&&REP_DATA.summary)||{result:0,trades:0,wins:0,losses:0,winRate:0,best:0,worst:0,startBalance:null,endBalance:null,resultPct:null,deposits:0};
   const per=(REP_DATA&&REP_DATA.from)?(REP_DATA.from+' → '+REP_DATA.to):'';
@@ -2574,213 +2516,8 @@ function renderReports(){
   </div>`;
 }
 
-function renderConfig(){
-  // Risco por sessão: apenas contas admin editam os % individuais; alunos escolhem entre os 3 perfis
-  const isAdm=!!(SESSION&&SESSION.role==='admin');
-  const accs=cfgAccounts();
-  // conta onde o robô está operando AGORA (do heartbeat) — abre nela por padrão
-  const liveAcc=(DATA.client&&DATA.client._eaStatus&&DATA.client._eaStatus.account)?String(DATA.client._eaStatus.account):null;
-  if(!CFG_PICKED){
-    // v24 (item 3): abre na conta do robô e TRAVA nela — nunca mais alterna sozinha.
-    // Se não houver conta ao vivo, trava na 1ª conta vinculada. A troca é só manual.
-    const pick=(liveAcc&&accs.indexOf(liveAcc)>=0)?liveAcc:(accs.length?accs[0]:'_default');
-    if(pick!=='_default'&&CFG_ACCOUNT!==pick){ CFG_ACCOUNT=pick; CFG=JSON.parse(JSON.stringify(effectiveCfgFor(pick))); }
-    CFG_PICKED=true;
-  }
-  const c=CFG;
-  const accLabel=(a)=>a==='_default'?(LANG==='pt'?'Padrão':LANG==='en'?'Default':'Predet.'):a;
-  // seletor de conta (só aparece se houver conta vinculada)
-  const accSelector = accs.length ? `
-  <div class="cfg-section rv" style="padding-top:16px;padding-bottom:16px">
-    <div class="cfg-section-head" style="margin-bottom:12px">
-      <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Configuração por conta':LANG==='en'?'Per-account settings':'Configuración por cuenta'}</div><div class="cfg-section-desc">${LANG==='pt'?'Cada conta pode ter o seu próprio risco. Escolha a conta e ajuste abaixo.':LANG==='en'?'Each account can have its own risk. Pick an account and adjust below.':'Cada cuenta puede tener su propio riesgo. Elige la cuenta y ajusta abajo.'}</div></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${accs.map(a=>`<button onclick="setCfgAccount('${a}')" class="acct-chip${CFG_ACCOUNT===a?' on':''}" style="padding:9px 15px;border-radius:10px;border:1px solid ${CFG_ACCOUNT===a?'var(--blue)':'var(--bord)'};background:${CFG_ACCOUNT===a?'rgba(45,108,255,.14)':'transparent'};color:${CFG_ACCOUNT===a?'var(--blue-l)':'var(--t2)'};font-weight:${CFG_ACCOUNT===a?'700':'500'};font-size:.9rem;cursor:pointer">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'} ${a}${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[a])?' •':''}${liveAcc===a?` <span style="font-size:.62rem;color:var(--blue-l);white-space:nowrap">&#9679; ${LANG==='pt'?'robô aqui':LANG==='en'?'robot here':'robot aquí'}</span>`:''}</button>`).join('')}
-    </div>
-    <p style="font-size:.8rem;color:var(--t3);margin:12px 0 0">${LANG==='pt'?'Editando a conta':LANG==='en'?'Editing account':'Editando la cuenta'} <b style="color:var(--t1)">${accLabel(CFG_ACCOUNT)}</b>${(CFG_STRUCT.accounts&&CFG_STRUCT.accounts[CFG_ACCOUNT])?'':` — ${LANG==='pt'?'usando o padrão (ainda sem ajuste próprio)':LANG==='en'?'using default (no custom setting yet)':'usando el predeterminado'}`}${liveAcc&&CFG_ACCOUNT!==liveAcc?` <b style="color:var(--amber-l)">— ${LANG==='pt'?'atenção: o robô está na conta '+liveAcc:LANG==='en'?'note: the robot is on account '+liveAcc:'ojo: el robot está en la cuenta '+liveAcc}</b>`:''}</p>
-  </div>` : '';
-  return pageHead(
-    LANG==='pt'?'AJUSTES':LANG==='en'?'SETTINGS':'AJUSTES',
-    LANG==='pt'?'Configurar Robô':LANG==='en'?'Configure Robot':'Configurar Robot',
-    LANG==='pt'?'Você controla o risco do robô. Ajuste risco, metas e limites de proteção.':LANG==='en'?'You control the robot risk. Adjust risk, targets and protection limits.':'Controlas el riesgo del robot. Ajusta riesgo, metas y límites de protección.'
-  )+`
-  <div class="banner warn rv">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'Estas configurações afetam diretamente o risco e o comportamento do robô na <b>sua</b> conta. Configurações mais agressivas aumentam o potencial de ganho <b>e</b> de perda. A responsabilidade pela parametrização é sua.':LANG==='en'?'These settings directly affect the risk and behavior of the robot on <b>your</b> account. More aggressive settings increase the potential for gain <b>and</b> loss. Parametrization is your responsibility.':'Esta configuración afecta directamente el riesgo y comportamiento del robot en <b>tu</b> cuenta. Configuraciones más agresivas aumentan el potencial de ganancia <b>y</b> pérdida. La parametrización es tu responsabilidad.'}</div>
-  </div>
-  ${accSelector}
-  <div class="cfg-section rv" style="padding-top:16px">
-    <div class="cfg-section-head" style="margin-bottom:6px">
-      <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Risco por sessão':LANG==='en'?'Per-session risk':'Riesgo por sesión'}</div><div class="cfg-section-desc">${isAdm
-        ?(LANG==='pt'?'Defina o risco (%) e ligue/desligue cada sessão <b>desta conta</b>. O liga/desliga vale por conta (contas de teste podem operar sessões diferentes); o que você não mexer segue o padrão global. Os alunos escolhem apenas entre os 3 perfis.':LANG==='en'?'Set the risk (%) and turn each session on/off <b>for this account</b>. On/off is per account (test accounts can run different sessions); anything you don\'t touch follows the global default. Students only choose between the 3 profiles.':'Define el riesgo (%) y activa/desactiva cada sesión <b>de esta cuenta</b>. El on/off es por cuenta; lo que no toques sigue el padrón global. Los alumnos solo eligen entre los 3 perfiles.')
-        :(LANG==='pt'?'Os percentuais de cada sessão são definidos pela equipe Black Wolf. Escolha abaixo o perfil que combina com o seu momento.':LANG==='en'?'Per-session percentages are defined by the Black Wolf team. Choose the profile that fits you below.':'Los porcentajes de cada sesión los define el equipo Black Wolf. Elige abajo el perfil que más te convenga.')}</div></div>
-    </div>
-    ${(function(){
-      const meta={
-        conservador:{dot:'cons',pt:'Conservador',en:'Conservative',es:'Conservador',dpt:'Risco reduzido — foco em preservar o capital.',den:'Reduced risk — focus on preserving capital.',des:'Riesgo reducido — preservar el capital.'},
-        moderado:{dot:'mod',pt:'Moderado',en:'Moderate',es:'Moderado',dpt:'Equilíbrio entre risco e retorno.',den:'Balance between risk and return.',des:'Equilibrio entre riesgo y retorno.'},
-        arrojado:{dot:'aggr',pt:'Arrojado',en:'Aggressive',es:'Agresivo',dpt:'Maior exposição — oscilações mais fortes.',den:'Higher exposure — larger swings.',des:'Mayor exposición — oscilaciones más fuertes.'}
-      };
-      const rng=function(n){const p=SR_PROFILES[n];const vs=SESSION_RISK_KEYS.map(k=>p[k]);return Math.min.apply(null,vs)+'%–'+Math.max.apply(null,vs)+'%';};
-      if(isAdm){
-        return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 4px">
-          <span style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Perfis prontos:':LANG==='en'?'Presets:':'Perfiles:'}</span>
-          ${Object.keys(meta).map(n=>{const on=CFG.profile===n;const m=meta[n];const lbl=LANG==='en'?m.en:LANG==='es'?m.es:m.pt;return `<button onclick="applySrProfile('${n}')" class="sr-prof" style="padding:7px 13px;border-radius:9px;border:1px solid ${on?'var(--blue)':'var(--bord)'};background:${on?'rgba(45,108,255,.14)':'transparent'};color:${on?'var(--blue-l)':'var(--t2)'};font-size:.84rem;font-weight:${on?'700':'600'};cursor:pointer">${lbl}</button>`;}).join('')}
-          <span id="sr-prof-lbl" style="font-size:.8rem;color:var(--blue-l);margin-left:2px">${(function(){const p=CFG.profile; if(p==='conservador')return LANG==='pt'?'Perfil: Conservador':'Perfil: Conservative'; if(p==='moderado')return LANG==='pt'?'Perfil: Moderado':'Perfil: Moderate'; if(p==='arrojado')return LANG==='pt'?'Perfil: Arrojado':'Perfil: Aggressive'; if(p==='custom')return LANG==='pt'?'Perfil: Personalizado':'Perfil: Custom'; return '';})()}</span>
-        </div>`;
-      }
-      return `<div class="preset-grid" style="margin-top:10px">
-        ${Object.keys(meta).map(n=>{const on=CFG.profile===n;const m=meta[n];const lbl=LANG==='en'?m.en:LANG==='es'?m.es:m.pt;const d=LANG==='en'?m.den:LANG==='es'?m.des:m.dpt;return `<div class="preset ${on?'on':''}" onclick="applySrProfile('${n}')"><div class="preset-name"><span class="preset-dot ${m.dot}"></span>${lbl}</div><div class="preset-desc">${d}<br><b style="color:var(--t2);font-family:var(--fm)">${rng(n)} ${LANG==='pt'?'por sessão':LANG==='en'?'per session':'por sesión'}</b></div></div>`;}).join('')}
-      </div>`;
-    })()}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px">
-      ${SESSION_RISK_KEYS.map(k=>{const canOnOff=SESSION_ON_KEYS.includes(k);const off=canOnOff&&!cfgSessionOn(k);return `
-        <div id="cfg-sess-row-${k}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--bord);border-radius:11px;padding:11px 13px${off?';opacity:.55':''}">
-          <div style="font-size:.86rem;color:var(--t1);font-weight:500">${sessionLabel(k)}${canOnOff?`<span id="cfg-sess-off-${k}" style="font-family:var(--fm);font-size:.54rem;letter-spacing:.05em;color:var(--t4);background:var(--s3);padding:2px 7px;border-radius:20px;margin-left:7px;display:${off?'':'none'}">${LANG==='pt'?'DESLIGADA':LANG==='en'?'OFF':'APAGADA'}</span>`:''}</div>
-          ${isAdm?`<div style="display:flex;align-items:center;gap:9px;flex-shrink:0">
-            ${canOnOff?`<label title="${LANG==='pt'?'Ligar/desligar esta sessão nesta conta':LANG==='en'?'Turn this session on/off for this account':'Activar/desactivar esta sesión en esta cuenta'}" style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:.66rem;color:var(--t3)"><input type="checkbox" id="cfg-on-${k}" ${cfgSessionOn(k)?'checked':''} onchange="cfgSetSessionOn('${k}',this.checked)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">${LANG==='pt'?'Ativa':LANG==='en'?'On':'Activa'}</label>`:''}
-            <input type="number" step="0.1" min="0" max="10" value="${srVal(k)}" onchange="srSet('${k}',this.value)" oninput="srSet('${k}',this.value)" style="width:64px;text-align:right;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:7px 8px;color:var(--t1);font-size:.9rem;font-weight:600">
-            <span style="font-size:.85rem;color:var(--t3)">%</span>
-          </div>`:`<div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><div style="font-family:var(--fm);font-weight:700;font-size:.92rem;color:var(--blue-l)">${srVal(k)}%</div></div>`}
-        </div>`;}).join('')}
-    </div>
-    <div class="banner info" style="margin:14px 0 0">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <div class="banner-tx">${LANG==='pt'?'A sessão <b>M1 · 17:00</b> costuma ser a mais forte do dia. Ajuste com responsabilidade — risco maior aumenta ganho <b>e</b> perda.':LANG==='en'?'The <b>M1 · 17:00</b> session tends to be the strongest of the day. Adjust responsibly — higher risk increases gain <b>and</b> loss.':'La sesión <b>M1 · 17:00</b> suele ser la más fuerte. Ajusta con responsabilidad — más riesgo aumenta ganancia <b>y</b> pérdida.'}</div>
-    </div>
-  </div>
-
-  ${isAdm?`
-  <!-- PADRÕES GLOBAIS (somente admin) -->
-  <div class="cfg-section rv" style="border-color:rgba(255,59,71,.25)">
-    <div class="cfg-section-head">
-      <div class="cfg-section-ico" style="background:rgba(255,59,71,.12)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red-l)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Padrões globais dos alunos (admin)':LANG==='en'?'Global student presets (admin)':'Perfiles globales de alumnos (admin)'}</div><div class="cfg-section-desc">${LANG==='pt'?'Padrão GLOBAL (fallback) do robô v1.2: liga/desliga de sessão e os valores dos 3 perfis que TODOS os alunos podem escolher. Vale para toda conta que não tiver ajuste próprio — o liga/desliga por conta (na seção acima) vence este padrão. Ao salvar, os robôs aplicam na próxima consulta (~5 min).':LANG==='en'?'GLOBAL default (fallback) for robot v1.2: session on/off and the values of the 3 profiles ALL students can choose. Applies to any account without its own override — the per-account on/off (section above) wins over this default. Robots apply on the next poll (~5 min).':'Padrón GLOBAL (fallback) del robot v1.2: on/off de sesión y los valores de los 3 perfiles. Vale para toda cuenta sin ajuste propio — el on/off por cuenta (arriba) vence este padrón. Los robots aplican en la próxima consulta (~5 min).'}</div></div>
-    </div>
-    <div class="tbl-wrap"><table class="tbl" style="min-width:600px">
-      <thead><tr><th>${LANG==='pt'?'Sessão':LANG==='en'?'Session':'Sesión'}</th><th>${LANG==='pt'?'Ativa':LANG==='en'?'On':'Activa'}</th><th style="color:var(--green-l)">${LANG==='pt'?'Conservador':LANG==='en'?'Conservative':'Conservador'}</th><th style="color:var(--amber-l)">${LANG==='pt'?'Moderado':LANG==='en'?'Moderate':'Moderado'}</th><th style="color:var(--red-l)">${LANG==='pt'?'Arrojado':LANG==='en'?'Aggressive':'Agresivo'}</th></tr></thead>
-      <tbody>
-        ${SESSION_RISK_KEYS.map(k=>`<tr><td style="font-size:.82rem">${sessionLabel(k)}</td><td>${SESSION_ON_KEYS.includes(k)?`<input type="checkbox" id="gp-on-${k}" ${BW_SESSION_ON[k]?'checked':''} style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer">`:`<span style="font-size:.7rem;color:var(--t4)">${LANG==='pt'?'no robô':LANG==='en'?'in robot':'en robot'}</span>`}</td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-${k}" value="${SR_PROFILES[n][k]}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>`).join('')}
-        <tr><td style="font-size:.82rem">${LANG==='pt'?'Risco global (fallback)':LANG==='en'?'Global risk (fallback)':'Riesgo global (fallback)'}</td><td></td>${['conservador','moderado','arrojado'].map(n=>`<td><input type="number" id="gp-${n}-_risk" value="${SR_PROFILES[n]._risk}" step="0.1" min="0" max="10" style="width:70px;background:var(--s3);border:1px solid var(--bord);border-radius:8px;padding:6px 8px;color:var(--t1);font-size:.85rem;font-weight:600;text-align:right"> <span style="font-size:.78rem;color:var(--t3)">%</span></td>`).join('')}</tr>
-      </tbody>
-    </table></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn-primary" onclick="saveGlobalProfiles()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${LANG==='pt'?'Salvar padrões globais':LANG==='en'?'Save global presets':'Guardar perfiles globales'}</button></div>
-  </div>`:''}
-
-  <!-- PRESETS -->
-  <div class="cfg-section rv">
-    <div class="cfg-section-head">
-      <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Perfil de risco':LANG==='en'?'Risk preset':'Perfil de riesgo'}</div><div class="cfg-section-desc">${LANG==='pt'?'Escolha um ponto de partida — você pode ajustar tudo depois.':LANG==='en'?'Pick a starting point — you can fine-tune everything after.':'Elige un punto de partida — puedes ajustar todo después.'}</div></div>
-    </div>
-    <div class="preset-grid">
-      <div class="preset ${CFG_PRESET==='cons'?'on':''}" onclick="applyPreset('cons')"><div class="preset-name"><span class="preset-dot cons"></span>${t('profile_cons')}</div><div class="preset-desc">${LANG==='pt'?'0,5% por trade · alavancagem baixa · foco em preservar capital.':LANG==='en'?'0.5% per trade · low leverage · focus on preserving capital.':'0,5% por trade · apalancamiento bajo · preservar capital.'}</div></div>
-      <div class="preset ${CFG_PRESET==='mod'?'on':''}" onclick="applyPreset('mod')"><div class="preset-name"><span class="preset-dot mod"></span>${t('profile_mod')}</div><div class="preset-desc">${LANG==='pt'?'1,8% por trade · equilíbrio entre risco e retorno.':LANG==='en'?'1.8% per trade · balance of risk and return.':'1,8% por trade · equilibrio riesgo/retorno.'}</div></div>
-      <div class="preset ${CFG_PRESET==='aggr'?'on':''}" onclick="applyPreset('aggr')"><div class="preset-name"><span class="preset-dot aggr"></span>${t('profile_aggr')}</div><div class="preset-desc">${LANG==='pt'?'3,5%+ por trade · maior exposição · oscilações fortes.':LANG==='en'?'3.5%+ per trade · higher exposure · large swings.':'3,5%+ por trade · mayor exposición · oscilaciones fuertes.'}</div></div>
-    </div>
-  </div>
-
-  <!-- v24 (item 4 do Luiz): a seção "Gestão de risco / risco por operação" foi
-       REMOVIDA da interface — o lote é decidido pelo risco por sessão acima.
-       O campo riskPerTrade CONTINUA no contrato: o servidor usa o _risk do perfil
-       como fallback quando uma sessão não tem valor (ver /api/ea/config). -->
-
-  <!-- TARGETS — item 5: mantida visível, porém marcada EM BREVE (o robô v1.2 ainda
-       não lê estes campos; deixá-los ativos seria prometer proteção que não existe) -->
-  <div class="cfg-section rv" style="opacity:.7">
-    <div class="cfg-section-head">
-      <div class="cfg-section-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
-      <div><div class="cfg-section-title">${LANG==='pt'?'Metas e limites diários':LANG==='en'?'Daily targets & limits':'Metas y límites diarios'} <span style="font-family:var(--fm);font-size:.58rem;letter-spacing:.06em;color:var(--amber-l);background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.3);padding:2px 8px;border-radius:20px;vertical-align:middle;margin-left:6px">${LANG==='pt'?'EM BREVE':LANG==='en'?'SOON':'PRONTO'}</span></div><div class="cfg-section-desc">${LANG==='pt'?'Funcionalidade em desenvolvimento — ainda não está ativa no robô.':LANG==='en'?'Feature in development — not active in the robot yet.':'Función en desarrollo — aún no activa en el robot.'}</div></div>
-    </div>
-    <div style="pointer-events:none;filter:saturate(.6)">
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Meta de lucro diária':LANG==='en'?'Daily profit target':'Meta de ganancia diaria'}</div><div class="cfg-row-hint">${LANG==='pt'?'Para de operar ao atingir esse ganho no dia.':LANG==='en'?'Stops trading when this gain is reached.':'Deja de operar al alcanzar esta ganancia.'}</div></div>
-      <div class="cfg-control">${numInput('dailyTarget',c.dailyTarget,0.5,'%',0.5,50)}</div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Perda máxima diária':LANG==='en'?'Daily loss limit':'Pérdida máxima diaria'}</div><div class="cfg-row-hint">${LANG==='pt'?'Trava de proteção. Para tudo se perder esse % no dia.':LANG==='en'?'Protection stop. Halts everything if this % is lost.':'Tope de protección. Detiene todo si pierde ese %.'}</div></div>
-      <div class="cfg-control">${numInput('dailyLoss',c.dailyLoss,0.5,'%',0.5,50)}</div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Máx. operações simultâneas':LANG==='en'?'Max simultaneous trades':'Máx. operaciones simultáneas'}</div><div class="cfg-row-hint">${LANG==='pt'?'Quantas posições abertas ao mesmo tempo.':LANG==='en'?'How many positions open at once.':'Cuántas posiciones abiertas a la vez.'}</div></div>
-      <div class="cfg-control">${numInput('maxSimultaneous',c.maxSimultaneous,1,'',1,10)}</div>
-    </div>
-    <div class="cfg-row">
-      <div class="cfg-row-info"><div class="cfg-row-label">${LANG==='pt'?'Proteção de capital (equity stop)':LANG==='en'?'Equity stop':'Protección de capital'}</div><div class="cfg-row-hint">${LANG==='pt'?'Desliga o robô se o capital cair esse % do pico.':LANG==='en'?'Shuts robot off if equity drops this % from peak.':'Apaga el robot si el capital cae ese % del pico.'}</div></div>
-      <div class="cfg-control">${numInput('equityStop',c.equityStop,1,'%',1,50)}</div>
-    </div>
-    </div>
-  </div>
-
-  <div class="cfg-save-bar">
-    <div class="cfg-save-info" id="cfgSaveInfo">${LANG==='pt'?'Alterações não salvas serão aplicadas no robô.':LANG==='en'?'Unsaved changes will be applied to the robot.':'Los cambios no guardados se aplicarán al robot.'}</div>
-    <div style="display:flex;gap:10px">
-      <button class="btn-ghost" onclick="resetConfig()">${LANG==='pt'?'Restaurar':LANG==='en'?'Reset':'Restaurar'}</button>
-      <button class="btn-primary" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${LANG==='pt'?'Salvar e aplicar':LANG==='en'?'Save & apply':'Guardar y aplicar'}</button>
-    </div>
-  </div>
-  `;
-}
-function numInput(key,val,step,suffix,min,max){
-  return `<div class="num-input"><button onclick="numStep('${key}',${-step},${min},${max})">−</button><input type="number" id="cfg-${key}" value="${val}" step="${step}" min="${min}" max="${max}" onchange="cfgChange('${key}',parseFloat(this.value))"><button onclick="numStep('${key}',${step},${min},${max})">+</button></div>${suffix?`<span class="num-suffix">${suffix}</span>`:''}`;
-}
-function numStep(key,delta,min,max){
-  let v=parseFloat(document.getElementById('cfg-'+key).value)+delta;
-  v=Math.max(min,Math.min(max,+v.toFixed(2)));
-  document.getElementById('cfg-'+key).value=v; CFG[key]=v;
-}
-function cfgChange(key,val){ CFG[key]=val; }
-function applyPreset(p){
-  CFG_PRESET=p;
-  const presets={cons:{riskPerTrade:0.5,maxLot:0.20,leverage:'1:30',dailyTarget:2,dailyLoss:2,maxSimultaneous:1,equityStop:6},mod:{riskPerTrade:1.8,maxLot:0.50,leverage:'1:100',dailyTarget:5,dailyLoss:3,maxSimultaneous:2,equityStop:10},aggr:{riskPerTrade:3.5,maxLot:1.00,leverage:'1:200',dailyTarget:10,dailyLoss:6,maxSimultaneous:4,equityStop:18}};
-  Object.assign(CFG,presets[p]);
-  renderPage('config');
-  toast((LANG==='pt'?'Perfil aplicado: ':LANG==='en'?'Preset applied: ':'Perfil aplicado: ')+profileName(p),'info');
-}
-function resetConfig(){ CFG=JSON.parse(JSON.stringify(effectiveCfgFor(CFG_ACCOUNT))); CFG_PRESET=''; renderPage('config'); toast(LANG==='pt'?'Configurações restauradas':LANG==='en'?'Settings reset':'Configuración restaurada','info'); }
-function saveConfig(){
-  if(CFG.riskPerTrade>2||CFG.leverage==='1:500'||CFG.leverage==='1:200'){
-    showModal(
-      LANG==='pt'?'Configuração agressiva':LANG==='en'?'Aggressive setting':'Configuración agresiva',
-      (LANG==='pt'?`Você definiu risco de <b>${CFG.riskPerTrade}%</b> por operação com alavancagem <b>${CFG.leverage}</b>. Isso aumenta significativamente o risco de perdas. Deseja confirmar?`:LANG==='en'?`You set <b>${CFG.riskPerTrade}%</b> risk per trade with <b>${CFG.leverage}</b> leverage. This significantly increases loss risk. Confirm?`:`Definiste <b>${CFG.riskPerTrade}%</b> de riesgo por operación con apalancamiento <b>${CFG.leverage}</b>. Esto aumenta el riesgo de pérdidas. ¿Confirmar?`),
-      ()=>{ doSaveConfig(); }, 'danger'
-    );
-  } else doSaveConfig();
-}
-let CFG_SAVING=false;
-async function doSaveConfig(){
-  if(CFG_SAVING) return;            // v23: guarda contra clique duplo / POSTs concorrentes
-  // salva exatamente o que está na tela: materializa TODAS as sessões
-  try{ const filled={}; SESSION_RISK_KEYS.forEach(function(k){ filled[k]=srVal(k); }); CFG.sessionRisk=filled; }catch(e){}
-  const cfgCopy=JSON.parse(JSON.stringify(CFG));
-  const acct=(CFG_ACCOUNT && CFG_ACCOUNT!=='_default')?CFG_ACCOUNT:null;
-  const acctTxt=acct?((LANG==='pt'?' — conta ':LANG==='en'?' — account ':' — cuenta ')+acct):'';
-  // helper: só grava no estado LOCAL depois que o servidor confirmar (sem divergência)
-  const commitLocal=function(){
-    CFG_STRUCT=CFG_STRUCT||{default:{},accounts:{}};
-    if(acct){ CFG_STRUCT.accounts=CFG_STRUCT.accounts||{}; CFG_STRUCT.accounts[acct]=cfgCopy; }
-    else { CFG_STRUCT.default=cfgCopy; }
-    DATA.client.eaConfigStruct=CFG_STRUCT;
-  };
-  if(!(SESSION&&SESSION.token&&!SESSION.isDemo)){ commitLocal(); toast(t('saved')+acctTxt,'success'); return; }
-  CFG_SAVING=true;
-  const btns=document.querySelectorAll('.cfg-save-bar .btn-primary'); btns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
-  try{
-    const payload={config:cfgCopy}; if(acct) payload.account=acct;
-    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(r.ok){ commitLocal(); toast(t('saved')+acctTxt,'success'); }
-    else if(r.status===409){ toast(LANG==='pt'?'A config foi alterada em outro lugar — clique em Atualizar e salve de novo':LANG==='en'?'Config changed elsewhere — refresh and save again':'La config cambió en otro lugar — actualiza y guarda','error'); }
-    else{ toast(LANG==='pt'?'Falha ao salvar no servidor — tente novamente':LANG==='en'?'Server save failed — try again':'Fallo al guardar','error'); }
-  }catch(e){
-    if(String(e&&e.message)!=='session_expired') toast(LANG==='pt'?'Sem conexão — a configuração NÃO foi salva':LANG==='en'?'No connection — settings NOT saved':'Sin conexión — NO se guardó','error');
-  }finally{
-    CFG_SAVING=false;
-    document.querySelectorAll('.cfg-save-bar .btn-primary').forEach(function(b){b.disabled=false;b.style.opacity='';});
-  }
-}
+// Black Wolf 2.0: renderConfig / applyPreset / doSaveConfig REMOVIDOS — a config do
+// robô é feita no MetaTrader agora. Nada aqui salva config; só licenças/contas.
 
 /* ─────── CLIENT: STRATEGIES ─────── */
 function stratGenericName(i,total){
@@ -5322,11 +5059,10 @@ function clearNotifs(){
 </script>
 
 <script>
-/* ══ BW LIVE — bloco NOVO e ISOLADO: atualização quase em tempo real + perfis globais de risco ══
-   Usa apenas funções/variáveis já públicas do app (fetchMyData, SESSION, SR_PROFILES, toast). */
+/* ══ BW LIVE — bloco ISOLADO: atualização quase em tempo real dos resultados ══
+   Usa apenas funções/variáveis já públicas do app (fetchMyData, refreshMe, SESSION). */
 (function(){
   'use strict';
-  var profilesFetched=false;
 
   /* 1) Tempo quase-real: busca trades/status do robô a cada 60s
         (só logado com conta real, em modo cliente e com a aba visível) */
@@ -5336,7 +5072,6 @@ function clearNotifs(){
       if(!SESSION||!SESSION.token||SESSION.isDemo)return;
       if(!document.getElementById('app').classList.contains('active'))return;
       if(document.visibilityState!=='visible')return;
-      if(!profilesFetched){ profilesFetched=true; fetchRiskProfiles(); }
       // v23: a cada ~3 min revalida licença/status (detecta revogação/expiração
       // no meio da sessão — antes o painel podia mostrar "ativa" por horas/dias)
       meTick++; if(meTick%3===0){ try{ refreshMe(); }catch(e){} }
@@ -5347,63 +5082,8 @@ function clearNotifs(){
   setInterval(liveTick,60000);
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') liveTick(); });
   setTimeout(liveTick,2000);
-
-  /* 2) Perfis globais definidos pelo admin — lidos do servidor, com fallback
-        silencioso para os valores locais se o endpoint ainda não existir */
-  window.fetchRiskProfiles=async function(){
-    try{
-      if(!SESSION||!SESSION.token||SESSION.isDemo)return;
-      var r=await apiFetch('/api/risk-profiles');
-      if(!r.ok)return;
-      var d=await r.json();
-      var changed=false;
-      if(d&&d.profiles){
-        ['conservador','moderado','arrojado'].forEach(function(n){
-          if(d.profiles[n]&&typeof d.profiles[n]==='object') Object.assign(SR_PROFILES[n],d.profiles[n]);
-        });
-        changed=true;
-      }
-      if(d&&d.sessionOn&&typeof d.sessionOn==='object'){
-        SESSION_ON_KEYS.forEach(function(k){ if(k in d.sessionOn) BW_SESSION_ON[k]=!!d.sessionOn[k]; });
-        changed=true;
-      }
-      if(changed&&CURRENT_PAGE==='config') renderPage('config');
-    }catch(e){}
-  };
-  setInterval(function(){ try{ if(SESSION&&SESSION.token&&document.visibilityState==='visible') fetchRiskProfiles(); }catch(e){} },300000);
-
-  /* 3) Admin salva os padrões globais (POST /api/admin/risk-profiles) */
-  var GP_SAVING=false;
-  window.saveGlobalProfiles=async function(){
-    if(GP_SAVING) return;   // guarda contra clique duplo (afeta TODOS os alunos)
-    if(!SESSION||!SESSION.token||SESSION.isDemo){ toast(LANG==='pt'?'Disponível apenas com login real (não demo)':LANG==='en'?'Available only with a real login':'Solo con login real','error'); return; }
-    var profiles={};
-    ['conservador','moderado','arrojado'].forEach(function(n){
-      var p={};
-      SESSION_RISK_KEYS.forEach(function(k){ var el=document.getElementById('gp-'+n+'-'+k); if(el){ var v=parseFloat(el.value); if(isFinite(v)&&v>=0&&v<=10) p[k]=v; } });
-      var rg=document.getElementById('gp-'+n+'-_risk'); if(rg){ var v=parseFloat(rg.value); if(isFinite(v)&&v>=0&&v<=10) p._risk=v; }
-      profiles[n]=p;
-    });
-    // liga/desliga das 8 sessões do robô v1.2 (checkboxes gp-on-*)
-    var sessionOn={};
-    SESSION_ON_KEYS.forEach(function(k){ var el=document.getElementById('gp-on-'+k); sessionOn[k]=el?!!el.checked:!!BW_SESSION_ON[k]; });
-    GP_SAVING=true;
-    var gbtns=document.querySelectorAll('button[onclick="saveGlobalProfiles()"]'); gbtns.forEach(function(b){b.disabled=true;b.style.opacity='.6';});
-    try{
-      var r=await apiFetch('/api/admin/risk-profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profiles:profiles,sessionOn:sessionOn})});
-      if(r.ok){
-        // só aplica no estado local APÓS o servidor confirmar (sem divergência)
-        ['conservador','moderado','arrojado'].forEach(function(n){ Object.assign(SR_PROFILES[n],profiles[n]); });
-        SESSION_ON_KEYS.forEach(function(k){ BW_SESSION_ON[k]=sessionOn[k]; });
-        toast(LANG==='pt'?'Padrões e sessões salvos — os robôs aplicam na próxima consulta (~5 min)':LANG==='en'?'Presets & sessions saved — robots apply on next poll (~5 min)':'Perfiles y sesiones guardados','success');
-      } else if(r.status===404){
-        toast(LANG==='pt'?'O backend (worker) ainda não foi atualizado':LANG==='en'?'Backend (worker) not yet updated':'El backend aún no fue actualizado','error');
-      } else {
-        toast(LANG==='pt'?'Erro ao salvar os padrões':LANG==='en'?'Error saving presets':'Error al guardar','error');
-      }
-    }catch(e){ if(String(e&&e.message)!=='session_expired') toast(LANG==='pt'?'Sem conexão com o servidor':LANG==='en'?'No server connection':'Sin conexión','error'); }
-    finally{ GP_SAVING=false; document.querySelectorAll('button[onclick="saveGlobalProfiles()"]').forEach(function(b){b.disabled=false;b.style.opacity='';}); }
-  };
+  // Black Wolf 2.0: sync de perfis globais de risco / saveGlobalProfiles REMOVIDOS
+  // (a config de risco saiu do site e foi pro robô no MetaTrader).
 })();
 </script>
 </body>
