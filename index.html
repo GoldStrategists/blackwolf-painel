@@ -1853,7 +1853,7 @@ function parseEaDate(s){
 // escape de HTML para qualquer dado vindo do servidor/robô (nome, e-mail, erro...)
 function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 // mapeia os trades do back-end para o formato que o painel exibe
-function mapRealTrades(raw, endBalance){
+function mapRealTrades(raw, endBalance, accBalances){
   const list=(raw||[]).map(t=>{
     const close=parseEaDate(t.close_time)||parseEaDate(t.created_at);
     const open=parseEaDate(t.open_time)||close;
@@ -1874,9 +1874,18 @@ function mapRealTrades(raw, endBalance){
     };
   });
   list.sort((a,b)=>a._sort-b._sort);
-  const totalPnl=list.reduce((s,t)=>s+t.pnl,0);
-  let bal=(endBalance!=null && isFinite(endBalance))?(endBalance-totalPnl):10000;
-  list.forEach(t=>{ bal=+(bal+t.pnl).toFixed(2); t.balance=bal; });
+  // v27 (multi-conta): reconstrói o saldo corrente POR CONTA, a partir do saldo
+  // final de cada conta. Antes usava um saldo MISTURADO de todas as contas, o que
+  // deixava a coluna "Saldo" e a base do drawdown erradas em clientes com 2+ contas.
+  const reconstruct=function(trs,end){ let b=(end!=null&&isFinite(end))?(end-trs.reduce((s,t)=>s+t.pnl,0)):10000; trs.forEach(t=>{ b=+(b+t.pnl).toFixed(2); t.balance=b; }); };
+  const accs=Array.from(new Set(list.map(t=>t.account).filter(v=>v!=null)));
+  if(accBalances && accs.length){
+    accs.forEach(function(a){ reconstruct(list.filter(t=>t.account===a), accBalances[a]); });
+    const noAcc=list.filter(t=>t.account==null); if(noAcc.length) reconstruct(noAcc, null);
+  } else {
+    // conta única / sem info por conta: comportamento de antes (saldo total)
+    reconstruct(list, endBalance);
+  }
   return list;
 }
 // busca trades + status do robô no back-end e atualiza o painel
@@ -1899,9 +1908,9 @@ async function fetchMyData(){
         });
       }
     }catch(e){}
-    let totalBal=0,hasBal=false;
-    statuses.forEach(function(s){ if(s&&s.balance!=null&&isFinite(+s.balance)){ totalBal+=+s.balance; hasBal=true; } });
-    const mapped=mapRealTrades(d.trades, hasBal?totalBal:null);
+    let totalBal=0,hasBal=false; const accBal={};
+    statuses.forEach(function(s){ if(s&&s.balance!=null&&isFinite(+s.balance)){ totalBal+=+s.balance; hasBal=true; if(s.account!=null) accBal[String(s.account)]=+s.balance; } });
+    const mapped=mapRealTrades(d.trades, hasBal?totalBal:null, accBal);
     ALL_TRADES=mapped; STATS=deriveStats(mapped);
     DATA.client._eaStatus=statuses[0]||null;
     DATA.client._eaStatusAll=statuses;
@@ -2373,18 +2382,22 @@ function buildHistTable(){
   // group by day
   const groups={};
   trades.forEach(tr=>{ groups[tr.day]=groups[tr.day]||[]; groups[tr.day].push(tr); });
-  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:720px"><thead><tr>
-    <th>Ticket</th><th>${LANG==='pt'?'Abertura':LANG==='en'?'Open':'Apertura'}</th><th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
+  // v27 multi-conta: coluna "Conta" só aparece p/ clientes com 2+ contas
+  const multiAcc=Array.from(new Set((ALL_TRADES||[]).map(t=>t.account).filter(Boolean))).length>1;
+  const nCols=multiAcc?9:8;
+  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?820:720}px"><thead><tr>
+    <th>Ticket</th>${multiAcc?`<th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>`:''}<th>${LANG==='pt'?'Abertura':LANG==='en'?'Open':'Apertura'}</th><th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
     <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>Pips</th><th>P&L</th><th></th>
   </tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dayTrades=groups[day];
     const dayPnl=dayTrades.reduce((s,t)=>s+t.pnl,0);
     const dayWins=dayTrades.filter(t=>t.win).length;
-    html+=`<tr class="tbl-day-row"><td colspan="6">📅 ${day} · ${dayTrades.length} ${LANG==='pt'?'ops':LANG==='en'?'trades':'ops'} · ${dayWins}/${dayTrades.length} ${LANG==='pt'?'win':'win'}</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
+    html+=`<tr class="tbl-day-row"><td colspan="${nCols-2}">📅 ${day} · ${dayTrades.length} ${LANG==='pt'?'ops':LANG==='en'?'trades':'ops'} · ${dayWins}/${dayTrades.length} ${LANG==='pt'?'win':'win'}</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
     dayTrades.forEach(tr=>{
       html+=`<tr onclick="toggleTradeRow('${tr.id}')" style="cursor:pointer">
         <td class="mono">#${tr.id}</td>
+        ${multiAcc?`<td class="mono" style="font-size:.76rem">${esc(tr.account||'—')}</td>`:''}
         <td class="mono" style="font-size:.76rem">${tr.openT.slice(11,16)}</td>
         <td class="tbl-name">${esc(tr.symbol)}</td>
         <td><span class="pill ${tr.dir}">${tr.dir.toUpperCase()}</span></td>
@@ -2393,7 +2406,7 @@ function buildHistTable(){
         <td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td>
         <td><svg class="exp-arrow" id="arr-${tr.id}" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:15px;height:15px;transition:transform .3s"><polyline points="6 9 12 15 18 9"/></svg></td>
       </tr>
-      <tr class="expand-row"><td colspan="8"><div class="expand-inner" id="exp-${tr.id}"><div class="expand-grid">
+      <tr class="expand-row"><td colspan="${nCols}"><div class="expand-inner" id="exp-${tr.id}"><div class="expand-grid">
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Fechamento':LANG==='en'?'Close':'Cierre'}</div><div class="v">${tr.closeT.slice(11,16)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Entrada':LANG==='en'?'Entry':'Entrada'}</div><div class="v">${tr.entry}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saída':LANG==='en'?'Exit':'Salida'}</div><div class="v">${tr.exit}</div></div>
@@ -2423,9 +2436,9 @@ function toggleTradeRow(id){
 }
 function exportCSV(){
   const trades=getFilteredTrades();
-  const headers=['Ticket','Open','Close','Symbol','Direction','Lots','Entry','Exit','SL','TP','Pips','Commission','Swap','PnL','Balance','Strategy','Duration'];
+  const headers=['Ticket','Account','Open','Close','Symbol','Direction','Lots','Entry','Exit','SL','TP','Pips','Commission','Swap','PnL','Balance','Strategy','Duration'];
   let csv=headers.join(',')+'\n';
-  trades.forEach(t=>{ csv+=[t.id,t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,t.sl,t.tp,t.pips,t.commission,t.swap,t.pnl,t.balance,t.strat,t.dur].join(',')+'\n'; });
+  trades.forEach(t=>{ csv+=[t.id,t.account||'',t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,t.sl,t.tp,t.pips,t.commission,t.swap,t.pnl,t.balance,t.strat,t.dur].join(',')+'\n'; });
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='blackwolf-trades.csv'; a.click();
   toast(LANG==='pt'?'CSV exportado':LANG==='en'?'CSV exported':'CSV exportado','success');
