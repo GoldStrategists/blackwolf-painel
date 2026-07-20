@@ -1674,7 +1674,7 @@ const DEMO_DATA = {
       sessions:{sydney:false,tokyo:true,london:true,newyork:true},
       timezone:"GMT+0", newsPause:true,
     },
-    eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"2.0",size:"200 KB"},
+    eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"1.01",size:"188 KB"},
     webRequestUrl:"https://blackwolfea.com", mt5Folder:"\\MQL5\\Experts\\Advisors",
   },
   admin:{
@@ -1716,7 +1716,7 @@ function buildEmptyData(){
         sessions:{sydney:false,tokyo:true,london:true,newyork:true},
         timezone:"GMT+0", newsPause:true,
       },
-      eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"2.0",size:"200 KB"},
+      eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"1.01",size:"188 KB"},
       webRequestUrl:"https://blackwolfea.com", mt5Folder:"\\MQL5\\Experts\\Advisors",
     },
     admin:{
@@ -2701,15 +2701,7 @@ function renderDownloads(){
   <div class="banner info rv">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
     <div class="banner-tx">${LANG==='pt'?'Primeira vez? Siga o <b>guia de instalação visual</b> passo a passo para colocar o robô para rodar.':LANG==='en'?'First time? Follow the <b>visual installation guide</b> step by step to get the robot running.':'¿Primera vez? Sigue la <b>guía de instalación visual</b> paso a paso.'} <span class="login-link" onclick="goPage('setup')" style="color:var(--blue-l)">${LANG==='pt'?'Abrir guia →':LANG==='en'?'Open guide →':'Abrir guía →'}</span></div>
-  </div>
-  <div class="grid-3">
-    ${dlMini('📄',LANG==='pt'?'Manual PDF':LANG==='en'?'PDF Manual':'Manual PDF',LANG==='pt'?'Guia completo':LANG==='en'?'Complete guide':'Guía completa')}
-    ${dlMini('⚙️','Presets',LANG==='pt'?'Configurações prontas':LANG==='en'?'Ready settings':'Configuración lista')}
-    ${dlMini('🎬',LANG==='pt'?'Vídeo aula':LANG==='en'?'Video tutorial':'Video tutorial',LANG==='pt'?'Passo a passo':LANG==='en'?'Step by step':'Paso a paso')}
   </div>`;
-}
-function dlMini(ico,name,desc){
-  return `<div class="card rv" style="text-align:center;cursor:pointer" onclick="toast(LANG==='pt'?'Download iniciado':LANG==='en'?'Download started':'Descarga iniciada','success')"><div style="font-size:2rem;margin-bottom:10px">${ico}</div><div style="font-family:var(--fh);font-weight:600;font-size:.92rem">${name}</div><div style="font-size:.76rem;color:var(--t3);margin-top:3px">${desc}</div></div>`;
 }
 
 /* ─────── CLIENT: SETUP WIZARD (visual) ─────── */
