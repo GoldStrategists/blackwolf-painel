@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Black Wolf — Painel</title>
-<meta name="description" content="Painel Black Wolf — resultados detalhados, histórico completo, configuração do robô, licença e suporte.">
+<meta name="description" content="Painel Black Wolf — resultados detalhados, histórico completo, licença e suporte.">
 <meta name="theme-color" content="#07080B">
 <!-- Favicon: inline SVG wolf head (blue) -->
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMjMyIDEyNzUnPjxyZWN0IHdpZHRoPScxMjMyJyBoZWlnaHQ9JzEyNzUnIHJ4PScyMzAnIGZpbGw9JyMwNzA4MEInLz48ZyB0cmFuc2Zvcm09J3RyYW5zbGF0ZSgxODUsMTkxKSBzY2FsZSgwLjcpJz48cGF0aCBmaWxsPScjMkQ2Q0ZGJyBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGQ9J000MzEsODY4IDYxNiwxMjc0IDgwMCw4NjggNjE3LDk3NlogTTAsMCAzNyw1OTkgNDkxLDgxMCA2MTYsNzMxIDc0MSw4MTAgMTIwMCw1OTYgMTIzMSwwIDk1Myw0NjIgNjE4LDU2OSAyNzgsNDYyWiBNNzI1LDczMiA3MjYsNzMxIDcyNyw3MzIgNzI2LDczM1ogTTUwNCw3MzIgNTA1LDczMSA1MDYsNzMyIDUwNSw3MzNaIE05MjQsNjYyIDcyNiw3MzEgODI1LDU4NVogTTMwNyw2NjIgNDA2LDU4NSA1MDUsNzMxWicvPjwvZz48L3N2Zz4=">
@@ -12,7 +12,7 @@
 <!-- Open Graph: link previews (WhatsApp, social) -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="Black Wolf — Painel do Cliente">
-<meta property="og:description" content="Acompanhe seus resultados, configure seu robô e gerencie sua licença — tudo em um só lugar.">
+<meta property="og:description" content="Acompanhe seus resultados e gerencie sua licença — tudo em um só lugar.">
 <meta property="og:site_name" content="Black Wolf">
 <meta name="twitter:card" content="summary">
 <meta name="robots" content="noindex, nofollow">
@@ -1463,12 +1463,13 @@ function getProfileOverride(){
 }
 function getDisplayName(){
   const ov=getProfileOverride();
-  return (ov.displayName&&ov.displayName.trim())?ov.displayName.trim():SESSION.name;
+  // fallback pro e-mail se o back-end não mandar nome (antes quebrava o setupUserUI)
+  return (ov.displayName&&ov.displayName.trim())?ov.displayName.trim():(SESSION&&(SESSION.name||SESSION.email)||'');
 }
 function setupUserUI(){
   const ov=getProfileOverride();
-  const dispName=getDisplayName();
-  const initials=dispName.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const dispName=getDisplayName()||'';
+  const initials=(dispName.split(' ').map(w=>w[0]).filter(Boolean).slice(0,2).join('')||'?').toUpperCase();
   document.getElementById('userName').textContent=dispName;
   document.getElementById('menuUserName').textContent=dispName;
   document.getElementById('menuUserEmail').textContent=SESSION.email;
@@ -1501,6 +1502,8 @@ function setupUserUI(){
 function switchNav(){
   document.getElementById('clientNav').style.display=VIEW_MODE==='client'?'block':'none';
   document.getElementById('adminNav').style.display=VIEW_MODE==='admin'?'block':'none';
+  // badge de clientes: número real (demo=5; real=vem do /api/admin/clients)
+  try{ const b=document.getElementById('clientCountBadge'); if(b&&DATA&&DATA.admin) b.textContent=(DATA.admin.totalClients!=null?DATA.admin.totalClients:0); }catch(e){}
 }
 /* O BLOCO DE INICIALIZAÇÃO (auto-login / link de reset) foi MOVIDO para o fim
    do script (função bwBoot, chamada na última linha). Motivo: ele chamava
@@ -1960,6 +1963,8 @@ async function fetchRealClients(){
       DATA.admin.activeLicenses = DATA.admin.clients.filter(c=>c.status==='active').length;
       DATA.admin.totalAccounts = DATA.admin.clients.reduce((s,c)=>s+(c.accUsed||0),0);
       DATA.admin.onlineRobots = DATA.admin.clients.filter(c=>c.online).length;
+      // badge da nav com o número REAL de clientes (antes ficava fixo em "5")
+      try{ const b=document.getElementById('clientCountBadge'); if(b) b.textContent=DATA.admin.totalClients; }catch(e){}
       _clientTradesCache = {}; _clientStatsCache = {};
       // re-renderiza se o admin estiver vendo uma tela que usa esses dados
       if(typeof CURRENT_PAGE==='string' && CURRENT_PAGE.indexOf('admin')===0) renderPage(CURRENT_PAGE);
@@ -1968,7 +1973,7 @@ async function fetchRealClients(){
 }
 
 /* money helpers */
-function fmtMoney(v){ const sign=v<0?'−':'+'; return sign+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtMoney(v){ const sign=v<0?'−':(v>0?'+':''); return sign+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtMoneyPlain(v){ return (v<0?'−':'')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function profileName(p){ return p==='aggr'?t('profile_aggr'):p==='mod'?t('profile_mod'):t('profile_cons'); }
 function profileClass(p){ return p==='aggr'?'aggr':p==='mod'?'mod':'cons'; }
@@ -2092,7 +2097,7 @@ function renderDashboard(){
         return `<div class="hero-sync" style="color:${col};background:${bg};border-color:${bd}"><span class="sync-dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${lbl}</div>`;
       })()}
     </div>
-    <div class="hero-num ${net<0?'neg':'pos'}" data-money="${net}" data-dec="2">US$ 0,00</div>
+    <div class="hero-num ${net<0?'neg':(net>0?'pos':'')}" data-money="${net}" data-dec="2">US$ 0,00</div>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="hero-meta-v up" data-count="${s.winrate}" data-suffix="%" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto'}</span></div>
       <div class="hero-meta-item">${isFinite(s.profitFactor)?`<span class="hero-meta-v bl" data-count="${s.profitFactor}" data-dec="2">0</span>`:`<span class="hero-meta-v bl">∞</span>`}<span class="hero-meta-l">${LANG==='pt'?'Fator de lucro':LANG==='en'?'Profit factor':'Factor de lucro'}</span></div>
@@ -2137,12 +2142,12 @@ function renderDashboard(){
 
   <div class="grid-2">
     <div class="card rv">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5"/></svg>${LANG==='pt'?'Licença':LANG==='en'?'License':'Licencia'}</div><span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span></div>
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5"/></svg>${LANG==='pt'?'Licença':LANG==='en'?'License':'Licencia'}</div>${!c.licenseKey?`<span class="pill available">${LANG==='pt'?'Sem licença':LANG==='en'?'No license':'Sin licencia'}</span>`:(c.licenseStatus&&c.licenseStatus!=='active'?`<span class="pill revoked">${LANG==='pt'?'Inativa':LANG==='en'?'Inactive':'Inactiva'}</span>`:`<span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span>`)}</div>
       <div class="keyfield"><div class="keyfield-input">${c.licenseKey||'—'}</div><button class="copy-btn" onclick="copyText('${c.licenseKey||''}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
       <div class="meta-rows">
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Plano':LANG==='en'?'Plan':'Plan'}</div><div class="val">${c.plan}</div></div>
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Expira em':LANG==='en'?'Expires':'Expira'}</div><div class="val">${c.expiresAt?c.expiresAt.slice(0,10):'—'}</div></div>
-        <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas':LANG==='en'?'Accounts':'Cuentas'}</div><div class="val">${c.accountsUsed}/${c.accountLimit}</div></div>
+        <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas':LANG==='en'?'Accounts':'Cuentas'}</div><div class="val">${c.accountsUsed}/${c.accountLimit===-1?'∞':(c.accountLimit==null?'—':c.accountLimit)}</div></div>
       </div>
     </div>
     <div class="card rv">
@@ -2463,7 +2468,7 @@ function demoReport(){
 function renderReports(){
   if(REP_DATA===null && !REP_LOADING){ setTimeout(loadReport,0); }
   const money=function(v){ return v==null?'—':(v<0?'−':'')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-  const signed=function(v){ return v==null?'—':(v<0?'−':'+')+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  const signed=function(v){ return v==null?'—':(v<0?'−':(v>0?'+':''))+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   const accs=dashAccounts();
   const periodTabs=`<div class="chart-range" style="display:inline-flex">
     <button class="${REP_PERIOD==='week'?'on':''}" onclick="setRepPeriod('week')">${LANG==='pt'?'Semanal':LANG==='en'?'Weekly':'Semanal'}</button>
@@ -2493,7 +2498,7 @@ function renderReports(){
   <div class="hero-card rv" style="margin-top:8px">
     <div class="hero-glow"></div>
     <div class="hero-top"><div class="hero-label">${(REP_PERIOD==='week'?(LANG==='pt'?'RESULTADO DA SEMANA':LANG==='en'?'WEEK RESULT':'RESULTADO SEMANA'):(LANG==='pt'?'RESULTADO DO MÊS':LANG==='en'?'MONTH RESULT':'RESULTADO MES'))}${per?' · '+per:''}</div></div>
-    <div class="hero-num ${S.result<0?'neg':'pos'}">${signed(S.result)}</div>
+    <div class="hero-num ${S.result<0?'neg':(S.result>0?'pos':'')}">${signed(S.result)}</div>
     ${S.resultPct!=null?`<div style="font-family:var(--fm);font-size:.9rem;color:${S.result<0?'var(--red-l)':'var(--green-l)'};margin-top:2px">${(S.result<0?'':'+')+S.resultPct}% ${LANG==='pt'?'sobre o saldo inicial':LANG==='en'?'over starting balance':'sobre saldo inicial'}</div>`:''}
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="hero-meta-v">${S.trades}</span><span class="hero-meta-l">${LANG==='pt'?'Operações':LANG==='en'?'Trades':'Operaciones'}</span></div>
@@ -2693,7 +2698,7 @@ function renderDownloads(){
     <div class="dl-card">
       <div class="dl-ico">🐺</div>
       <div class="dl-info"><div class="dl-name">${c.eaFile.name}<span class="pill current">v${c.eaFile.version}</span></div><div class="dl-meta">Expert Advisor · MetaTrader 5 · ${c.eaFile.size}</div></div>
-      ${(c.licenseKey && c.licenseStatus!=='revoked' && !(SESSION&&SESSION.isDemo))
+      ${(c.licenseKey && c.licenseStatus==='active' && !(SESSION&&SESSION.isDemo))
         ? `<a class="dl-btn" href="/BLACK_WOLF_CLIENTE.ex5" download="BLACK_WOLF_CLIENTE.ex5" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</a>`
         : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</button>`}
     </div>
@@ -3060,15 +3065,17 @@ function settingsSaveProfile(){
   const city=g('setCity'); if(city!==undefined)ov.city=city;
   const whats=g('setWhats'); if(whats!==undefined)ov.whatsapp=whats;
   localStorage.setItem('bw_profile_'+SESSION.email,JSON.stringify(ov));
-  // sync to backend if logged in via API
-  if(SESSION&&SESSION.token){
-    fetch(API+'/api/profile',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
-      body:JSON.stringify({display_name:name,phone:ov.phone,whatsapp:ov.whatsapp,country:ov.country,city:ov.city,lang:LANG})
-    }).catch(()=>{});
-  }
   setupUserUI();
   renderPage('settings');
-  toast(err.saved,'success');
+  // sync to backend if logged in via API — toast HONESTO (só "salvo" se confirmar)
+  if(SESSION&&SESSION.token&&!SESSION.isDemo){
+    fetch(API+'/api/profile',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
+      body:JSON.stringify({display_name:name,phone:ov.phone,whatsapp:ov.whatsapp,country:ov.country,city:ov.city,lang:LANG})
+    }).then(r=>{ toast(r.ok?err.saved:(LANG==='pt'?'Salvo no aparelho — não sincronizou com o servidor':LANG==='en'?'Saved on device — not synced to server':'Guardado en el dispositivo — no sincronizado'), r.ok?'success':'error'); })
+      .catch(()=>{ toast(LANG==='pt'?'Salvo no aparelho — sem conexão com o servidor':LANG==='en'?'Saved on device — no server connection':'Guardado en el dispositivo — sin conexión','error'); });
+  } else {
+    toast(err.saved,'success');
+  }
 }
 function updatePassStrength(val){
   const box=document.getElementById('passStrength');
@@ -3101,8 +3108,9 @@ async function settingsChangePass(){
   const cf=document.getElementById('setConfPass').value;
   if(np.length<8){ toast(err.errLen,'error'); return; }
   if(np!==cf){ toast(err.errMatch,'error'); return; }
-  // Try backend first
-  if(SESSION&&SESSION.token){
+  // Usuário REAL: o servidor é autoritativo. Nunca cair no fallback local dizendo
+  // "senha incorreta" quando o problema é conexão/servidor.
+  if(SESSION&&SESSION.token&&!SESSION.isDemo){
     try{
       const res=await fetch(API+'/api/change-password',{method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
@@ -3115,7 +3123,10 @@ async function settingsChangePass(){
         toast(err.passChanged,'success'); return;
       }
       if(res.status===403){ toast(err.errCur,'error'); return; }
-    }catch(e){}
+      toast(LANG==='pt'?'Falha ao trocar a senha no servidor — tente novamente':LANG==='en'?'Server failed to change password — try again':'Error al cambiar la contraseña — inténtalo de nuevo','error'); return;
+    }catch(e){
+      toast(LANG==='pt'?'Sem conexão com o servidor — tente novamente':LANG==='en'?'No server connection — try again':'Sin conexión con el servidor — inténtalo de nuevo','error'); return;
+    }
   }
   // Fallback local
   const storedNew=localStorage.getItem('bw_pass_'+SESSION.email);
@@ -3762,7 +3773,7 @@ function animateCount(el,target,dec,suffix,isMoney){
   requestAnimationFrame(frame);
 }
 function fmtCount(v,dec,suffix,isMoney){
-  if(isMoney){ const sign=v<0?'−':'+'; return sign+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+  if(isMoney){ const sign=v<0?'−':(v>0?'+':''); return sign+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
   return v.toLocaleString(LANG==='pt'||LANG==='es'?'pt-BR':'en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec})+suffix;
 }
 
@@ -4066,7 +4077,6 @@ function chatPick(o){
   if(o.id==='human'){ showTyping(); setTimeout(()=>{ hideTyping(); addBotMsg(f.humanMsg); renderChips([{id:'wa',label:'💬 Abrir WhatsApp',human:true,action:'whatsapp'},{id:'menu',label:f.backLabel,back:true}]); },600); return; }
   if(o.action==='whatsapp'||o.id==='wa'){ window.open('https://wa.me/12292961795','_blank'); renderChips(f.menu); return; }
   if(o.id==='goSetup'){ showTyping(); setTimeout(()=>{hideTyping(); chatToggle(false); goPage('setup');},500); return; }
-  if(o.id==='goConfig'){ showTyping(); setTimeout(()=>{hideTyping(); chatToggle(false); goPage('setup');},500); return; }
   if(o.id==='openTerms'){ chatToggle(false); openLegal('refund'); return; }
   if(o.id==='close'){ chatToggle(false); return; }
   if(o.id==='menu'||o.back){ showTyping(); setTimeout(()=>{ hideTyping(); renderChips(f.menu); },400); return; }
@@ -4087,7 +4097,7 @@ document.getElementById('chatFab').addEventListener('click',()=>chatToggle());
 const FAQ_DATA={
   pt:[
     {q:"O Black Wolf garante lucro?",a:"Não. Nenhum robô de trading pode garantir lucro. O Black Wolf é uma ferramenta de automação que executa operações conforme os parâmetros que <b>você</b> define. Resultados passados não garantem resultados futuros, e toda operação no mercado financeiro envolve risco real de perda de capital. Você é inteiramente responsável pela parametrização e pelo capital que decide arriscar."},
-    {q:"Preciso saber programar ou operar para usar?",a:"Não para programar. O robô já vem com estratégias prontas para XAUUSD (ouro). Você instala seguindo nosso guia visual de 8 passos, insere sua licença e escolhe um perfil de risco (Conservador, Moderado ou Arrojado). Recomendamos, porém, que você entenda o básico de gestão de risco antes de operar com capital real — comece sempre em conta demo."},
+    {q:"Preciso saber programar ou operar para usar?",a:"Não para programar. O robô já vem com estratégias prontas para XAUUSD (ouro). Você instala seguindo nosso guia visual de 8 passos, insere sua licença e define seus parâmetros de risco (risco % por operação, meta diária % e perda máxima diária %) direto nos Inputs do robô no MetaTrader. Recomendamos, porém, que você entenda o básico de gestão de risco antes de operar com capital real — comece sempre em conta demo."},
     {q:"Em quais corretoras e plataformas funciona?",a:"O Black Wolf é um Expert Advisor (EA) para <b>MetaTrader 5</b>. Funciona com qualquer corretora que ofereça MT5 e o símbolo XAUUSD. Você pode usar conta demo (recomendado para testar) ou conta real. A escolha da corretora é sua."},
     {q:"Quantas contas posso usar com minha licença?",a:"Depende do seu plano: Lone Wolf permite 1 conta, Wolf Pack permite 2 contas e Alpha Pack permite 3 contas. Você vê o uso atual na página Licença & Contas. Para mais contas, é possível fazer upgrade de plano."},
     {q:"O que acontece se eu parar de pagar?",a:"Sua licença expira no fim do período já pago e o robô deixa de operar automaticamente. Seus dados e histórico permanecem visíveis no painel, mas o EA para de abrir novas operações até a assinatura ser regularizada. Não há cobrança de multa por cancelamento."},
@@ -4097,7 +4107,7 @@ const FAQ_DATA={
   ],
   en:[
     {q:"Does Black Wolf guarantee profit?",a:"No. No trading robot can guarantee profit. Black Wolf is an automation tool that executes trades according to the parameters <b>you</b> set. Past results do not guarantee future results, and all financial market trading involves real risk of capital loss. You are entirely responsible for the parametrization and the capital you choose to risk."},
-    {q:"Do I need to know coding or trading to use it?",a:"No coding required. The robot comes with ready-made strategies for XAUUSD (gold). You install it following our 8-step visual guide, enter your license and pick a risk profile (Conservative, Moderate or Aggressive). We do recommend understanding the basics of risk management before trading real capital — always start on a demo account."},
+    {q:"Do I need to know coding or trading to use it?",a:"No coding required. The robot comes with ready-made strategies for XAUUSD (gold). You install it following our 8-step visual guide, enter your license and set your risk parameters (risk % per trade, daily target % and daily max loss %) directly in the robot's Inputs tab in MetaTrader. We do recommend understanding the basics of risk management before trading real capital — always start on a demo account."},
     {q:"Which brokers and platforms does it work with?",a:"Black Wolf is an Expert Advisor (EA) for <b>MetaTrader 5</b>. It works with any broker offering MT5 and the XAUUSD symbol. You can use a demo account (recommended for testing) or a live account. The choice of broker is yours."},
     {q:"How many accounts can I use with my license?",a:"It depends on your plan: Lone Wolf allows 1 account, Wolf Pack allows 2 accounts, and Alpha Pack allows 3 accounts. You can see current usage on the License & Accounts page. For more accounts, you can upgrade your plan."},
     {q:"What happens if I stop paying?",a:"Your license expires at the end of the already-paid period and the robot stops trading automatically. Your data and history remain visible in the panel, but the EA stops opening new trades until the subscription is renewed. There is no cancellation penalty."},
@@ -4107,7 +4117,7 @@ const FAQ_DATA={
   ],
   es:[
     {q:"¿Black Wolf garantiza ganancias?",a:"No. Ningún robot de trading puede garantizar ganancias. Black Wolf es una herramienta de automatización que ejecuta operaciones según los parámetros que <b>tú</b> defines. Los resultados pasados no garantizan resultados futuros, y toda operación en el mercado financiero implica riesgo real de pérdida de capital. Eres totalmente responsable de la parametrización y del capital que decides arriesgar."},
-    {q:"¿Necesito saber programar u operar para usarlo?",a:"No para programar. El robot viene con estrategias listas para XAUUSD (oro). Lo instalas siguiendo nuestra guía visual de 8 pasos, ingresas tu licencia y eliges un perfil de riesgo (Conservador, Moderado o Agresivo). Sí recomendamos entender lo básico de gestión de riesgo antes de operar con capital real — empieza siempre en cuenta demo."},
+    {q:"¿Necesito saber programar u operar para usarlo?",a:"No para programar. El robot viene con estrategias listas para XAUUSD (oro). Lo instalas siguiendo nuestra guía visual de 8 pasos, ingresas tu licencia y defines tus parámetros de riesgo (riesgo % por operación, meta diaria % y pérdida máxima diaria %) directamente en los Inputs del robot en MetaTrader. Sí recomendamos entender lo básico de gestión de riesgo antes de operar con capital real — empieza siempre en cuenta demo."},
     {q:"¿Con qué brókers y plataformas funciona?",a:"Black Wolf es un Expert Advisor (EA) para <b>MetaTrader 5</b>. Funciona con cualquier bróker que ofrezca MT5 y el símbolo XAUUSD. Puedes usar cuenta demo (recomendado para probar) o cuenta real. La elección del bróker es tuya."},
     {q:"¿Cuántas cuentas puedo usar con mi licencia?",a:"Depende de tu plan: Lone Wolf permite 1 cuenta, Wolf Pack permite 2 cuentas y Alpha Pack permite 3 cuentas. Ves el uso actual en la página Licencia & Cuentas. Para más cuentas, puedes mejorar tu plan."},
     {q:"¿Qué pasa si dejo de pagar?",a:"Tu licencia expira al final del período ya pagado y el robot deja de operar automáticamente. Tus datos e historial siguen visibles en el panel, pero el EA deja de abrir nuevas operaciones hasta regularizar la suscripción. No hay penalización por cancelación."},
@@ -4920,7 +4930,12 @@ function surveyFinish(){
 
 /* ═══════════════ NOTIFICATIONS ═══════════════ */
 function getNotifs(){
-  // Role-based notifications. In production these come from the backend.
+  // Notificações de exemplo são SÓ para a conta demo. Cliente/admin REAL não vê
+  // avisos inventados (antes um cliente Lone Wolf via "sua licença Alpha Pack
+  // vence em 16 dias" e o admin via clientes fictícios). Sem endpoint real ainda
+  // → lista vazia para contas reais.
+  if(!(SESSION&&SESSION.isDemo)) return [];
+  // Role-based notifications (DEMO). In production these come from the backend.
   const isAdmin = VIEW_MODE==='admin';
   const N = {
     pt:{
