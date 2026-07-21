@@ -1101,6 +1101,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
       <div id="adminNav" style="display:none">
         <div class="side-sec" data-i18n="nav_section_admin">ADMINISTRAÇÃO</div>
         <div class="nav-item active" data-page="admin-overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span data-i18n="nav_admin_overview">Visão Geral</span></div>
+        <div class="nav-item" data-page="admin-results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span data-i18n="nav_admin_results">Resultados</span></div>
         <div class="nav-item" data-page="admin-clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="nav_admin_clients">Clientes</span><span class="badge" id="clientCountBadge">5</span></div>
         <div class="nav-item" data-page="admin-leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_leads">Perfis & Leads</span></div>
         <div class="nav-item" data-page="admin-licenses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="nav_admin_licenses">Licenças</span></div>
@@ -1200,7 +1201,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Dashboard",nav_results:"Meus Resultados",nav_history:"Histórico de Trades",nav_reports:"Relatórios",
     nav_strategies:"Estratégias",nav_config:"Configurar Robô",nav_section_account:"CONTA",nav_license:"Licença & Contas",
     nav_downloads:"Downloads",nav_setup:"Instalação",nav_faq:"FAQ / Suporte",nav_legal:"Termos Legais",
-    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_clients:"Clientes",nav_admin_leads:"Perfis & Leads",
+    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_clients:"Clientes",nav_admin_leads:"Perfis & Leads",
     nav_admin_licenses:"Licenças",nav_admin_accounts:"Contas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versões do EA",nav_admin_payments:"Pagamentos",
     sidefoot_title:"Precisa de ajuda?",sidefoot_desc:"Fale com nosso suporte via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Atualizar",
@@ -1219,7 +1220,7 @@ const I18N = {
     nav_section_main:"MAIN",nav_dashboard:"Dashboard",nav_results:"My Results",nav_history:"Trade History",nav_reports:"Reports",
     nav_strategies:"Strategies",nav_config:"Configure Robot",nav_section_account:"ACCOUNT",nav_license:"License & Accounts",
     nav_downloads:"Downloads",nav_setup:"Installation",nav_faq:"FAQ / Support",nav_legal:"Legal Terms",
-    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_clients:"Clients",nav_admin_leads:"Profiles & Leads",
+    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_clients:"Clients",nav_admin_leads:"Profiles & Leads",
     nav_admin_licenses:"Licenses",nav_admin_accounts:"MT5 Accounts",nav_section_system:"SYSTEM",nav_admin_files:"EA Versions",nav_admin_payments:"Payments",
     sidefoot_title:"Need help?",sidefoot_desc:"Talk to our support via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancel",modal_confirm:"Confirm",refresh:"Refresh",
@@ -1238,7 +1239,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Panel",nav_results:"Mis Resultados",nav_history:"Historial de Trades",nav_reports:"Informes",
     nav_strategies:"Estrategias",nav_config:"Configurar Robot",nav_section_account:"CUENTA",nav_license:"Licencia & Cuentas",
     nav_downloads:"Descargas",nav_setup:"Instalación",nav_faq:"FAQ / Soporte",nav_legal:"Términos Legales",
-    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_clients:"Clientes",nav_admin_leads:"Perfiles & Leads",
+    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_clients:"Clientes",nav_admin_leads:"Perfiles & Leads",
     nav_admin_licenses:"Licencias",nav_admin_accounts:"Cuentas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versiones del EA",nav_admin_payments:"Pagos",
     sidefoot_title:"¿Necesitas ayuda?",sidefoot_desc:"Habla con nuestro soporte por WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Actualizar",
@@ -1299,6 +1300,7 @@ function resetUserState(){
     CLIENT_OPEN=new Set(); _clientTradesCache={}; _clientStatsCache={}; CLIENT_RES_MONTH={};
     DASH_ACCOUNT=null; EQUITY_OVERRIDE=null;
     REP_DATA=null; REP_ACCOUNT=null; REP_PERIOD='month'; REP_LOADING=false;
+    ADMIN_RES=null; ADMIN_RES_LOADING=false; ADMIN_RES_PERIOD='today'; ADMIN_CLIENT=null; ADMIN_CLIENT_EMAIL=null; ADMIN_CLIENT_LOADING=false;
     ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
   }catch(e){}
 }
@@ -1997,7 +1999,7 @@ function renderPage(page){
   const map={
     dashboard:renderDashboard, results:renderResults, history:renderHistory, strategies:renderStrategies, reports:renderReports,
     license:renderLicense, downloads:renderDownloads, setup:renderSetup, faq:renderFaq, legal:renderLegalPage, settings:renderSettings,
-    'admin-overview':renderAdminOverview,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
+    'admin-overview':renderAdminOverview,'admin-results':renderAdminResults,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
     'admin-licenses':renderAdminLicenses,'admin-accounts':renderAdminAccounts,'admin-files':renderAdminFiles,'admin-payments':renderAdminPayments,
   };
   const fn=map[page]||renderDashboard;
@@ -3155,6 +3157,233 @@ async function settingsChangePass(){
 
 /* ═══════════════ ADMIN PAGES ═══════════════ */
 /* ─────── ADMIN: OVERVIEW ─────── */
+/* ═══════════════ ADMIN: RESULTADOS DOS CLIENTES ═══════════════
+   Visão Geral (agregado + MRR + contagens) · lista clicável · individual.
+   Fonte: /api/admin/results (worker v28). Fuso = server da corretora. */
+let ADMIN_RES=null, ADMIN_RES_LOADING=false, ADMIN_RES_PERIOD='today';
+let ADMIN_CLIENT=null, ADMIN_CLIENT_EMAIL=null, ADMIN_CLIENT_LOADING=false;
+let _adminResRAF=null;
+function setAdminResPeriod(p){ ADMIN_RES_PERIOD=p; if(CURRENT_PAGE==='admin-results')renderPage('admin-results'); }
+async function loadAdminResults(){
+  if(SESSION&&SESSION.isDemo){ ADMIN_RES=demoAdminResults(); if(CURRENT_PAGE==='admin-results')renderPage('admin-results'); return; }
+  ADMIN_RES_LOADING=true; if(CURRENT_PAGE==='admin-results')renderPage('admin-results');
+  try{
+    const r=await apiFetch('/api/admin/results');
+    if(r.ok){ ADMIN_RES=await r.json(); } else if(r.status===404){ ADMIN_RES={__noapi:true}; } else { ADMIN_RES={__err:true}; }
+  }catch(e){ if(String(e&&e.message)!=='session_expired') ADMIN_RES={__err:true}; }
+  ADMIN_RES_LOADING=false; if(CURRENT_PAGE==='admin-results')renderPage('admin-results');
+}
+async function loadAdminClient(email){
+  ADMIN_CLIENT_EMAIL=email; ADMIN_CLIENT=null;
+  if(SESSION&&SESSION.isDemo){ ADMIN_CLIENT=demoAdminClient(email); if(CURRENT_PAGE==='admin-results')renderPage('admin-results'); return; }
+  ADMIN_CLIENT_LOADING=true; if(CURRENT_PAGE==='admin-results')renderPage('admin-results');
+  try{
+    const r=await apiFetch('/api/admin/results?email='+encodeURIComponent(email));
+    if(r.ok){ ADMIN_CLIENT=await r.json(); } else { ADMIN_CLIENT={__err:true}; }
+  }catch(e){ if(String(e&&e.message)!=='session_expired') ADMIN_CLIENT={__err:true}; }
+  ADMIN_CLIENT_LOADING=false; if(CURRENT_PAGE==='admin-results')renderPage('admin-results');
+}
+function openAdminClient(email){ ADMIN_CLIENT_EMAIL=email; loadAdminClient(email); renderPage('admin-results'); }
+function closeAdminClient(){ ADMIN_CLIENT=null; ADMIN_CLIENT_EMAIL=null; renderPage('admin-results'); }
+function resMoney(v){ return v==null?'—':(v<0?'−':(v>0?'+':''))+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function resPlainMoney(v){ return v==null?'—':'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function resPayPill(pay){
+  const m={pagando:['paid',LANG==='pt'?'Pagando':LANG==='en'?'Paying':'Pagando'],cortesia:['due',LANG==='pt'?'Cortesia':LANG==='en'?'Courtesy':'Cortesía'],pendente:['overdue',LANG==='pt'?'Pendente':LANG==='en'?'Pending':'Pendiente']};
+  const [cls,lbl]=m[pay]||m.pendente; return `<span class="pill ${cls}">${lbl}</span>`;
+}
+function periodLabel(p){
+  return p==='today'?(LANG==='pt'?'Hoje':LANG==='en'?'Today':'Hoy'):p==='week'?(LANG==='pt'?'Semana':LANG==='en'?'Week':'Semana'):p==='month'?(LANG==='pt'?'Mês':LANG==='en'?'Month':'Mes'):(LANG==='pt'?'Total':LANG==='en'?'Total':'Total');
+}
+function resPeriodTabs(){
+  return `<div class="chart-range" style="display:inline-flex;flex-wrap:wrap">
+    ${['today','week','month','total'].map(p=>`<button class="${ADMIN_RES_PERIOD===p?'on':''}" onclick="setAdminResPeriod('${p}')">${periodLabel(p)}</button>`).join('')}
+  </div>`;
+}
+function renderAdminResults(){
+  if(ADMIN_CLIENT_EMAIL){ return renderAdminClientView(); }
+  if(ADMIN_RES===null && !ADMIN_RES_LOADING){ setTimeout(loadAdminResults,0); }
+  const head=pageHead(
+    LANG==='pt'?'RESULTADOS':LANG==='en'?'RESULTS':'RESULTADOS',
+    LANG==='pt'?'Resultados dos clientes':LANG==='en'?'Client results':'Resultados de clientes',
+    LANG==='pt'?'Resultado agregado, receita mensal e o desempenho de cada cliente. Clique num cliente para ver o detalhe.':LANG==='en'?'Aggregate result, monthly revenue and each client\'s performance. Click a client for detail.':'Resultado agregado, ingreso mensual y el desempeño de cada cliente.',
+    resPeriodTabs()
+  );
+  if(ADMIN_RES_LOADING && !ADMIN_RES) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando resultados…':LANG==='en'?'Loading results…':'Cargando…'}</div></div></div>`;
+  if(ADMIN_RES&&ADMIN_RES.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'O servidor (worker) ainda não tem o endpoint de resultados. Publique o worker v28.':LANG==='en'?'Server not updated for results yet. Publish worker v28.':'El servidor aún no fue actualizado.'}</div></div>`;
+  if(ADMIN_RES&&ADMIN_RES.__err) return head+`<div class="banner risk rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg><div class="banner-tx">${LANG==='pt'?'Não foi possível carregar os resultados. Tente novamente.':LANG==='en'?'Could not load results.':'No se pudo cargar.'}</div></div>`;
+  const D=ADMIN_RES||{aggregate:{today:0,week:0,month:0,total:0},mrr:0,clientsActive:0,clientsPaying:0,clientsTotal:0,clients:[]};
+  const agg=D.aggregate||{today:0,week:0,month:0,total:0};
+  const clients=(D.clients||[]).slice().sort((a,b)=>(b[ADMIN_RES_PERIOD]||0)-(a[ADMIN_RES_PERIOD]||0));
+  const perKey=ADMIN_RES_PERIOD;
+  const heroVal=agg[perKey]||0;
+  const list = clients.length ? clients.map(c=>{
+    const res=+(c[perKey]||0);
+    const cls=res<0?'neg':(res>0?'pos':'');
+    const acc=(c.accounts&&c.accounts.length)?c.accounts.join(', '):'—';
+    return `<tr class="ares-row" onclick="openAdminClient('${esc(c.email)}')" style="cursor:pointer">
+      <td><div class="tbl-name">${esc(c.name)}${c.is_admin?' <span class="pill active" style="font-size:.6rem">admin</span>':''}</div><div style="font-size:.7rem;color:var(--t3)" class="mono">${esc(c.email)}</div></td>
+      <td class="mono" style="font-size:.8rem">${esc(acc)}</td>
+      <td>${statusPill(c.status||'expired')}</td>
+      <td>${resPayPill(c.payment)}</td>
+      <td class="mono" style="font-size:.82rem">${c.monthly_amount>0?resPlainMoney(c.monthly_amount):'—'}</td>
+      <td class="mono ares-res ${cls}" style="font-weight:700;text-align:right">${resMoney(res)}</td>
+      <td style="text-align:right"><svg viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:16px;height:16px"><polyline points="9 18 15 12 9 6"/></svg></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:26px 0">${LANG==='pt'?'Nenhum cliente ainda':LANG==='en'?'No clients yet':'Aún no hay clientes'}</td></tr>`;
+  return head+`
+  <div class="hero-card rv" style="margin-top:8px">
+    <div class="hero-glow"></div>
+    <div class="hero-top"><div class="hero-label">${LANG==='pt'?'RESULTADO AGREGADO':LANG==='en'?'AGGREGATE RESULT':'RESULTADO AGREGADO'} · ${periodLabel(perKey).toUpperCase()}</div></div>
+    <div class="hero-num ${heroVal<0?'neg':(heroVal>0?'pos':'')}" data-money="${heroVal}" data-dec="2">US$ 0,00</div>
+    <div class="hero-meta">
+      <div class="hero-meta-item"><span class="hero-meta-v bl" data-money="${D.mrr||0}" data-dec="2">US$ 0</span><span class="hero-meta-l">${LANG==='pt'?'Receita mensal (MRR)':LANG==='en'?'Monthly revenue (MRR)':'Ingreso mensual (MRR)'}</span></div>
+      <div class="hero-meta-item"><span class="hero-meta-v" data-count="${D.clientsPaying||0}">0</span><span class="hero-meta-l">${LANG==='pt'?'Pagando':LANG==='en'?'Paying':'Pagando'}</span></div>
+      <div class="hero-meta-item"><span class="hero-meta-v" data-count="${D.clientsActive||0}">0</span><span class="hero-meta-l">${LANG==='pt'?'Ativos':LANG==='en'?'Active':'Activos'}</span></div>
+      <div class="hero-meta-item"><span class="hero-meta-v" data-count="${D.clientsTotal||0}">0</span><span class="hero-meta-l">${LANG==='pt'?'Clientes':LANG==='en'?'Clients':'Clientes'}</span></div>
+    </div>
+  </div>
+  <div class="admin-stats" style="margin-top:12px">
+    ${astatMoney(agg.today<0?'red':'green','trending',LANG==='pt'?'Hoje':LANG==='en'?'Today':'Hoy',agg.today,'','')}
+    ${astatMoney(agg.week<0?'red':'green','trending',LANG==='pt'?'Semana':LANG==='en'?'Week':'Semana',agg.week,'','')}
+    ${astatMoney(agg.month<0?'red':'green','trending',LANG==='pt'?'Mês':LANG==='en'?'Month':'Mes',agg.month,'','')}
+    ${astatMoney(agg.total<0?'red':'green','dollar',LANG==='pt'?'Total':LANG==='en'?'Total':'Total',agg.total,'','')}
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>${LANG==='pt'?'Clientes':LANG==='en'?'Clients':'Clientes'}</div><div style="font-family:var(--fm);font-size:.72rem;color:var(--t3)">${LANG==='pt'?'Resultado':LANG==='en'?'Result':'Resultado'}: ${periodLabel(perKey)}</div></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr>
+      <th>${LANG==='pt'?'Cliente':LANG==='en'?'Client':'Cliente'}</th>
+      <th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>
+      <th>Status</th>
+      <th>${LANG==='pt'?'Pagamento':LANG==='en'?'Payment':'Pago'}</th>
+      <th>${LANG==='pt'?'Mensalidade':LANG==='en'?'Monthly':'Mensualidad'}</th>
+      <th style="text-align:right">${LANG==='pt'?'Resultado':LANG==='en'?'Result':'Resultado'}</th>
+      <th></th>
+    </tr></thead><tbody>${list}</tbody></table></div>
+  </div>`;
+}
+function renderAdminClientView(){
+  const head=pageHead(
+    LANG==='pt'?'RESULTADOS':LANG==='en'?'RESULTS':'RESULTADOS',
+    LANG==='pt'?'Detalhe do cliente':LANG==='en'?'Client detail':'Detalle del cliente',
+    '',
+    `<button class="refresh-btn" onclick="closeAdminClient()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>${LANG==='pt'?'Voltar':LANG==='en'?'Back':'Volver'}</button>`
+  );
+  if(ADMIN_CLIENT_LOADING && !ADMIN_CLIENT) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':LANG==='en'?'Loading…':'Cargando…'}</div></div></div>`;
+  if(!ADMIN_CLIENT||ADMIN_CLIENT.__err) return head+`<div class="banner risk rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg><div class="banner-tx">${LANG==='pt'?'Não foi possível carregar este cliente.':LANG==='en'?'Could not load this client.':'No se pudo cargar.'}</div></div>`;
+  const C=ADMIN_CLIENT;
+  const acc=(C.accounts&&C.accounts.length)?C.accounts.join(', '):'—';
+  const pctTxt = C.todayPct!=null ? `${(C.todayPct<0?'':'+')}${C.todayPct}%` : null;
+  const empty=(C.trades===0);
+  return head+`
+  <div class="card rv" style="margin-top:8px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:var(--fh);font-weight:700;font-size:1.2rem">${esc(C.name||C.email)}</div>
+        <div class="mono" style="font-size:.78rem;color:var(--t3);margin-top:2px">${esc(C.email)}</div>
+        <div class="mono" style="font-size:.78rem;color:var(--t2);margin-top:4px">${LANG==='pt'?'Conta(s)':LANG==='en'?'Account(s)':'Cuenta(s)'}: ${esc(acc)}</div>
+      </div>
+      <div style="text-align:right">
+        <div>${statusPill(C.status||'expired')}</div>
+        <div class="mono" style="font-size:.78rem;color:var(--t3);margin-top:6px">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: ${resPlainMoney(C.balance)}</div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-card rv" style="margin-top:12px">
+    <div class="hero-glow"></div>
+    <div class="hero-top"><div class="hero-label">${LANG==='pt'?'RESULTADO DE HOJE':LANG==='en'?'TODAY RESULT':'RESULTADO DE HOY'}</div></div>
+    <div class="hero-num ${C.today<0?'neg':(C.today>0?'pos':'')}" data-money="${C.today||0}" data-dec="2">US$ 0,00</div>
+    ${pctTxt!=null?`<div style="font-family:var(--fm);font-size:.9rem;color:${C.today<0?'var(--red-l)':'var(--green-l)'};margin-top:2px">${pctTxt} ${LANG==='pt'?'sobre o saldo do início do dia':LANG==='en'?'over start-of-day balance':'sobre saldo inicial del día'}</div>`:''}
+    <div class="hero-meta">
+      <div class="hero-meta-item"><span class="hero-meta-v" data-count="${C.trades||0}">0</span><span class="hero-meta-l">${LANG==='pt'?'Operações':LANG==='en'?'Trades':'Operaciones'}</span></div>
+      <div class="hero-meta-item"><span class="hero-meta-v up" data-count="${C.winRate||0}" data-suffix="%" data-dec="2">0</span><span class="hero-meta-l">${LANG==='pt'?'Taxa de acerto':LANG==='en'?'Win rate':'Tasa de acierto'}</span></div>
+      <div class="hero-meta-item"><span class="hero-meta-v dn" data-money="${-(C.maxDrawdown||0)}" data-dec="2">US$ 0</span><span class="hero-meta-l">${LANG==='pt'?'Drawdown máx':LANG==='en'?'Max drawdown':'Drawdown máx'}</span></div>
+    </div>
+  </div>
+  <div class="admin-stats" style="margin-top:12px">
+    ${astatMoney((C.today||0)<0?'red':'green','trending',LANG==='pt'?'Hoje':LANG==='en'?'Today':'Hoy',C.today||0,'','')}
+    ${astatMoney((C.week||0)<0?'red':'green','trending',LANG==='pt'?'Semana':LANG==='en'?'Week':'Semana',C.week||0,'','')}
+    ${astatMoney((C.month||0)<0?'red':'green','trending',LANG==='pt'?'Mês':LANG==='en'?'Month':'Mes',C.month||0,'','')}
+    ${astatMoney((C.total||0)<0?'red':'green','dollar',LANG==='pt'?'Total':LANG==='en'?'Total':'Total',C.total||0,'','')}
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>${LANG==='pt'?'Curva do mês (acumulado)':LANG==='en'?'Month curve (cumulative)':'Curva del mes'}</div></div>
+    ${empty?`<div class="empty"><div class="empty-t">${LANG==='pt'?'Sem operações no período':LANG==='en'?'No trades in the period':'Sin operaciones'}</div></div>`:`<canvas id="adminResultChart" data-h="220" style="width:100%"></canvas>`}
+  </div>`;
+}
+function drawAdminResultChart(){
+  const canvas=document.getElementById('adminResultChart');
+  if(!canvas)return;
+  if(_adminResRAF){ cancelAnimationFrame(_adminResRAF); _adminResRAF=null; }
+  const curve=(ADMIN_CLIENT&&ADMIN_CLIENT.curve)||[];
+  if(!curve.length)return;
+  const data=curve.map(p=>+(p.cumulative||0));
+  const labels=curve.map(p=>String(p.day||'').slice(5));
+  const ctx=canvas.getContext('2d');
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const rect=canvas.getBoundingClientRect();
+  const W=rect.width, H=parseInt(canvas.getAttribute('data-h'))||220;
+  canvas.width=W*dpr; canvas.height=H*dpr; canvas.style.height=H+'px';
+  ctx.scale(dpr,dpr);
+  const pad={l:8,r:8,t:18,b:24};
+  const cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+  const min=Math.min(0,...data), max=Math.max(0,...data);
+  const range=max-min||1;
+  const xStep=cw/(data.length-1||1);
+  const yOf=v=>pad.t+ch-((v-min)/range)*ch;
+  const xOf=i=>pad.l+i*xStep;
+  const zeroY=yOf(0);
+  const reduce=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  function render(progress){
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle='rgba(120,127,145,.18)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,zeroY); ctx.lineTo(W-pad.r,zeroY); ctx.stroke(); ctx.setLineDash([]);
+    const n=Math.max(1,Math.floor(data.length*progress));
+    const pts=data.slice(0,n).map((v,i)=>({x:xOf(i),y:yOf(v),v}));
+    if(pts.length){
+      [['rgba(45,108,255,.34)','rgba(45,108,255,0)',pad.t,zeroY,pad.t,zeroY-pad.t],
+       ['rgba(255,59,71,0)','rgba(255,59,71,.3)',zeroY,H-pad.b,zeroY,H-pad.b-zeroY]].forEach(f=>{
+        if(f[5]<=0)return;
+        ctx.save(); ctx.beginPath(); ctx.moveTo(pts[0].x,zeroY);
+        pts.forEach(p=>ctx.lineTo(p.x,p.y)); ctx.lineTo(pts[pts.length-1].x,zeroY); ctx.closePath(); ctx.clip();
+        const g=ctx.createLinearGradient(0,f[2],0,f[3]); g.addColorStop(0,f[0]); g.addColorStop(1,f[1]);
+        ctx.fillStyle=g; ctx.fillRect(pad.l,f[4],cw,f[5]); ctx.restore();
+      });
+    }
+    if(pts.length<2){
+      if(pts.length===1){ ctx.beginPath(); ctx.arc(pts[0].x,pts[0].y,4,0,Math.PI*2); ctx.fillStyle=pts[0].v<0?'#FF3B47':'#2D6CFF'; ctx.fill(); }
+    } else {
+      ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.lineCap='round';
+      for(let i=1;i<pts.length;i++){ ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); const below=pts[i].v<0||pts[i-1].v<0; ctx.strokeStyle=below?'#FF3B47':'#2D6CFF'; ctx.stroke(); }
+      const last=pts[pts.length-1];
+      ctx.beginPath(); ctx.arc(last.x,last.y,4,0,Math.PI*2); ctx.fillStyle=last.v<0?'#FF3B47':'#2D6CFF'; ctx.fill();
+    }
+    ctx.fillStyle='rgba(120,127,145,.6)'; ctx.font='10px JetBrains Mono'; ctx.textAlign='center';
+    const lblStep=Math.ceil(data.length/6);
+    for(let i=0;i<data.length;i+=lblStep){ if(i<n)ctx.fillText(labels[i],xOf(i),H-7); }
+  }
+  if(reduce){ render(1); return; }
+  const dur=1000; const start=performance.now();
+  function anim(now){ const p=Math.min((now-start)/dur,1); render(1-Math.pow(1-p,2.5)); if(p<1){ _adminResRAF=requestAnimationFrame(anim); } else { _adminResRAF=null; } }
+  _adminResRAF=requestAnimationFrame(anim);
+}
+function demoAdminResults(){
+  const mk=(name,email,acc,st,pay,ma,t,w,m,tt)=>({email,name,plan:'wolf',status:st,is_admin:false,payment:pay,monthly_amount:ma,balance:10000+tt,today:t,week:w,month:m,total:tt,accounts:[acc],last_seen:null});
+  const clients=[
+    mk('Ana Souza','ana@demo.com','5001234','active','pagando',197,120.4,340.2,910.5,2140.8),
+    mk('Bruno Lima','bruno@demo.com','5009876','active','pagando',197,-45.1,88.0,410.2,980.0),
+    mk('Carla Dias','carla@demo.com','5004567','active','cortesia',0,60.0,150.0,300.0,720.0),
+    mk('Diego Rocha','diego@demo.com','5007788','expired','pendente',0,0,0,0,540.0),
+  ];
+  const agg=clients.reduce((a,c)=>({today:a.today+c.today,week:a.week+c.week,month:a.month+c.month,total:a.total+c.total}),{today:0,week:0,month:0,total:0});
+  Object.keys(agg).forEach(k=>agg[k]=+agg[k].toFixed(2));
+  return {ok:true,currency:'USD',aggregate:agg,mrr:394,clientsActive:3,clientsPaying:2,clientsTotal:4,serverOffsetMin:180,clients};
+}
+function demoAdminClient(email){
+  const days=[]; let cum=0;
+  for(let i=1;i<=20;i++){ const p=+((Math.random()-0.4)*90).toFixed(2); cum=+(cum+p).toFixed(2); days.push({day:'2026-07-'+String(i).padStart(2,'0'),pnl:p,cumulative:cum}); }
+  return {ok:true,email,name:email.split('@')[0],plan:'wolf',status:'active',accounts:['5001234'],currency:'USD',balance:12140.8,today:120.4,todayPct:1.0,week:340.2,month:910.5,total:2140.8,trades:64,wins:38,losses:26,winRate:59.38,maxDrawdown:210.5,curve:days};
+}
+
 function renderAdminOverview(){
   const a=DATA.admin;
   const demo=!!(SESSION&&SESSION.isDemo);
@@ -3931,6 +4160,7 @@ function drawReportChart(){
 function afterRender(page){
   if(page==='dashboard'||page==='results'){ setTimeout(drawEquityChart,200); }
   if(page==='reports'){ setTimeout(drawReportChart,200); }
+  if(page==='admin-results' && ADMIN_CLIENT_EMAIL && ADMIN_CLIENT && !ADMIN_CLIENT.__err){ setTimeout(drawAdminResultChart,200); }
   if(page==='results'){
     // calendário segue o mês filtrado; se "todo o período", usa o mês mais recente com dados
     if(RESULT_PERIOD!=='all'){ const p=RESULT_PERIOD.split('-'); CAL_YEAR=+p[0]; CAL_MONTH=+p[1]-1; }
@@ -3940,7 +4170,7 @@ function afterRender(page){
   if(page==='history'){ const w=document.getElementById('histTableWrap'); if(w)w.innerHTML=buildHistTable(); }
 }
 let chartResizeTimer=null;
-window.addEventListener('resize',()=>{ clearTimeout(chartResizeTimer); chartResizeTimer=setTimeout(()=>{ if(CURRENT_PAGE==='dashboard'||CURRENT_PAGE==='results')drawEquityChart(); if(CURRENT_PAGE==='reports')drawReportChart(); },250); });
+window.addEventListener('resize',()=>{ clearTimeout(chartResizeTimer); chartResizeTimer=setTimeout(()=>{ if(CURRENT_PAGE==='dashboard'||CURRENT_PAGE==='results')drawEquityChart(); if(CURRENT_PAGE==='reports')drawReportChart(); if(CURRENT_PAGE==='admin-results'&&ADMIN_CLIENT_EMAIL)drawAdminResultChart(); },250); });
 
 /* ═══════════════ CHATBOT (rule-based, scripted) ═══════════════ */
 var chatOpen=false;
