@@ -121,6 +121,7 @@ export default {
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
       if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
+      if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -133,8 +134,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v28' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v28' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v29' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v29' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -987,6 +988,58 @@ async function handleAdminResults(request, env, json, url) {
     mrr: +mrr.toFixed(2), clientsActive: active, clientsPaying: paying, clientsTotal: clients.length,
     serverOffsetMin: EA_SERVER_OFFSET_MIN, clients
   });
+}
+
+/* ───────────────── DIAGNÓSTICO (v29) ─────────────────
+   GET /api/diag  (admin) → por que os dados do robô não chegam?
+   Mostra: tabelas existentes (com o CREATE real, p/ ver se falta chave única),
+   quais tabelas OBRIGATÓRIAS estão faltando, contagens, os ÚLTIMOS ERROS que os
+   robôs receberam (last_error) e os últimos trades/heartbeats. Cada consulta é
+   isolada: se uma tabela não existir, ela aparece como "faltando" em vez de
+   derrubar tudo. */
+async function handleDiag(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+
+  const REQUIRED = ['users','onboarding','trades','ea_status','ea_status_acc','balance_history','license_accounts','license_events','config_log'];
+  const q = async (sql, ...b) => { try { const r = await env.DB.prepare(sql).bind(...b).all(); return r.results || []; } catch (e) { return { __error: String(e && e.message || e) }; } };
+  const one = async (sql, ...b) => { try { return await env.DB.prepare(sql).bind(...b).first(); } catch (e) { return { __error: String(e && e.message || e) }; } };
+
+  // tabelas presentes + o SQL real de criação (revela se falta PRIMARY KEY/UNIQUE)
+  const master = await q("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name");
+  const present = Array.isArray(master) ? master.map(r => r.name) : [];
+  const missing = REQUIRED.filter(t => !present.includes(t));
+
+  // contagens (tabela faltando → aparece como erro naquela contagem)
+  const counts = {};
+  for (const t of REQUIRED) { const r = await one(`SELECT COUNT(*) AS n FROM ${t}`); counts[t] = (r && r.__error) ? ('ERRO: ' + r.__error) : (r ? r.n : null); }
+
+  // últimos erros que os robôs receberam (a pista mais direta do problema)
+  const eaErrors = await q("SELECT email, account, last_seen, last_error FROM ea_status_acc WHERE last_error IS NOT NULL ORDER BY last_seen DESC LIMIT 25");
+  const eaErrorsGlobal = await q("SELECT email, account, last_seen, last_error FROM ea_status WHERE last_error IS NOT NULL ORDER BY last_seen DESC LIMIT 25");
+  // heartbeats mais recentes (robô chegou ao servidor?) e últimos trades gravados
+  const lastSeen = await q("SELECT email, account, ea_version, balance, last_seen, last_error FROM ea_status_acc ORDER BY last_seen DESC LIMIT 15");
+  const lastTrades = await q("SELECT email, account, symbol, close_time, profit, created_at FROM trades ORDER BY created_at DESC LIMIT 8");
+
+  // veredito automático em linguagem simples
+  const notes = [];
+  if (missing.length) notes.push('TABELAS FALTANDO no banco: ' + missing.join(', ') + '. Rode o schema.sql no Console do D1 — é a causa mais provável de "nada chega".');
+  if (Array.isArray(eaErrors) && eaErrors.length) {
+    const kinds = [...new Set(eaErrors.map(e => e.last_error))];
+    notes.push('Os robôs estão CHEGANDO ao servidor, mas sendo rejeitados. Erros: ' + kinds.join(', ') + '.');
+  }
+  if (!missing.length && (!Array.isArray(lastSeen) || lastSeen.length === 0)) {
+    notes.push('Nenhum robô apareceu no servidor (0 heartbeats). Provável: URL do worker errada no robô, ou a URL não foi liberada no MT5 (Ferramentas → Opções → Expert Advisors → permitir WebRequest para a URL).');
+  }
+  if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
+  if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
+
+  return json({ ok: true, version: 'v29', now: new Date().toISOString(),
+    tablesPresent: present, tablesMissing: missing, counts,
+    eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
+    schema: master, notes });
 }
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────

@@ -3450,7 +3450,42 @@ function renderAdminOverview(){
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${LANG==='pt'?'Cliente':LANG==='en'?'Client':'Cliente'}</th><th>${LANG==='pt'?'Plano':LANG==='en'?'Plan':'Plan'}</th><th>${LANG==='pt'?'Perfil':LANG==='en'?'Profile':'Perfil'}</th><th>Status</th><th>${LANG==='pt'?'Visto':LANG==='en'?'Seen':'Visto'}</th></tr></thead><tbody>
     ${a.clients.length? a.clients.slice(0,4).map(c=>`<tr><td><div class="tbl-name">${c.name}</div><div style="font-size:.72rem;color:var(--t3)">${c.country}</div></td><td>${c.plan}</td><td><span class="pill ${profileClass(c.profile)}">${profileName(c.profile)}</span></td><td>${statusPill(c.status)}</td><td class="mono" style="font-size:.75rem;color:var(--t3)">${c.seen}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Nenhum cliente ainda':LANG==='en'?'No clients yet':'Aún no hay clientes'}</td></tr>`}
     </tbody></table></div>
+  </div>
+  <div class="card rv" style="margin-top:14px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>${LANG==='pt'?'Diagnóstico do sistema':LANG==='en'?'System diagnostics':'Diagnóstico del sistema'}</div><button class="mini-btn" id="diagBtn" onclick="loadDiag()">${LANG==='pt'?'Rodar diagnóstico':LANG==='en'?'Run diagnostics':'Ejecutar'}</button></div>
+    <p style="color:var(--t3);font-size:.84rem;margin:0 0 6px">${LANG==='pt'?'Verifica se os dados do robô estão chegando ao banco: tabelas, contagens e os últimos erros que os robôs receberam.':LANG==='en'?'Checks whether robot data is reaching the database: tables, counts and the robots\' last errors.':'Verifica si los datos del robot llegan a la base de datos.'}</p>
+    <div id="diagOut"></div>
   </div>`;
+}
+async function loadDiag(){
+  const out=document.getElementById('diagOut'); const btn=document.getElementById('diagBtn');
+  if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Rodando…':LANG==='en'?'Running…':'Ejecutando…'; }
+  if(SESSION&&SESSION.isDemo){ if(out)out.innerHTML=`<div class="banner info rv" style="margin-top:10px"><div class="banner-tx">${LANG==='pt'?'Conta demo: o diagnóstico só funciona logado como admin real.':LANG==='en'?'Demo account: diagnostics only work as a real admin.':'Cuenta demo.'}</div></div>`; if(btn){btn.disabled=false;btn.textContent=LANG==='pt'?'Rodar diagnóstico':'Run';} return; }
+  try{
+    const r=await apiFetch('/api/diag');
+    if(!r.ok){ if(out)out.innerHTML=`<div class="banner risk rv" style="margin-top:10px"><div class="banner-tx">${r.status===404?(LANG==='pt'?'Publique o worker v29 (o endpoint /api/diag ainda não existe no servidor).':'Publish worker v29.'):(LANG==='pt'?'Erro ao rodar diagnóstico ('+r.status+').':'Error ('+r.status+').')}</div></div>`; }
+    else { const d=await r.json(); if(out)out.innerHTML=renderDiag(d); }
+  }catch(e){ if(out)out.innerHTML=`<div class="banner risk rv" style="margin-top:10px"><div class="banner-tx">${LANG==='pt'?'Sem conexão com o servidor.':'No connection.'}</div></div>`; }
+  if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Rodar de novo':LANG==='en'?'Run again':'Ejecutar de nuevo'; }
+}
+function renderDiag(d){
+  const box=(title,body)=>`<div style="margin-top:12px"><div style="font-family:var(--fh);font-weight:700;font-size:.82rem;margin-bottom:6px">${title}</div>${body}</div>`;
+  const notes=(d.notes||[]).map(n=>{
+    const bad=/faltando|rejeitados|Nenhum robô/i.test(n); const good=/funciona/i.test(n);
+    const cls=bad?'risk':(good?'info':'warn');
+    return `<div class="banner ${cls} rv" style="margin:6px 0"><div class="banner-tx">${esc(n)}</div></div>`;
+  }).join('');
+  const missing=(d.tablesMissing&&d.tablesMissing.length)
+    ? `<div class="banner risk rv" style="margin:6px 0"><div class="banner-tx">${LANG==='pt'?'Tabelas faltando':'Missing tables'}: <b>${d.tablesMissing.map(esc).join(', ')}</b> — ${LANG==='pt'?'rode o backend/schema.sql no Console do D1.':'run backend/schema.sql.'}</div></div>`
+    : `<div class="banner info rv" style="margin:6px 0"><div class="banner-tx">${LANG==='pt'?'Todas as tabelas existem ✔':'All tables present ✔'}</div></div>`;
+  const counts=`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${LANG==='pt'?'Tabela':'Table'}</th><th style="text-align:right">${LANG==='pt'?'Linhas':'Rows'}</th></tr></thead><tbody>${Object.keys(d.counts||{}).map(k=>`<tr><td class="mono">${esc(k)}</td><td class="mono" style="text-align:right;${/ERRO/.test(String(d.counts[k]))?'color:var(--red-l)':''}">${esc(String(d.counts[k]))}</td></tr>`).join('')}</tbody></table></div>`;
+  const errs=(Array.isArray(d.eaErrors)&&d.eaErrors.length)
+    ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${LANG==='pt'?'Conta':'Account'}</th><th>Cliente</th><th>${LANG==='pt'?'Erro':'Error'}</th><th>${LANG==='pt'?'Quando':'When'}</th></tr></thead><tbody>${d.eaErrors.slice(0,15).map(e=>`<tr><td class="mono">${esc(String(e.account||'—'))}</td><td class="mono" style="font-size:.72rem">${esc(String(e.email||'—'))}</td><td class="mono" style="color:var(--red-l)">${esc(String(e.last_error||''))}</td><td class="mono" style="font-size:.72rem;color:var(--t3)">${esc(String(e.last_seen||'').slice(0,16))}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div style="color:var(--t3);font-size:.84rem">${LANG==='pt'?'Nenhum robô reportou erro.':'No robot errors reported.'}</div>`;
+  const seen=(Array.isArray(d.lastSeen)&&d.lastSeen.length)
+    ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${LANG==='pt'?'Conta':'Account'}</th><th>${LANG==='pt'?'Versão':'Version'}</th><th>${LANG==='pt'?'Saldo':'Balance'}</th><th>${LANG==='pt'?'Último contato':'Last seen'}</th></tr></thead><tbody>${d.lastSeen.slice(0,10).map(s=>`<tr><td class="mono">${esc(String(s.account||'—'))}</td><td class="mono">${esc(String(s.ea_version||'—'))}</td><td class="mono">${s.balance!=null?('US$ '+esc(String(s.balance))):'—'}</td><td class="mono" style="font-size:.72rem;color:var(--t3)">${esc(String(s.last_seen||'').slice(0,16))}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div style="color:var(--t3);font-size:.84rem">${LANG==='pt'?'Nenhum robô apareceu no servidor ainda (0 heartbeats).':'No robot has reached the server yet.'}</div>`;
+  return `<div style="margin-top:8px">${notes}${box(LANG==='pt'?'Tabelas do banco':'Database tables',missing+counts)}${box(LANG==='pt'?'Últimos erros dos robôs':'Robots\' last errors',errs)}${box(LANG==='pt'?'Robôs vistos recentemente':'Recently seen robots',seen)}</div>`;
 }
 function astat(color,ico,label,val,delta,dir){
   const icons={users:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',check:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',server:'<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>'};
