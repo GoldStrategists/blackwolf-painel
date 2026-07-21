@@ -1453,10 +1453,14 @@ function enterApp(){
     const hi = LANG==='pt'?'Bem-vindo de volta':LANG==='en'?'Welcome back':'Bienvenido de nuevo';
     toast(hi+', '+esc(String(getDisplayName()||'').split(' ')[0])+'! 👋','success');
   },600);
-  // Show onboarding survey for first-time client logins
-  if(SESSION.role==='client'){
+  // Questionário de perfil (onboarding):
+  // - CONTA REAL: quem decide é o BANCO. O refreshMe() lê /api/me → onboarding e,
+  //   se ainda não foi preenchido, força o questionário (maybeForceSurvey). Assim
+  //   nunca pergunta duas vezes (vale entre dispositivos) e a resposta vai pro banco.
+  // - DEMO: mantém o gatilho local só para mostrar a tela funcionando.
+  if(SESSION.role==='client' && SESSION.isDemo){
     const key='bw_onboarded_'+SESSION.email;
-    if(!localStorage.getItem(key)){ setTimeout(()=>surveyStart(),1400); }
+    if(!localStorage.getItem(key)){ setTimeout(()=>{ const ov=document.getElementById('surveyOverlay'); if(!(ov&&ov.classList.contains('open'))) surveyStart('onboarding'); },1400); }
   }
 }
 function getProfileOverride(){
@@ -1783,6 +1787,10 @@ async function refreshMe(){
     SESSION.accountLimit=(u.account_limit!=null?u.account_limit:null);
     SESSION.eaConfig=(u.ea_config&&typeof u.ea_config==='object')?u.ea_config:null;
     SESSION.licenseExpiresAt=u.license_expires_at||null;
+    // onboarding vem do banco (fonte da verdade). Usado para (1) forçar o
+    // questionário só de quem ainda não respondeu e (2) pré-preencher a edição.
+    SESSION.onboarding=d.onboarding||null;
+    SESSION.onboardingDone=onboardingComplete(d.onboarding);
     if(!SESSION.isDemo){
       DATA.client.licenseKey=SESSION.licenseKey;
       DATA.client.licenseStatus=SESSION.licenseStatus||(SESSION.licenseKey?'active':null);
@@ -1812,8 +1820,22 @@ async function refreshMe(){
     if(stored){ try{ localStorage.setItem('bw_session',JSON.stringify(SESSION)); }catch(e){} }
     // busca os trades/saldo reais (cliente, ou admin/dono que esteja na visão de cliente)
     if(VIEW_MODE==='client') fetchMyData();
+    // força o questionário de perfil se este cliente ainda não respondeu (fonte: banco)
+    maybeForceSurvey();
     return true;
   }catch(e){ return false; }
+}
+// preenchido = tem ao menos idade + perfil de risco + objetivo (o resto pode ter
+// sido respondido com opção evasiva, mas esses três são obrigatórios)
+function onboardingComplete(o){ return !!(o && o.age && (o.self_profile||o.selfProfile) && o.goal); }
+// abre o questionário (uma vez) para cliente real que ainda não respondeu
+function maybeForceSurvey(){
+  if(!SESSION || SESSION.isDemo) return;
+  if(SESSION.role!=='client') return;            // admin/dono não é obrigado
+  if(SESSION.onboardingDone) return;
+  const ov=document.getElementById('surveyOverlay');
+  if(ov && ov.classList.contains('open')) return; // já está aberto
+  setTimeout(()=>surveyStart('onboarding'),800);
 }
 // banner de status do robô (online/saldo) no topo do dashboard — UMA LINHA POR CONTA
 function eaStatusBanner(){
@@ -3018,6 +3040,13 @@ function renderSettings(){
         <input type="password" class="set-input" id="setConfPass" placeholder="••••••••">
       </div>
       <button class="btn-primary" style="margin-top:6px" onclick="settingsChangePass()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>${x.changePass}</button>
+    </div>
+
+    <!-- PROFILE SURVEY (atualizar questionário) -->
+    <div class="card rv">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div></div>
+      <p style="color:var(--t3);font-size:.86rem;margin:0 0 14px">${LANG==='pt'?'As respostas do questionário que você preencheu ao entrar. Pode atualizar quando quiser — usamos para personalizar seu painel e o suporte.':LANG==='en'?'The answers from the survey you filled in on first login. Update them anytime — we use them to personalize your panel and support.':'Las respuestas del cuestionario que completaste al entrar. Puedes actualizarlas cuando quieras.'}</p>
+      <button class="btn-ghost" onclick="surveyStartEdit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>${LANG==='pt'?'Atualizar perfil':LANG==='en'?'Update profile':'Actualizar perfil'}</button>
     </div>
 
     <!-- ACTIVITY -->
@@ -5082,13 +5111,22 @@ const SURVEY_Q={
 };
 var SURVEY_STEP=0;
 var SURVEY_ANSWERS={};
-function surveyStart(){
-  SURVEY_STEP=0; SURVEY_ANSWERS={};
+var SURVEY_MODE='onboarding';   // 'onboarding' (obrigatório) | 'edit' (atualizar perfil)
+// abre o questionário. mode='edit' permite cancelar; keep=true mantém as respostas
+// já carregadas (usado ao pré-preencher na edição de perfil).
+function surveyStart(mode, keep){
+  SURVEY_MODE=(mode==='edit')?'edit':'onboarding';
+  SURVEY_STEP=0; if(!keep) SURVEY_ANSWERS={};
+  const isEdit=SURVEY_MODE==='edit';
+  const title=isEdit?(LANG==='pt'?'Atualizar perfil':LANG==='en'?'Update profile':'Actualizar perfil')
+                    :(LANG==='pt'?'Olá! Vamos montar seu perfil':LANG==='en'?'Hi! Let\'s set up your profile':'¡Hola! Vamos a crear tu perfil');
+  const sub=isEdit?(LANG==='pt'?'Revise suas respostas — salvamos ao final.':LANG==='en'?'Review your answers — we save at the end.':'Revisa tus respuestas — guardamos al final.')
+                  :(LANG==='pt'?'Perguntas rápidas · ~40 segundos · só desta vez, para personalizar seu painel e suporte':LANG==='en'?'Quick questions · ~40 seconds · one time only, to personalize your panel and support':'Preguntas rápidas · ~40 segundos · solo esta vez');
   document.getElementById('surveyOverlay').querySelector('.survey-box').innerHTML=`
     <div class="survey-header">
-      <div class="survey-wave" id="surveyWave">👋</div>
-      <div class="survey-title" id="surveyTitle">${LANG==='pt'?'Olá! Uma pergunta rápida':LANG==='en'?'Hi! Quick question':'¡Hola! Una pregunta rápida'}</div>
-      <div class="survey-sub" id="surveySub">${LANG==='pt'?'Algumas perguntas rápidas · ~40 segundos · para personalizar seu painel':LANG==='en'?'A few quick questions · ~40 seconds · to personalize your panel':'Unas preguntas rápidas · ~40 segundos · para personalizar tu panel'}</div>
+      <div class="survey-wave" id="surveyWave">${isEdit?'✏️':'👋'}</div>
+      <div class="survey-title" id="surveyTitle">${title}</div>
+      <div class="survey-sub" id="surveySub">${sub}</div>
     </div>
     <div class="survey-progress" id="surveyProgress"></div>
     <div class="survey-q" id="surveyQ"></div>
@@ -5097,6 +5135,7 @@ function surveyStart(){
   document.getElementById('surveyOverlay').classList.add('open');
   surveyShowStep(0);
 }
+function surveyClose(){ document.getElementById('surveyOverlay').classList.remove('open'); }
 function surveyShowStep(n){
   const qs=SURVEY_Q[LANG]||SURVEY_Q.pt;
   if(n>=qs.length){surveyFinish();return;}
@@ -5124,8 +5163,7 @@ function surveyShowStep(n){
     form+='</div>';
     form+=`<button class="btn-primary" style="margin:18px auto 0;width:100%;justify-content:center" onclick="surveyFormNext(${n})">${LANG==='pt'?'Continuar':LANG==='en'?'Continue':'Continuar'}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="9 18 15 12 9 6"/></svg></button>`;
     document.getElementById('surveyOpts').innerHTML=form;
-    skipEl.textContent=LANG==='pt'?'Pular esta etapa':LANG==='en'?'Skip this step':'Omitir este paso';
-    skipEl.onclick=()=>{ SURVEY_ANSWERS.country=null; SURVEY_ANSWERS.state=null; SURVEY_ANSWERS.city=null; surveyShowStep(n+1); };
+    surveyFooter();
     return;
   }
   const colClass=q.cols===3?'three':q.cols===1?'single':'';
@@ -5133,14 +5171,29 @@ function surveyShowStep(n){
   q.opts.forEach(o=>{opts+=`<div class="survey-opt" onclick="surveyPick('${q.key}','${o.v}',${n})"><span class="emo">${o.e}</span>${o.l}</div>`;});
   opts+='</div>';
   document.getElementById('surveyOpts').innerHTML=opts;
-  skipEl.textContent=LANG==='pt'?'Pular esta pergunta':LANG==='en'?'Skip this question':'Omitir esta pregunta';
-  skipEl.onclick=()=>{ SURVEY_ANSWERS[q.key]=null; surveyShowStep(n+1); };
+  surveyFooter();
+}
+// rodapé do questionário: obrigatório (onboarding) não deixa pular; edição deixa cancelar.
+function surveyFooter(){
+  const skipEl=document.getElementById('surveySkip'); if(!skipEl) return;
+  if(SURVEY_MODE==='edit'){
+    skipEl.innerHTML=`<span style="cursor:pointer;text-decoration:underline" onclick="surveyClose()">${LANG==='pt'?'Cancelar':LANG==='en'?'Cancel':'Cancelar'}</span>`;
+  } else {
+    skipEl.innerHTML='';
+  }
+  skipEl.onclick=null;
 }
 function surveyFormNext(n){
   const get=id=>{ const el=document.getElementById(id); return el?el.value.trim():''; };
-  SURVEY_ANSWERS.country=get('sf_country')||null;
-  SURVEY_ANSWERS.state=get('sf_state')||null;
-  SURVEY_ANSWERS.city=get('sf_city')||null;
+  const country=get('sf_country'), state=get('sf_state'), city=get('sf_city');
+  // país e estado são obrigatórios (cidade é opcional); só a edição pode seguir sem
+  if(SURVEY_MODE==='onboarding' && (!country || !state)){
+    toast(LANG==='pt'?'Preencha país e estado para continuar.':LANG==='en'?'Fill in country and state to continue.':'Completa país y estado para continuar.','error');
+    return;
+  }
+  SURVEY_ANSWERS.country=country||null;
+  SURVEY_ANSWERS.state=state||null;
+  SURVEY_ANSWERS.city=city||null;
   surveyShowStep(n+1);
 }
 function surveyPick(key,val,stepIdx){
@@ -5149,26 +5202,75 @@ function surveyPick(key,val,stepIdx){
   if(el)el.classList.add('sel');
   setTimeout(()=>surveyShowStep(stepIdx+1),350);
 }
-function surveyFinish(){
-  const storageKey='bw_onboarded_'+SESSION.email;
-  localStorage.setItem(storageKey,JSON.stringify(SURVEY_ANSWERS));
-  // sync to backend
-  if(SESSION&&SESSION.token){
-    fetch(API+'/api/onboarding',{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION.token},
-      body:JSON.stringify({age:SURVEY_ANSWERS.age,experience:SURVEY_ANSWERS.experience,goal:SURVEY_ANSWERS.goal,self_profile:SURVEY_ANSWERS.selfProfile,family:SURVEY_ANSWERS.family,source:SURVEY_ANSWERS.source,country:SURVEY_ANSWERS.country,state:SURVEY_ANSWERS.state,city:SURVEY_ANSWERS.city,marketing_opt_in:SURVEY_ANSWERS.marketing})
-    }).catch(()=>{});
-  }
+// monta o payload no formato que o banco espera (marketing_opt_in booleano)
+function surveyPayload(){
+  const mk=SURVEY_ANSWERS.marketing;
+  return {age:SURVEY_ANSWERS.age,experience:SURVEY_ANSWERS.experience,goal:SURVEY_ANSWERS.goal,
+    self_profile:SURVEY_ANSWERS.selfProfile,family:SURVEY_ANSWERS.family,source:SURVEY_ANSWERS.source,
+    country:SURVEY_ANSWERS.country,state:SURVEY_ANSWERS.state,city:SURVEY_ANSWERS.city,
+    marketing_opt_in:(mk==='sim'||mk===true||mk===1)?1:0};
+}
+function surveySavingScreen(){
   document.getElementById('surveyOverlay').querySelector('.survey-box').innerHTML=`
     <div class="survey-done">
-      <div class="survey-done-ico">🎉</div>
-      <h2>${LANG==='pt'?'Perfil salvo!':LANG==='en'?'Profile saved!':'¡Perfil guardado!'}</h2>
-      <p>${LANG==='pt'?'Obrigado! Suas respostas nos ajudam a personalizar seu painel e oferecer um suporte melhor.':LANG==='en'?'Thank you! Your answers help us personalize your panel and offer better support.':'¡Gracias! Tus respuestas ayudan a personalizar tu panel.'}</p>
-      <button class="btn-primary" style="margin:0 auto" onclick="document.getElementById('surveyOverlay').classList.remove('open')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
-        ${LANG==='pt'?'Ir para o painel':LANG==='en'?'Go to dashboard':'Ir al panel'}
+      <div class="survey-done-ico" style="animation:spin 1s linear infinite">⏳</div>
+      <h2>${LANG==='pt'?'Salvando…':LANG==='en'?'Saving…':'Guardando…'}</h2>
+      <p>${LANG==='pt'?'Só um instante.':LANG==='en'?'Just a moment.':'Un momento.'}</p>
+    </div>`;
+}
+function surveyErrorScreen(){
+  document.getElementById('surveyOverlay').querySelector('.survey-box').innerHTML=`
+    <div class="survey-done">
+      <div class="survey-done-ico">⚠️</div>
+      <h2>${LANG==='pt'?'Não deu para salvar':LANG==='en'?'Could not save':'No se pudo guardar'}</h2>
+      <p>${LANG==='pt'?'Verifique sua conexão e tente de novo — suas respostas não foram perdidas.':LANG==='en'?'Check your connection and try again — your answers were not lost.':'Revisa tu conexión e inténtalo de nuevo.'}</p>
+      <button class="btn-primary" style="margin:0 auto" onclick="surveyFinish()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        ${LANG==='pt'?'Tentar novamente':LANG==='en'?'Try again':'Reintentar'}
       </button>
     </div>`;
+}
+// grava no BANCO antes de considerar concluído. Se falhar, mostra "tentar de novo"
+// e NÃO marca como respondido — assim a resposta nunca se perde e nunca some.
+async function surveyFinish(){
+  const isEdit=(SURVEY_MODE==='edit');
+  surveySavingScreen();
+  const payload=surveyPayload();
+  let ok=false;
+  if(SESSION&&SESSION.isDemo){ ok=true; }
+  else if(SESSION&&SESSION.token){
+    try{
+      const r=await apiFetch('/api/onboarding',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      ok=!!(r&&r.ok);
+    }catch(e){ ok=false; }
+  } else { ok=true; }
+  if(!ok){ surveyErrorScreen(); return; }
+  // sucesso — marca localmente e atualiza a sessão (fonte de verdade continua o banco)
+  try{ localStorage.setItem('bw_onboarded_'+SESSION.email,JSON.stringify(SURVEY_ANSWERS)); }catch(e){}
+  SESSION.onboarding={age:SURVEY_ANSWERS.age,experience:SURVEY_ANSWERS.experience,goal:SURVEY_ANSWERS.goal,self_profile:SURVEY_ANSWERS.selfProfile,family:SURVEY_ANSWERS.family,source:SURVEY_ANSWERS.source,country:SURVEY_ANSWERS.country,state:SURVEY_ANSWERS.state,city:SURVEY_ANSWERS.city,marketing_opt_in:payload.marketing_opt_in};
+  SESSION.onboardingDone=true;
+  try{ const s=localStorage.getItem('bw_session'); if(s)localStorage.setItem('bw_session',JSON.stringify(SESSION)); }catch(e){}
+  document.getElementById('surveyOverlay').querySelector('.survey-box').innerHTML=`
+    <div class="survey-done">
+      <div class="survey-done-ico">${isEdit?'✅':'🎉'}</div>
+      <h2>${isEdit?(LANG==='pt'?'Perfil atualizado!':LANG==='en'?'Profile updated!':'¡Perfil actualizado!'):(LANG==='pt'?'Perfil salvo!':LANG==='en'?'Profile saved!':'¡Perfil guardado!')}</h2>
+      <p>${LANG==='pt'?'Obrigado! Suas respostas nos ajudam a personalizar seu painel e oferecer um suporte melhor.':LANG==='en'?'Thank you! Your answers help us personalize your panel and offer better support.':'¡Gracias! Tus respuestas ayudan a personalizar tu panel.'}</p>
+      <button class="btn-primary" style="margin:0 auto" onclick="surveyClose()${isEdit?";renderPage('settings')":''}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+        ${isEdit?(LANG==='pt'?'Fechar':LANG==='en'?'Close':'Cerrar'):(LANG==='pt'?'Ir para o painel':LANG==='en'?'Go to dashboard':'Ir al panel')}
+      </button>
+    </div>`;
+}
+// abre o questionário em modo edição, pré-preenchido com o que já está salvo
+function surveyStartEdit(){
+  const o=(SESSION&&SESSION.onboarding)||{};
+  SURVEY_ANSWERS={
+    age:o.age||null, experience:o.experience||null, goal:o.goal||null,
+    selfProfile:o.self_profile||o.selfProfile||null, family:o.family||null, source:o.source||null,
+    country:o.country||null, state:o.state||null, city:o.city||null,
+    marketing:(o.marketing_opt_in!=null?(o.marketing_opt_in?'sim':'nao'):(o.marketing||null))
+  };
+  surveyStart('edit', true);
 }
 
 /* ═══════════════ NOTIFICATIONS ═══════════════ */
