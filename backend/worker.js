@@ -1,6 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v27 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v28 (Cloudflare Worker)
+ *  + v28: PAINEL ADMIN DE RESULTADOS. GET /api/admin/results (agregado + MRR +
+ *         lista de clientes com P&L hoje/semana/mês/total) e ?email= (detalhe:
+ *         curva, drawdown, % do dia). MRR real via monthly_amount guardado do
+ *         webhook do Stripe (com cupom). Fuso do dia = servidor da corretora
+ *         (EA_SERVER_OFFSET_MIN). Migração D1: users.monthly_amount, users.is_courtesy.
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
@@ -115,6 +120,7 @@ export default {
       if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
+      if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -127,8 +133,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v27' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v27' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v28' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v28' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -531,6 +537,10 @@ async function handleStripeWebhook(request, env, json) {
 
   email = email.trim().toLowerCase();
 
+  // v28: guarda o VALOR REAL pago (em dólares, já com cupom aplicado) para o MRR
+  // real do admin — não dá pra derivar do plano porque o cupom muda o valor.
+  const monthlyAmount = (obj.amount_total || obj.amount_paid || 0) / 100;
+
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
   // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
   // o rebaixamento silencioso (Alpha 3 contas → Lone 1 conta) por valor de invoice.
@@ -544,12 +554,12 @@ async function handleStripeWebhook(request, env, json) {
     if (!lic) { lic = generateLicenseKey(); }
     if (isCheckout) {
       // compra/troca explícita: pode ajustar plano e limite
-      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, plan, planAccountLimit(plan), stripeCustomer, email).run();
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, monthly_amount = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, plan, planAccountLimit(plan), monthlyAmount, stripeCustomer, email).run();
     } else {
-      // renovação: só reafirma licença ativa e o customer, preserva plano/limite atuais
-      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, stripeCustomer, email).run();
+      // renovação: reafirma licença ativa + valor recorrente (MRR), preserva plano/limite
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, monthlyAmount, stripeCustomer, email).run();
     }
     await sendWelcomeEmail(env, email, name, plan, null, lic);
     return json({ ok: true, action: 'already_exists' });
@@ -563,9 +573,9 @@ async function handleStripeWebhook(request, env, json) {
   const now = new Date().toISOString();
 
   await env.DB.prepare(
-    `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, stripe_customer, created_at)
-     VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?)`
-  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), stripeCustomer, now).run();
+    `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, monthly_amount, stripe_customer, created_at)
+     VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?, ?)`
+  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), monthlyAmount, stripeCustomer, now).run();
 
   // Envia email de boas-vindas com as credenciais + licença
   if (env.RESEND_API_KEY && env.EMAIL_FROM) {
@@ -870,6 +880,113 @@ async function handleAdminClients(request, env, json) {
     }));
 
   return json({ clients });
+}
+
+/* ─────────────── ADMIN: RESULTADOS DOS CLIENTES (v28) ───────────────
+   GET /api/admin/results            → agregado + MRR + lista de clientes
+   GET /api/admin/results?email=X    → detalhe de 1 cliente (curva, drawdown)
+   Regra: resultado = SOMA de trades (profit+commission+swap), nunca saldo. */
+// fuso do SERVIDOR da corretora (offset em min vs UTC). Os close_time dos trades
+// vêm neste fuso; usamos ele pra fechar "o dia/semana/mês" sem erro de virada.
+// Ajuste aqui se a corretora mudar de servidor (típico MT5: UTC+2/+3).
+const EA_SERVER_OFFSET_MIN = 180;
+function serverWindows() {
+  const now = new Date(Date.now() + EA_SERVER_OFFSET_MIN * 60000);
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate(), wd = now.getUTCDay();
+  const dot = (dt) => dt.toISOString().slice(0, 10).replace(/-/g, '.');
+  const monday = new Date(Date.UTC(y, m, d - ((wd + 6) % 7)));
+  return { today: dot(new Date(Date.UTC(y, m, d))), week: dot(monday), month: dot(new Date(Date.UTC(y, m, 1))) };
+}
+async function handleAdminResults(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+
+  const W = serverWindows();
+  const NET = '(COALESCE(profit,0)+COALESCE(commission,0)+COALESCE(swap,0))';
+  const DP = "replace(substr(close_time,1,10),'-','.')";
+  const target = url.searchParams.get('email');
+
+  // ───── DETALHE de 1 cliente ─────
+  if (target) {
+    const t = String(target).trim().toLowerCase();
+    const agg = await env.DB.prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS total,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS today,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS week,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS month,
+              SUM(CASE WHEN ${NET} > 0 THEN 1 ELSE 0 END) AS wins,
+              SUM(CASE WHEN ${NET} < 0 THEN 1 ELSE 0 END) AS losses
+       FROM trades WHERE email = ?`
+    ).bind(W.today, W.week, W.month, t).first();
+    const dayRows = await env.DB.prepare(
+      `SELECT substr(close_time,1,10) AS d, SUM(${NET}) AS pnl FROM trades
+       WHERE email = ? AND ${DP} >= ? GROUP BY d ORDER BY d ASC`
+    ).bind(t, W.month).all();
+    let cum = 0, peak = 0, maxDD = 0;
+    const curve = (dayRows.results || []).map(r => { const p = +(+r.pnl || 0).toFixed(2); cum = +(cum + p).toFixed(2); if (cum > peak) peak = cum; if (peak - cum > maxDD) maxDD = peak - cum; return { day: String(r.d || '').replace(/\./g, '-'), pnl: p, cumulative: cum }; });
+    const bal = await env.DB.prepare("SELECT COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE email = ? AND balance IS NOT NULL").bind(t).first();
+    const balance = bal ? +(+bal.bal).toFixed(2) : 0;
+    const u = await env.DB.prepare('SELECT name, plan, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const n = agg ? +agg.n : 0;
+    const today = +(+(agg && agg.today || 0)).toFixed(2);
+    const startDay = balance - today;
+    return json({
+      ok: true, email: t, name: (u && u.name) || t, plan: (u && u.plan) || null, status: (u && u.license_status) || null,
+      accounts: (function () { try { const a = u && u.mt5_accounts ? JSON.parse(u.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+      currency: 'USD', balance, today, todayPct: (startDay > 0) ? +(today / startDay * 100).toFixed(2) : null,
+      week: +(+(agg && agg.week || 0)).toFixed(2), month: +(+(agg && agg.month || 0)).toFixed(2), total: +(+(agg && agg.total || 0)).toFixed(2),
+      trades: n, wins: agg ? +agg.wins : 0, losses: agg ? +agg.losses : 0, winRate: n ? +((agg.wins / n) * 100).toFixed(2) : 0,
+      maxDrawdown: +maxDD.toFixed(2), curve
+    });
+  }
+
+  // ───── AGREGADO + lista ─────
+  const pnlRows = await env.DB.prepare(
+    `SELECT email, COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS total,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS today,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS week,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS month
+     FROM trades GROUP BY email`
+  ).bind(W.today, W.week, W.month).all();
+  const pnlByEmail = {}; (pnlRows.results || []).forEach(r => { pnlByEmail[String(r.email).toLowerCase()] = r; });
+  const balRows = await env.DB.prepare("SELECT email, COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE balance IS NOT NULL GROUP BY email").all();
+  const balByEmail = {}; (balRows.results || []).forEach(r => { balByEmail[String(r.email).toLowerCase()] = +r.bal; });
+  const urows = await env.DB.prepare(
+    `SELECT u.email, u.name, u.plan, u.license_status, u.monthly_amount, u.is_courtesy, u.mt5_accounts, u.role, u.created_at,
+            (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email=u.email) AS last_seen
+     FROM users u WHERE (u.role='client' OR u.license_key IS NOT NULL) ORDER BY u.created_at DESC`
+  ).all();
+
+  let aggToday = 0, aggWeek = 0, aggMonth = 0, aggTotal = 0, mrr = 0, paying = 0, active = 0;
+  const clients = (urows.results || [])
+    .filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()))
+    .map(r => {
+      const em = String(r.email).toLowerCase();
+      const p = pnlByEmail[em] || {};
+      const today = +(+(p.today || 0)).toFixed(2), week = +(+(p.week || 0)).toFixed(2), month = +(+(p.month || 0)).toFixed(2), total = +(+(p.total || 0)).toFixed(2);
+      const balance = balByEmail[em] != null ? +(balByEmail[em]).toFixed(2) : null;
+      const amount = (r.monthly_amount != null) ? +r.monthly_amount : 0;
+      const st = r.license_status || null;
+      const isActive = (st === 'active');
+      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy || amount <= 0) pay = 'cortesia'; else pay = 'pagando';
+      if (isActive) { active++; if (pay === 'pagando') { paying++; mrr += amount; } }
+      aggToday += today; aggWeek += week; aggMonth += month; aggTotal += total;
+      return {
+        email: em, name: r.name || em, plan: r.plan || null, status: st, is_admin: r.role === 'admin',
+        payment: pay, monthly_amount: amount, balance, today, week, month, total,
+        accounts: (function () { try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+        last_seen: r.last_seen || null
+      };
+    });
+
+  return json({
+    ok: true, currency: 'USD',
+    aggregate: { today: +aggToday.toFixed(2), week: +aggWeek.toFixed(2), month: +aggMonth.toFixed(2), total: +aggTotal.toFixed(2) },
+    mrr: +mrr.toFixed(2), clientsActive: active, clientsPaying: paying, clientsTotal: clients.length,
+    serverOffsetMin: EA_SERVER_OFFSET_MIN, clients
+  });
 }
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────
