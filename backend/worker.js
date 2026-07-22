@@ -130,6 +130,7 @@ export default {
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/admin/payments' && request.method === 'GET')      return await handleAdminPayments(request, env, json);
+      if (path === '/api/admin/stripe-sync' && request.method === 'POST')  return await handleAdminStripeSync(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -142,8 +143,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v33' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v33' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v34' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v34' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1029,7 +1030,9 @@ async function handleAdminResults(request, env, json, url) {
       const amount = (r.monthly_amount != null) ? +r.monthly_amount : 0;
       const st = r.license_status || null;
       const isActive = (st === 'active');
-      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy || amount <= 0) pay = 'cortesia'; else pay = 'pagando';
+      // v34: CORTESIA só quando marcado de propósito (is_courtesy). NUNCA por valor 0
+      // — quem pagou mas está sem monthly_amount (compra antiga / cupom) é PAGANTE.
+      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy) pay = 'cortesia'; else pay = 'pagando';
       if (isActive) { active++; if (pay === 'pagando') { paying++; mrr += amount; } }
       aggToday += today; aggWeek += week; aggMonth += month; aggTotal += total;
       return {
@@ -1094,7 +1097,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v33', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v34', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1318,7 +1321,9 @@ async function handleAdminPayments(request, env, json) {
     .map(r => {
       const amount = (r.monthly_amount != null) ? +r.monthly_amount : 0;
       const isActive = r.license_status === 'active';
-      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy || amount <= 0) pay = 'cortesia'; else pay = 'pagando';
+      // v34: CORTESIA só quando marcado de propósito (is_courtesy). NUNCA por valor 0
+      // — quem pagou mas está sem monthly_amount (compra antiga / cupom) é PAGANTE.
+      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy) pay = 'cortesia'; else pay = 'pagando';
       if (pay === 'pagando') { paying++; mrr += amount; }
       return { email: String(r.email), name: r.name || String(r.email), plan: r.plan || '—', amount, status: r.license_status || null, payment: pay, expires: r.license_expires_at || null };
     });
@@ -1335,6 +1340,52 @@ async function handleAdminPayments(request, env, json) {
     mrr: +mrr.toFixed(2), payingCount: paying, subscriberCount: subscribers.length,
     subscribers, recent: (recent.results || [])
   });
+}
+
+/* ═══════════════ SINCRONIZAR COM A STRIPE (v34) ═══════════════
+   Puxa o VALOR REAL que cada cliente paga por ciclo (último invoice pago — já com
+   cupom aplicado) e grava em monthly_amount. Corrige MRR/valores das compras
+   antigas (feitas antes do sistema guardar o valor). Exige STRIPE_SECRET_KEY. */
+async function stripeGet(env, path) {
+  try {
+    const r = await fetch('https://api.stripe.com/v1' + path, { headers: { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+async function handleAdminStripeSync(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  if (!env.STRIPE_SECRET_KEY) return json({ error: 'stripe_key_missing', message: 'Configure STRIPE_SECRET_KEY nas variáveis do worker.' }, 400);
+
+  const rows = await env.DB.prepare(
+    "SELECT email, stripe_customer FROM users WHERE stripe_customer IS NOT NULL AND stripe_customer != '' AND license_key IS NOT NULL"
+  ).all();
+  const list = (rows.results || []).filter(u => !DEMO_ACCOUNTS.includes(String(u.email).toLowerCase())).slice(0, 300);
+  let checked = 0, updated = 0, noData = 0; const results = [];
+  for (const u of list) {
+    checked++;
+    const cust = encodeURIComponent(u.stripe_customer);
+    let amount = null, currency = 'usd';
+    // 1) último invoice PAGO = o valor real que ele paga por ciclo (com cupom)
+    const inv = await stripeGet(env, '/invoices?customer=' + cust + '&status=paid&limit=1');
+    if (inv && Array.isArray(inv.data) && inv.data[0]) { amount = (inv.data[0].amount_paid || 0) / 100; currency = inv.data[0].currency || currency; }
+    // 2) fallback: assinatura ativa → preço recorrente cadastrado
+    if (amount == null) {
+      const sub = await stripeGet(env, '/subscriptions?customer=' + cust + '&status=active&limit=1');
+      const it = sub && sub.data && sub.data[0] && sub.data[0].items && sub.data[0].items.data && sub.data[0].items.data[0];
+      if (it && it.price && it.price.unit_amount != null) { amount = it.price.unit_amount / 100; currency = it.price.currency || currency; }
+    }
+    if (amount == null) { noData++; results.push({ email: u.email, ok: false }); continue; }
+    // grava o valor real; se > 0, garante que NÃO está marcado como cortesia
+    await env.DB.prepare("UPDATE users SET monthly_amount = ?, is_courtesy = CASE WHEN ? > 0 THEN 0 ELSE is_courtesy END WHERE email = ?")
+      .bind(amount, amount, u.email).run();
+    updated++; results.push({ email: u.email, ok: true, amount, currency: currency.toUpperCase() });
+  }
+  logEvent({ evt: 'stripe_sync', by: email, checked, updated, noData });
+  return json({ ok: true, checked, updated, noData, results });
 }
 
 /* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════

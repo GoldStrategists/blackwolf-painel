@@ -4328,13 +4328,25 @@ function demoPayments(){
     recent:[{name:'Bruno Lima',email:'bruno@demo.com',plan:'Alpha Pack',amount:297.9,type:'checkout.session.completed',created_at:'2026-07-20T10:00:00Z'},{name:'Ana Souza',email:'ana@demo.com',plan:'Wolf Pack',amount:197,type:'checkout.session.completed',created_at:'2026-07-05T10:00:00Z'}]};
 }
 function payTypeLabel(t){ if(String(t).includes('invoice'))return LANG==='pt'?'Renovação':LANG==='en'?'Renewal':'Renovación'; return LANG==='pt'?'Compra':LANG==='en'?'Purchase':'Compra'; }
+async function stripeSync(){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) sincronização simulada':'(demo) sync simulated','info'); return; }
+  const btn=document.getElementById('stripeSyncBtn'); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Sincronizando…':'Syncing…'; }
+  try{
+    const r=await apiFetch('/api/admin/stripe-sync',{method:'POST'});
+    const d=await r.json();
+    if(r.ok){ toast((LANG==='pt'?'Sincronizado: ':'Synced: ')+d.updated+'/'+d.checked+(d.noData?(LANG==='pt'?' · sem dado: '+d.noData:' · no data: '+d.noData):''),'success'); PAY_DATA=null; if(typeof fetchRealClients==='function')fetchRealClients(); loadAdminPayments(); }
+    else if(d.error==='stripe_key_missing'){ toast(LANG==='pt'?'Falta configurar STRIPE_SECRET_KEY no worker (veja instruções).':'Configure STRIPE_SECRET_KEY in the worker.','error'); }
+    else toast(LANG==='pt'?'Falha na sincronização.':'Sync failed.','error');
+  }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
+  if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Sincronizar Stripe':'Sync Stripe'; }
+}
 function renderAdminPayments(){
   if(PAY_DATA===null && !PAY_LOADING){ setTimeout(loadAdminPayments,0); }
   const head=pageHead(
     LANG==='pt'?'FINANCEIRO':LANG==='en'?'FINANCE':'FINANZAS',
     LANG==='pt'?'Pagamentos':LANG==='en'?'Payments':'Pagos',
     LANG==='pt'?'Quanto entrou de verdade pelo Stripe — total, mês, e o histórico. A receita mensal (MRR) vem das assinaturas ativas.':LANG==='en'?'Real Stripe revenue — total, month and history.':'Ingresos reales de Stripe.',
-    refreshBtn()
+    `<button class="mini-btn" id="stripeSyncBtn" onclick="stripeSync()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${LANG==='pt'?'Sincronizar Stripe':LANG==='en'?'Sync Stripe':'Sincronizar Stripe'}</button>`+refreshBtn()
   );
   if(PAY_LOADING&&!PAY_DATA) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':'Loading…'}</div></div></div>`;
   if(PAY_DATA&&PAY_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'Publique o worker v33 para ligar o financeiro.':'Publish worker v33.'}</div></div>`;
