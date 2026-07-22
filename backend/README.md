@@ -3,7 +3,45 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
-## Versão atual: v24
+## Versão atual: v27
+
+### O que a v27 adiciona (auditoria profunda — segurança + dados de dinheiro)
+- **Não perde mais trade com licença vencida**: `POST /api/ea/trades` grava o
+  histórico mesmo com licença expirada/revogada e devolve `active:false` (antes
+  respondia 403 e os trades sumiam pra sempre).
+- **Dedup mais seguro**: nunca grava trade SEM conta (NULL furava o índice único
+  e duplicaria o lucro); backlog ordenado p/ o corte de 500 descartar os mais
+  novos. *(Pendente, precisa checar o índice no D1: trocar INSERT OR IGNORE por
+  ON CONFLICT DO UPDATE p/ curar swap/commissão que liquidam depois.)*
+- **Webhook do Stripe falha FECHADO** (segredo ausente = recusa, não aceita
+  cobrança forjada).
+- **Relatório soma no SQL** (SUM/COUNT/MAX/MIN) sem LIMIT — antes truncava em
+  5000 e mostrava total errado a menos.
+- **Senha inicial por CSPRNG** (>64 bits) no lugar de Math.random.
+- Erro 500 não vaza detalhe interno; forgot-password sem oráculo de timing;
+  limites de tamanho/enum em config/perfil/onboarding (anti-DoS).
+- Confira /api/health: deve responder `blackwolf-api-v27`.
+
+### O que a v26 adiciona (liga/desliga de sessão POR CONTA — item 6 do Luiz)
+- O liga/desliga de cada sessão do robô agora pode ser definido **por conta**,
+  não só global. Serve para o Luiz ter contas de teste operando sessões
+  diferentes das de produção.
+- O padrão continua **global** (admin): toda conta que não tiver ajuste próprio
+  segue o global de hoje (retrocompatível — nada muda para os alunos).
+- Guardado no override da conta (`users.ea_config → accounts[conta].sessionOn`,
+  parcial); chave sem override herda o global. Sem migração de banco.
+- No painel: seção "Risco por sessão" (admin) ganhou o checkbox Ativa por
+  sessão, atrelado à conta selecionada. A tabela global virou "fallback".
+- Confira /api/health: deve responder `blackwolf-api-v26`.
+
+### O que a v25 adiciona (relatórios completos)
+- GET /api/reports agora devolve também **saldo início/fim** do período
+  (via balance_history), **% sobre o saldo inicial** e **detecção de
+  depósito/saque**. Isso liga os cartões "Saldo início/fim" e o % na aba
+  Relatórios do painel.
+- O número subiu para v25 só para **confirmar o deploy**: o v24 já tinha a
+  aba (resultado, trades, ganhos/perdas, melhor/pior), faltavam esses extras.
+- Confira /api/health: deve responder `blackwolf-api-v25`.
 
 ### O que a v24 adiciona (ajustes do Luiz + auditoria)
 - /api/admin/clients agora inclui as licenças de ADMIN (a do Luiz aparece na

@@ -1,6 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v19 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v28 (Cloudflare Worker)
+ *  + v28: PAINEL ADMIN DE RESULTADOS. GET /api/admin/results (agregado + MRR +
+ *         lista de clientes com P&L hoje/semana/mês/total) e ?email= (detalhe:
+ *         curva, drawdown, % do dia). MRR real via monthly_amount guardado do
+ *         webhook do Stripe (com cupom). Fuso do dia = servidor da corretora
+ *         (EA_SERVER_OFFSET_MIN). Migração D1: users.monthly_amount, users.is_courtesy.
  *  + Webhook do Stripe (cria conta automática ao pagar)
  *  + v18: PERFIS GLOBAIS DE RISCO (admin define os 3 padrões;
  *         alunos escolhem; robôs em um perfil recebem os valores
@@ -11,6 +16,34 @@
  *  + v20: OBSERVABILIDADE — POST /api/ea/trades rejeitado (ex.:
  *         invalid_json) agora fica registrado em ea_status.last_error,
  *         para nunca mais confundirmos "não gravou" com "não chamou".
+ *  + v27: AUDITORIA PROFUNDA — correções de segurança e de dados (money):
+ *         - P0-A: POST /api/ea/trades NÃO perde mais dados com licença vencida/
+ *           revogada — grava o histórico e devolve active:false (antes: 403 e
+ *           os trades sumiam para sempre). Ingestão de dados ≠ permissão de operar.
+ *         - P0-B (parte segura): nunca grava trade SEM conta (NULL furava o dedup
+ *           e duplicaria a cada reenvio → lucro dobrado); backlog ordenado p/ o
+ *           corte de 500 descartar os mais NOVOS. [ON CONFLICT DO UPDATE pendente
+ *           de verificar o índice único no D1.]
+ *         - P0-D: webhook do Stripe FALHA FECHADO (segredo ausente = recusa, não
+ *           aceita cobrança forjada).
+ *         - P0-E: /api/reports agrega no SQL (SUM/COUNT/MAX/MIN) SEM LIMIT — antes
+ *           truncava em 5000 e mostrava total ERRADO a menos.
+ *         - P0-H: senha inicial por CSPRNG (>64 bits) em vez de Math.random.
+ *         - Segurança: erro 500 não vaza err.message; forgot-password sem oráculo
+ *           de timing (envio via waitUntil); limites de tamanho/enum em config,
+ *           profile e onboarding (anti-DoS/inflar banco).
+ *  + v26: LIGA/DESLIGA DE SESSÃO POR CONTA (decisão do Luiz — item 6).
+ *         O padrão continua GLOBAL (admin), mas cada conta pode ter o seu
+ *         próprio liga/desliga de sessão — contas de teste do sócio operam
+ *         sessões diferentes das de produção. Guardado no override da conta
+ *         (users.ea_config → accounts[conta].sessionOn, parcial); chave sem
+ *         override herda o padrão global. Retrocompatível: contas sem
+ *         override seguem exatamente o global de hoje.
+ *  + v25: RELATÓRIOS COMPLETOS — GET /api/reports agora devolve também
+ *         saldo INÍCIO/FIM do período (via balance_history), % sobre o
+ *         saldo inicial e detecção de depósito/saque. (Número de versão
+ *         subiu p/ v25 só para confirmar o deploy: o v24 já tinha a aba,
+ *         faltavam esses campos extras.)
  *  + v23: ROBUSTEZ DE PRODUÇÃO (auditoria arquitetural) —
  *         - vínculo de conta ATÔMICO (tabela license_accounts) — sem corrida
  *           entre robôs simultâneos; o SQLite arbitra o limite;
@@ -62,7 +95,7 @@
 const PBKDF2_ITER = 100000;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const origin = request.headers.get('Origin') || '*';
@@ -84,9 +117,11 @@ export default {
       if (path === '/api/change-password' && request.method === 'POST')  return await handleChangePassword(request, env, json);
       if (path === '/api/profile' && request.method === 'POST')          return await handleProfile(request, env, json);
       if (path === '/api/onboarding' && request.method === 'POST')       return await handleOnboarding(request, env, json);
-      if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json);
+      if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
+      if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
+      if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -99,12 +134,14 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v24' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v24' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v30' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v30' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
-      return json({ error: 'server_error', detail: String(err && err.message || err) }, 500);
+      // v27: não vaza detalhe interno (schema/SQL) ao cliente; registra no log estruturado
+      try { logEvent({ evt: 'server_error', detail: String(err && err.message || err), stack: String(err && err.stack || '').slice(0, 500) }); } catch (e) {}
+      return json({ error: 'server_error' }, 500);
     }
   },
 };
@@ -136,13 +173,24 @@ function safeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
-// gera senha legível ex: Wolf#4829Azul
+// v27: inteiro aleatório [0,max) por CSPRNG, SEM viés de módulo (rejection sampling)
+function randInt(max) {
+  if (max <= 0) return 0;
+  const limit = Math.floor(0xffffffff / max) * max;
+  const buf = new Uint32Array(1);
+  let x;
+  do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+  return x % max;
+}
+// v27: senha legível E FORTE. Antes usava Math.random() (~900k combinações,
+// formato público) → conta de cliente novo era adivinhável. Agora tudo por
+// CSPRNG + sufixo de 48 bits → >64 bits de entropia, mantendo a parte legível.
 function generatePassword() {
   const words = ['Wolf','Gold','Pack','Lone','Alpha','Star','Moon','Dark','Blue','Fire'];
-  const w1 = words[Math.floor(Math.random()*words.length)];
-  const w2 = words[Math.floor(Math.random()*words.length)];
-  const num = String(Math.floor(Math.random()*9000)+1000);
-  return w1 + '#' + num + w2;
+  const w1 = words[randInt(words.length)];
+  const w2 = words[randInt(words.length)];
+  const num = String(1000 + randInt(9000));
+  return w1 + '#' + num + w2 + '-' + randomHex(6); // ex: Wolf#4829Gold-a7f3c9d21b4e
 }
 // gera uma chave de licença de alta entropia, ex: BW-7F3A-9C21-E40B-5D8A-1F2C
 // (a própria chave funciona como credencial/token do robô — por isso é aleatória e secreta)
@@ -202,11 +250,38 @@ function logEvent(obj) { try { console.log(JSON.stringify({ t: new Date().toISOS
 async function createSession(env, email) {
   const token = randomHex(32);
   await env.SESSIONS.put('sess:' + token, email, { expirationTtl: 60 * 60 * 24 * 30 });
+  // v29: registra o token numa lista por usuário para poder REVOGAR tudo quando a
+  // senha muda/reseta (antes um token roubado sobrevivia 30 dias a uma troca de senha).
+  try {
+    const k = 'usess:' + email;
+    let arr = []; try { arr = JSON.parse(await env.SESSIONS.get(k) || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) arr = [];
+    arr.push(token);
+    if (arr.length > 25) arr = arr.slice(-25);   // teto (evita crescer sem limite)
+    await env.SESSIONS.put(k, JSON.stringify(arr), { expirationTtl: 60 * 60 * 24 * 30 });
+  } catch (e) {}
   return token;
 }
-async function getSessionEmail(request, env) {
+// revoga todas as sessões de um e-mail (opcionalmente preserva uma — a atual)
+async function revokeSessions(env, email, exceptToken) {
+  try {
+    const k = 'usess:' + email;
+    let arr = []; try { arr = JSON.parse(await env.SESSIONS.get(k) || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) arr = [];
+    const keep = [];
+    for (const t of arr) {
+      if (exceptToken && t === exceptToken) { keep.push(t); continue; }
+      try { await env.SESSIONS.delete('sess:' + t); } catch (e) {}
+    }
+    await env.SESSIONS.put(k, JSON.stringify(keep), { expirationTtl: 60 * 60 * 24 * 30 });
+  } catch (e) {}
+}
+function bearerToken(request) {
   const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+}
+async function getSessionEmail(request, env) {
+  const token = bearerToken(request);
   if (!token) return null;
   return await env.SESSIONS.get('sess:' + token);
 }
@@ -259,6 +334,16 @@ async function getSessionOn(env) {
 }
 function sanitizeSessionOn(raw) {
   const out = { ...DEFAULT_SESSION_ON };
+  if (raw && typeof raw === 'object') {
+    for (const k of SESSION_ON_KEYS) if (k in raw) out[k] = !!raw[k];
+  }
+  return out;
+}
+// v26: override PARCIAL de sessionOn por CONTA. Só guarda as chaves presentes
+// (como boolean); chave ausente = a conta herda o padrão GLOBAL (KV session_on).
+// Não preenche defaults de propósito — o "vazio" significa "herdar".
+function sanitizeSessionOnPartial(raw) {
+  const out = {};
   if (raw && typeof raw === 'object') {
     for (const k of SESSION_ON_KEYS) if (k in raw) out[k] = !!raw[k];
   }
@@ -404,11 +489,15 @@ async function handleStripeWebhook(request, env, json) {
   const body = await request.text();
   const sig = request.headers.get('stripe-signature') || '';
 
-  // Verifica assinatura do Stripe (segurança)
-  if (env.STRIPE_WEBHOOK_SECRET) {
-    const valid = await verifyStripeSignature(body, sig, env.STRIPE_WEBHOOK_SECRET);
-    if (!valid) return json({ error: 'invalid_signature' }, 400);
+  // v27: FALHA FECHADO. Se o segredo não estiver configurado, RECUSA o webhook
+  // em vez de aceitar sem verificar (antes: um segredo ausente aceitava qualquer
+  // POST forjado → criava/upgradava/revogava licença de graça).
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    try { logEvent({ evt: 'stripe_webhook_misconfigured' }); } catch (e) {}
+    return json({ error: 'webhook_not_configured' }, 500);
   }
+  const valid = await verifyStripeSignature(body, sig, env.STRIPE_WEBHOOK_SECRET);
+  if (!valid) return json({ error: 'invalid_signature' }, 400);
 
   let event;
   try { event = JSON.parse(body); } catch(e) { return json({ error: 'invalid_json' }, 400); }
@@ -463,6 +552,7 @@ async function handleStripeWebhook(request, env, json) {
 
   // Identifica o plano: metadata explícita tem prioridade; valor é só fallback.
   // (v22: evita classificar errado por moeda/centavos/plano anual)
+  const planExplicit = !!(obj.metadata && obj.metadata.plan);
   let plan = (obj.metadata && obj.metadata.plan) || null;
   if (!plan) {
     const amount = obj.amount_total || obj.amount_paid || 0;
@@ -476,6 +566,10 @@ async function handleStripeWebhook(request, env, json) {
 
   email = email.trim().toLowerCase();
 
+  // v28: guarda o VALOR REAL pago (em dólares, já com cupom aplicado) para o MRR
+  // real do admin — não dá pra derivar do plano porque o cupom muda o valor.
+  const monthlyAmount = (obj.amount_total || obj.amount_paid || 0) / 100;
+
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
   // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
   // o rebaixamento silencioso (Alpha 3 contas → Lone 1 conta) por valor de invoice.
@@ -487,14 +581,21 @@ async function handleStripeWebhook(request, env, json) {
     // Cliente já tem conta — garante licença ativa e cliente Stripe salvo
     let lic = existing.license_key;
     if (!lic) { lic = generateLicenseKey(); }
-    if (isCheckout) {
-      // compra/troca explícita: pode ajustar plano e limite
-      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, plan, planAccountLimit(plan), stripeCustomer, email).run();
+    if (isCheckout && planExplicit) {
+      // compra/troca EXPLÍCITA (metadata.plan): pode ajustar plano e limite.
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, monthly_amount = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, plan, planAccountLimit(plan), monthlyAmount, stripeCustomer, email).run();
+    } else if (isCheckout) {
+      // checkout SEM metadata.plan: o plano foi inferido do VALOR — e um cupom pode
+      // ter baixado o valor abaixo da faixa. NÃO rebaixa plano/limite de um cliente
+      // que já pagou por mais (Alpha 3 → Lone 1). Só reafirma licença + MRR.
+      // (Corrigir plano nesse caso: setar metadata.plan no link de checkout do Stripe.)
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, monthlyAmount, stripeCustomer, email).run();
     } else {
-      // renovação: só reafirma licença ativa e o customer, preserva plano/limite atuais
-      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, stripeCustomer, email).run();
+      // renovação: reafirma licença ativa + valor recorrente (MRR), preserva plano/limite
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, monthlyAmount, stripeCustomer, email).run();
     }
     await sendWelcomeEmail(env, email, name, plan, null, lic);
     return json({ ok: true, action: 'already_exists' });
@@ -508,9 +609,9 @@ async function handleStripeWebhook(request, env, json) {
   const now = new Date().toISOString();
 
   await env.DB.prepare(
-    `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, stripe_customer, created_at)
-     VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?)`
-  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), stripeCustomer, now).run();
+    `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, monthly_amount, stripe_customer, created_at)
+     VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?, ?)`
+  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), monthlyAmount, stripeCustomer, now).run();
 
   // Envia email de boas-vindas com as credenciais + licença
   if (env.RESEND_API_KEY && env.EMAIL_FROM) {
@@ -691,15 +792,20 @@ async function handleChangePassword(request, env, json) {
   const salt = randomHex(16);
   const hash = await pbkdf2(new_password, salt);
   await env.DB.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE email = ?').bind(hash, salt, email).run();
+  // v29: derruba as OUTRAS sessões (mantém a atual) — token roubado morre na troca
+  await revokeSessions(env, email, bearerToken(request));
   return json({ ok: true });
 }
+// v27: limita tamanho de campo de texto (evita gravar blob de MB → DoS/inflar banco)
+function capStr(v, max) { if (v == null) return null; const s = String(v); return s.length > max ? s.slice(0, max) : s; }
 async function handleProfile(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const b = await request.json();
+  const lang = ['pt','en','es'].includes(b.lang) ? b.lang : 'pt';
   await env.DB.prepare(
     `UPDATE users SET display_name=?,photo=?,phone=?,whatsapp=?,country=?,city=?,lang=? WHERE email=?`
-  ).bind(b.display_name??null,b.photo??null,b.phone??null,b.whatsapp??null,b.country??null,b.city??null,b.lang??'pt',email).run();
+  ).bind(capStr(b.display_name,80),capStr(b.photo,2048),capStr(b.phone,40),capStr(b.whatsapp,40),capStr(b.country,60),capStr(b.city,60),lang,email).run();
   const fresh = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
   const licP = await licenseViewFor(env, fresh);  // v22: sócio mantém a visão da licença do pool
   return json({ ok: true, user: publicUser(fresh, licP) });
@@ -715,15 +821,15 @@ async function handleOnboarding(request, env, json) {
      ON CONFLICT(email) DO UPDATE SET age=excluded.age,experience=excluded.experience,
        goal=excluded.goal,self_profile=excluded.self_profile,family=excluded.family,source=excluded.source,
        country=excluded.country,state=excluded.state,city=excluded.city,marketing_opt_in=excluded.marketing_opt_in`
-  ).bind(email,b.age??null,b.experience??null,b.goal??null,b.self_profile??null,b.family??null,b.source??null,b.country??null,b.state??null,b.city??null,b.marketing_opt_in??null,now).run();
+  ).bind(email,capStr(b.age,20),capStr(b.experience,60),capStr(b.goal,60),capStr(b.self_profile,60),capStr(b.family,60),capStr(b.source,60),capStr(b.country,60),capStr(b.state,60),capStr(b.city,60),(b.marketing_opt_in?1:0),now).run();
   // mantém o país/cidade do cadastro do usuário em sincronia com o questionário
   if (b.country || b.city) {
     await env.DB.prepare('UPDATE users SET country=COALESCE(?,country), city=COALESCE(?,city) WHERE email=?')
-      .bind(b.country??null, b.city??null, email).run();
+      .bind(capStr(b.country,60), capStr(b.city,60), email).run();
   }
   return json({ ok: true });
 }
-async function handleForgot(request, env, json) {
+async function handleForgot(request, env, json, ctx) {
   const { email } = await request.json();
   const e = String(email || '').trim().toLowerCase();
   const generic = { ok: true };
@@ -732,14 +838,19 @@ async function handleForgot(request, env, json) {
   // continua genérica, então não vaza se o rate limit bateu)
   if (await rateLimited(env, 'forgot:' + e, 1, 900)) return json(generic);
   const row = await env.DB.prepare('SELECT email, name FROM users WHERE email = ?').bind(e).first();
-  if (!row) return json(generic);
-  const token = randomHex(32);
-  await env.SESSIONS.put('reset:' + token, e, { expirationTtl: 60 * 60 });
-  const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
-  const link = `${panelUrl}/?reset=${token}`;
-  if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-    const html = resetEmailHtml(row.name, link);
-    await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({from:env.EMAIL_FROM,to:[e],subject:'Redefinir sua senha — Black Wolf',html})});
+  if (row) {
+    const token = randomHex(32);
+    await env.SESSIONS.put('reset:' + token, e, { expirationTtl: 60 * 60 });
+    const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+    const link = `${panelUrl}/?reset=${token}`;
+    if (env.RESEND_API_KEY && env.EMAIL_FROM) {
+      const html = resetEmailHtml(row.name, link);
+      // v27: NÃO aguarda o envio (era um oráculo de timing: e-mail existente
+      // demorava mais → dava pra enumerar clientes). waitUntil solta em segundo
+      // plano; a resposta volta no mesmo tempo, exista o e-mail ou não.
+      const send = fetch('https://api.resend.com/emails',{method:'POST',headers:{'Authorization':'Bearer '+env.RESEND_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({from:env.EMAIL_FROM,to:[e],subject:'Redefinir sua senha — Black Wolf',html})}).catch(()=>{});
+      if (ctx && ctx.waitUntil) ctx.waitUntil(send);
+    }
   }
   return json(generic);
 }
@@ -753,6 +864,9 @@ async function handleReset(request, env, json) {
   const hash = await pbkdf2(new_password, salt);
   await env.DB.prepare('UPDATE users SET password_hash=?,salt=? WHERE email=?').bind(hash,salt,email).run();
   await env.SESSIONS.delete('reset:' + token);
+  // v29: recuperação de conta revoga TODAS as sessões (o dono legítimo re-loga;
+  // qualquer sessão de um invasor com token roubado é derrubada)
+  await revokeSessions(env, email);
   return json({ ok: true });
 }
 
@@ -795,6 +909,7 @@ async function handleAdminClients(request, env, json) {
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
       accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
+      mt5_accounts: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch(e){ return []; } })(),
       account_limit: (r.account_limit != null ? r.account_limit : null),
       last_seen: r.last_seen || null,
       accounts_reporting: r.acc_online || 0,
@@ -806,6 +921,165 @@ async function handleAdminClients(request, env, json) {
     }));
 
   return json({ clients });
+}
+
+/* ─────────────── ADMIN: RESULTADOS DOS CLIENTES (v28) ───────────────
+   GET /api/admin/results            → agregado + MRR + lista de clientes
+   GET /api/admin/results?email=X    → detalhe de 1 cliente (curva, drawdown)
+   Regra: resultado = SOMA de trades (profit+commission+swap), nunca saldo. */
+// fuso do SERVIDOR da corretora (offset em min vs UTC). Os close_time dos trades
+// vêm neste fuso; usamos ele pra fechar "o dia/semana/mês" sem erro de virada.
+// Ajuste aqui se a corretora mudar de servidor (típico MT5: UTC+2/+3).
+const EA_SERVER_OFFSET_MIN = 180;
+function serverWindows() {
+  const now = new Date(Date.now() + EA_SERVER_OFFSET_MIN * 60000);
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate(), wd = now.getUTCDay();
+  const dot = (dt) => dt.toISOString().slice(0, 10).replace(/-/g, '.');
+  const monday = new Date(Date.UTC(y, m, d - ((wd + 6) % 7)));
+  return { today: dot(new Date(Date.UTC(y, m, d))), week: dot(monday), month: dot(new Date(Date.UTC(y, m, 1))) };
+}
+async function handleAdminResults(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+
+  const W = serverWindows();
+  const NET = '(COALESCE(profit,0)+COALESCE(commission,0)+COALESCE(swap,0))';
+  const DP = "replace(substr(close_time,1,10),'-','.')";
+  const target = url.searchParams.get('email');
+
+  // ───── DETALHE de 1 cliente ─────
+  if (target) {
+    const t = String(target).trim().toLowerCase();
+    const agg = await env.DB.prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS total,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS today,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS week,
+              COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS month,
+              SUM(CASE WHEN ${NET} > 0 THEN 1 ELSE 0 END) AS wins,
+              SUM(CASE WHEN ${NET} < 0 THEN 1 ELSE 0 END) AS losses
+       FROM trades WHERE email = ?`
+    ).bind(W.today, W.week, W.month, t).first();
+    const dayRows = await env.DB.prepare(
+      `SELECT substr(close_time,1,10) AS d, SUM(${NET}) AS pnl FROM trades
+       WHERE email = ? AND ${DP} >= ? GROUP BY d ORDER BY d ASC`
+    ).bind(t, W.month).all();
+    let cum = 0, peak = 0, maxDD = 0;
+    const curve = (dayRows.results || []).map(r => { const p = +(+r.pnl || 0).toFixed(2); cum = +(cum + p).toFixed(2); if (cum > peak) peak = cum; if (peak - cum > maxDD) maxDD = peak - cum; return { day: String(r.d || '').replace(/\./g, '-'), pnl: p, cumulative: cum }; });
+    const bal = await env.DB.prepare("SELECT COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE email = ? AND balance IS NOT NULL").bind(t).first();
+    const balance = bal ? +(+bal.bal).toFixed(2) : 0;
+    const u = await env.DB.prepare('SELECT name, plan, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const n = agg ? +agg.n : 0;
+    const today = +(+(agg && agg.today || 0)).toFixed(2);
+    const startDay = balance - today;
+    return json({
+      ok: true, email: t, name: (u && u.name) || t, plan: (u && u.plan) || null, status: (u && u.license_status) || null,
+      accounts: (function () { try { const a = u && u.mt5_accounts ? JSON.parse(u.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+      currency: 'USD', balance, today, todayPct: (startDay > 0) ? +(today / startDay * 100).toFixed(2) : null,
+      week: +(+(agg && agg.week || 0)).toFixed(2), month: +(+(agg && agg.month || 0)).toFixed(2), total: +(+(agg && agg.total || 0)).toFixed(2),
+      trades: n, wins: agg ? +agg.wins : 0, losses: agg ? +agg.losses : 0, winRate: n ? +((agg.wins / n) * 100).toFixed(2) : 0,
+      maxDrawdown: +maxDD.toFixed(2), curve
+    });
+  }
+
+  // ───── AGREGADO + lista ─────
+  const pnlRows = await env.DB.prepare(
+    `SELECT email, COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS total,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS today,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS week,
+            COALESCE(SUM(CASE WHEN ${DP} >= ? THEN ${NET} ELSE 0 END),0) AS month
+     FROM trades GROUP BY email`
+  ).bind(W.today, W.week, W.month).all();
+  const pnlByEmail = {}; (pnlRows.results || []).forEach(r => { pnlByEmail[String(r.email).toLowerCase()] = r; });
+  const balRows = await env.DB.prepare("SELECT email, COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE balance IS NOT NULL GROUP BY email").all();
+  const balByEmail = {}; (balRows.results || []).forEach(r => { balByEmail[String(r.email).toLowerCase()] = +r.bal; });
+  const urows = await env.DB.prepare(
+    `SELECT u.email, u.name, u.plan, u.license_status, u.monthly_amount, u.is_courtesy, u.mt5_accounts, u.role, u.created_at,
+            (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email=u.email) AS last_seen
+     FROM users u WHERE (u.role='client' OR u.license_key IS NOT NULL) ORDER BY u.created_at DESC`
+  ).all();
+
+  let aggToday = 0, aggWeek = 0, aggMonth = 0, aggTotal = 0, mrr = 0, paying = 0, active = 0;
+  const clients = (urows.results || [])
+    .filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()))
+    .map(r => {
+      const em = String(r.email).toLowerCase();
+      const p = pnlByEmail[em] || {};
+      const today = +(+(p.today || 0)).toFixed(2), week = +(+(p.week || 0)).toFixed(2), month = +(+(p.month || 0)).toFixed(2), total = +(+(p.total || 0)).toFixed(2);
+      const balance = balByEmail[em] != null ? +(balByEmail[em]).toFixed(2) : null;
+      const amount = (r.monthly_amount != null) ? +r.monthly_amount : 0;
+      const st = r.license_status || null;
+      const isActive = (st === 'active');
+      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy || amount <= 0) pay = 'cortesia'; else pay = 'pagando';
+      if (isActive) { active++; if (pay === 'pagando') { paying++; mrr += amount; } }
+      aggToday += today; aggWeek += week; aggMonth += month; aggTotal += total;
+      return {
+        email: em, name: r.name || em, plan: r.plan || null, status: st, is_admin: r.role === 'admin',
+        payment: pay, monthly_amount: amount, balance, today, week, month, total,
+        accounts: (function () { try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+        last_seen: r.last_seen || null
+      };
+    });
+
+  return json({
+    ok: true, currency: 'USD',
+    aggregate: { today: +aggToday.toFixed(2), week: +aggWeek.toFixed(2), month: +aggMonth.toFixed(2), total: +aggTotal.toFixed(2) },
+    mrr: +mrr.toFixed(2), clientsActive: active, clientsPaying: paying, clientsTotal: clients.length,
+    serverOffsetMin: EA_SERVER_OFFSET_MIN, clients
+  });
+}
+
+/* ───────────────── DIAGNÓSTICO (v29) ─────────────────
+   GET /api/diag  (admin) → por que os dados do robô não chegam?
+   Mostra: tabelas existentes (com o CREATE real, p/ ver se falta chave única),
+   quais tabelas OBRIGATÓRIAS estão faltando, contagens, os ÚLTIMOS ERROS que os
+   robôs receberam (last_error) e os últimos trades/heartbeats. Cada consulta é
+   isolada: se uma tabela não existir, ela aparece como "faltando" em vez de
+   derrubar tudo. */
+async function handleDiag(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+
+  const REQUIRED = ['users','onboarding','trades','ea_status','ea_status_acc','balance_history','license_accounts','license_events','config_log'];
+  const q = async (sql, ...b) => { try { const r = await env.DB.prepare(sql).bind(...b).all(); return r.results || []; } catch (e) { return { __error: String(e && e.message || e) }; } };
+  const one = async (sql, ...b) => { try { return await env.DB.prepare(sql).bind(...b).first(); } catch (e) { return { __error: String(e && e.message || e) }; } };
+
+  // tabelas presentes + o SQL real de criação (revela se falta PRIMARY KEY/UNIQUE)
+  const master = await q("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name");
+  const present = Array.isArray(master) ? master.map(r => r.name) : [];
+  const missing = REQUIRED.filter(t => !present.includes(t));
+
+  // contagens (tabela faltando → aparece como erro naquela contagem)
+  const counts = {};
+  for (const t of REQUIRED) { const r = await one(`SELECT COUNT(*) AS n FROM ${t}`); counts[t] = (r && r.__error) ? ('ERRO: ' + r.__error) : (r ? r.n : null); }
+
+  // últimos erros que os robôs receberam (a pista mais direta do problema)
+  const eaErrors = await q("SELECT email, account, last_seen, last_error FROM ea_status_acc WHERE last_error IS NOT NULL ORDER BY last_seen DESC LIMIT 25");
+  const eaErrorsGlobal = await q("SELECT email, account, last_seen, last_error FROM ea_status WHERE last_error IS NOT NULL ORDER BY last_seen DESC LIMIT 25");
+  // heartbeats mais recentes (robô chegou ao servidor?) e últimos trades gravados
+  const lastSeen = await q("SELECT email, account, ea_version, balance, last_seen, last_error FROM ea_status_acc ORDER BY last_seen DESC LIMIT 15");
+  const lastTrades = await q("SELECT email, account, symbol, close_time, profit, created_at FROM trades ORDER BY created_at DESC LIMIT 8");
+
+  // veredito automático em linguagem simples
+  const notes = [];
+  if (missing.length) notes.push('TABELAS FALTANDO no banco: ' + missing.join(', ') + '. Rode o schema.sql no Console do D1 — é a causa mais provável de "nada chega".');
+  if (Array.isArray(eaErrors) && eaErrors.length) {
+    const kinds = [...new Set(eaErrors.map(e => e.last_error))];
+    notes.push('Os robôs estão CHEGANDO ao servidor, mas sendo rejeitados. Erros: ' + kinds.join(', ') + '.');
+  }
+  if (!missing.length && (!Array.isArray(lastSeen) || lastSeen.length === 0)) {
+    notes.push('Nenhum robô apareceu no servidor (0 heartbeats). Provável: URL do worker errada no robô, ou a URL não foi liberada no MT5 (Ferramentas → Opções → Expert Advisors → permitir WebRequest para a URL).');
+  }
+  if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
+  if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
+
+  return json({ ok: true, version: 'v30', now: new Date().toISOString(),
+    tablesPresent: present, tablesMissing: missing, counts,
+    eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
+    schema: master, notes });
 }
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────
@@ -839,12 +1113,23 @@ function sanitizeConfig(raw) {
         const v = Number(raw[k]);
         if (Number.isFinite(v)) out[k] = Math.min(rg[1], Math.max(rg[0], v));
       } else {
-        out[k] = raw[k]; // lotMode/leverage/timezone/newsPause/profile (não-numéricos)
+        // v27: campos não-numéricos — valida tipo/enum/tamanho (antes gravava
+        // qualquer coisa, inclusive um blob de MB → inflava o banco / DoS).
+        const val = raw[k];
+        if (k === 'newsPause') { out[k] = !!val; }
+        else if (k === 'lotMode') { if (['percent','fixed'].includes(val)) out[k] = val; }
+        else if (k === 'profile') { if (typeof val === 'string' && val.length <= 32) out[k] = val; }
+        else if (typeof val === 'string') { out[k] = val.slice(0, 64); } // leverage/timezone
       }
     }
     if (raw.sessionRisk && typeof raw.sessionRisk === 'object') {
       const sr = sanitizeSessionRisk(raw.sessionRisk);
       if (Object.keys(sr).length) out.sessionRisk = sr;
+    }
+    // v26: liga/desliga por sessão POR CONTA (override parcial do padrão global)
+    if (raw.sessionOn && typeof raw.sessionOn === 'object') {
+      const so = sanitizeSessionOnPartial(raw.sessionOn);
+      if (Object.keys(so).length) out.sessionOn = so;
     }
   }
   return out;
@@ -932,7 +1217,12 @@ function intOrNull(v){ const n = parseInt(v,10); return Number.isFinite(n) ? n :
 function getEaAccount(request, url, body){
   let a = url.searchParams.get('account') || request.headers.get('X-Account') ||
           (body && body.account != null ? body.account : null);
-  return (a != null && String(a).trim() !== '') ? String(a).trim() : null;
+  if (a == null) return null;
+  const s = String(a).trim();
+  // conta MT5 (ACCOUNT_LOGIN) é SEMPRE um inteiro. Aceitar só dígitos fecha o vetor
+  // de XSS armazenado: um robô adulterado poderia mandar um "número" com aspas/HTML
+  // que seria ecoado no painel do admin. Não-numérico → tratado como sem conta.
+  return /^\d{1,20}$/.test(s) ? s : null;
 }
 // v23: vínculo ATÔMICO via tabela license_accounts (PK license_key+account).
 // O INSERT condicional deixa o SQLite arbitrar o limite — sem corrida entre
@@ -1071,10 +1361,15 @@ async function handleEaConfig(request, env, json, url) {
   }
   // v19: LIGA/DESLIGA POR SESSÃO (robô v1.2) — sempre manda as 8 chaves "on_"
   // explícitas (contrato: chave ausente = robô mantém o estado atual; explícito
-  // é determinístico). Controle GLOBAL do admin, igual para todas as licenças.
+  // é determinístico).
+  // v26 (decisão do Luiz — item 6): o padrão é GLOBAL (admin), mas cada CONTA
+  // pode ter o seu próprio liga/desliga (contas de teste do sócio operam sessões
+  // diferentes das de produção). Override por conta vence; chave sem override
+  // herda o padrão global.
   const so = await getSessionOn(env);
+  const accOn = (cfg.sessionOn && typeof cfg.sessionOn === 'object') ? cfg.sessionOn : {};
   const sessionOn = {};
-  for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = !!so[k];
+  for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = (k in accOn) ? !!accOn[k] : !!so[k];
   config.sessionOn = sessionOn;
   // v23: config_version (ETag) — hash estável do config efetivo; o robô pode
   // mandar ?since=<v> e receber {changed:false} se nada mudou (economiza e é determinístico)
@@ -1117,17 +1412,24 @@ async function handleEaTrades(request, env, json, url) {
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
   const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
+  // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
+  // trades é o CANAL DE DADOS, não a permissão de operar. Rejeitar perderia PARA
+  // SEMPRE os trades que o robô ainda está fechando (buraco no histórico + falso
+  // depósito no relatório). Gravamos o histórico e devolvemos active:false — o robô
+  // deve parar de ABRIR trades novos, mas continuar reportando até receber o ACK.
   const lt = licenseState(row);
-  if (!lt.active) return json({ error:'license_' + lt.status, active:false, status: lt.status }, 403);
+  const licenseActive = lt.active;
 
   let body; try { body = await request.json(); } catch(e){
     await recordEaError(env, license, row.email, getEaAccount(request, url, null), 'invalid_json');
     return json({ error:'invalid_json' }, 400);
   }
   const account = getEaAccount(request, url, body);
+  const hasAccount = account != null && String(account).trim() !== '';
   const now = new Date().toISOString();
 
-  // trava: 1 licença = 1 conta (rejeita se outra conta usar a mesma licença)
+  // trava ANTI-REVENDA: 1 licença = 1 conta. Mismatch continua rejeitando (é a
+  // fronteira de autorização; o robô legítimo da conta vinculada segue normal).
   const acc = await bindOrCheckAccount(env, row, account);
   if (acc.mismatch) {
     await recordEaError(env, license, row.email, account, 'account_mismatch');
@@ -1167,16 +1469,35 @@ async function handleEaTrades(request, env, json, url) {
   }
   // trades fechados — dedupe por (licença, CONTA, ticket)
   const persisted = [];
-  const trades = Array.isArray(body.trades) ? body.trades : [];
-  const capped = trades.slice(0, 500); // teto por POST; o robô pagina backlog maior
+  // v29: teto DURO no array cru ANTES de ordenar — uma licença válida não pode
+  // mandar um array gigante e gastar CPU/memória do worker (o robô pagina de 500).
+  let tradesArr = Array.isArray(body.trades) ? body.trades.slice(0, 2000).filter(t => t && t.ticket != null) : [];
+  const totalTrades = tradesArr.length;
+  // v27 (P0-B): NUNCA gravar trade sem CONTA. No SQLite, NULL é distinto no índice
+  // UNIQUE, então trade sem conta furaria o dedup e DUPLICARIA a cada reenvio
+  // (lucro dobrado no relatório). Sem conta: não grava e não dá ACK → o robô
+  // reenvia quando incluir a conta. Fica registrado em last_error p/ o admin ver.
+  let missingAccount = false;
+  if (totalTrades && !hasAccount) {
+    missingAccount = true;
+    tradesArr = [];
+    await recordEaError(env, license, row.email, account, 'missing_account');
+  }
+  // v27 (H1): ordena mais ANTIGO primeiro; se truncar em 500, os descartados são os
+  // mais NOVOS (que o robô ainda tem na fila) — nunca perde o começo do backlog.
+  tradesArr.sort((a, b) => {
+    const ka = String(a.closeTime ?? a.close_time ?? ''), kb = String(b.closeTime ?? b.close_time ?? '');
+    if (!ka && !kb) return 0; if (!ka) return 1; if (!kb) return -1;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  const capped = tradesArr.slice(0, 500); // teto por POST; o robô pagina backlog maior
+  const remaining = Math.max(0, tradesArr.length - capped.length);
   for (const tr of capped) {
-    if (!tr) continue;
-    const ticket = tr.ticket != null ? String(tr.ticket) : null;
-    if (!ticket) continue;
+    const ticket = String(tr.ticket);
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO trades (license_key,email,account,ticket,symbol,type,lots,open_time,close_time,open_price,close_price,profit,commission,swap,created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(license, row.email, account, ticket, tr.symbol??null, tr.type??null, num(tr.lots),
+    ).bind(license, row.email, String(account), ticket, tr.symbol??null, tr.type??null, num(tr.lots),
            tr.openTime??tr.open_time??null, tr.closeTime??tr.close_time??null,
            num(tr.openPrice??tr.open_price), num(tr.closePrice??tr.close_price),
            num(tr.profit), num(tr.commission), num(tr.swap), now));
@@ -1188,11 +1509,14 @@ async function handleEaTrades(request, env, json, url) {
     // falha do banco: NÃO confirma nada; o robô mantém a fila e reenvia (idempotente)
     await recordEaError(env, license, row.email, account, 'db_batch_fail');
     logEvent({ evt:'ea_trades_fail', lic: license.slice(-6), acc: account, n: capped.length, err: String(e && e.message || e) });
-    return json({ error:'server_busy', active:true, persisted: [], retry: true }, 503);
+    return json({ error:'server_busy', active: licenseActive, persisted: [], retry: true }, 503);
   }
-  logEvent({ evt:'ea_trades', lic: license.slice(-6), acc: account, persisted: persisted.length, truncated: trades.length > 500 });
-  // ACK: o robô só remove da fila os tickets que voltarem em "persisted"
-  return json({ ok: true, received: persisted.length, persisted, account: acc.bound || null, truncated: trades.length > 500 });
+  logEvent({ evt:'ea_trades', lic: license.slice(-6), acc: account, persisted: persisted.length, remaining, active: licenseActive, missing_account: missingAccount });
+  // ACK: o robô só remove da fila os tickets que voltarem em "persisted".
+  // active:false = licença vencida/revogada → robô para de ABRIR, mas segue reportando.
+  const resp = { ok: true, active: licenseActive, status: lt.status, received: persisted.length, persisted, account: acc.bound || null, truncated: remaining > 0, remaining };
+  if (missingAccount) resp.warning = 'missing_account';
+  return json(resp);
 }
 
 /* ─────────────── RELATÓRIOS (v23) ───────────────
@@ -1207,8 +1531,11 @@ async function handleReports(request, env, json, url) {
   const target = (u && u.results_source) ? u.results_source : email;
   const period = url.searchParams.get('period') || 'month';
   const account = url.searchParams.get('account');
-  // janela de datas: usa from/to se vier; senão período corrente
-  const now = new Date();
+  // janela de datas: usa from/to se vier; senão período corrente.
+  // v29: usa o horário do SERVIDOR da corretora (+EA_SERVER_OFFSET_MIN), igual ao
+  // /api/admin/results e ao close_time dos trades. Antes usava UTC puro → na virada
+  // de dia/mês o cliente e o admin viam números diferentes e trades da borda sumiam.
+  const now = new Date(Date.now() + EA_SERVER_OFFSET_MIN * 60000);
   let from = url.searchParams.get('from'), to = url.searchParams.get('to');
   if (!from || !to) {
     const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate(), wd = now.getUTCDay();
@@ -1221,39 +1548,78 @@ async function handleReports(request, env, json, url) {
       to = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10);
     }
   }
-  // trades no período — filtro por close_time (usa índice). close_time do MT5 é
+  // v27 (P0-E): AGREGA NO SQL (SUM/COUNT/MAX/MIN), SEM teto. Antes puxava as linhas
+  // e somava em JS com LIMIT 5000, o que TRUNCAVA silenciosamente e mostrava total
+  // ERRADO (a menos) numa conta muito ativa. Agora soma tudo. close_time do MT5 é
   // "YYYY.MM.DD ..."; comparamos pelo prefixo de data normalizado.
   const fromN = from.replace(/-/g, '.'), toN = to.replace(/-/g, '.');
-  let sql = `SELECT account, symbol, type, lots, close_time, profit, commission, swap
-             FROM trades WHERE email = ?
-             AND replace(substr(close_time,1,10),'-','.') >= ? AND replace(substr(close_time,1,10),'-','.') < ?`;
+  const NET = '(COALESCE(profit,0)+COALESCE(commission,0)+COALESCE(swap,0))';
+  let where = `email = ? AND replace(substr(close_time,1,10),'-','.') >= ? AND replace(substr(close_time,1,10),'-','.') < ?`;
   const binds = [target, fromN, toN];
-  if (account) { sql += ' AND account = ?'; binds.push(String(account)); }
-  sql += ' ORDER BY close_time ASC LIMIT 5000';
-  const tr = await env.DB.prepare(sql).bind(...binds).all();
-  const rows = tr.results || [];
-  let gross = 0, wins = 0, losses = 0, best = null, worst = null;
-  const byDay = {};
-  for (const t of rows) {
-    const net = (+t.profit || 0) + (+t.commission || 0) + (+t.swap || 0);
-    gross += net;
-    if (net > 0) wins++; else if (net < 0) losses++;
-    if (best == null || net > best) best = net;
-    if (worst == null || net < worst) worst = net;
-    const day = String(t.close_time || '').slice(0, 10).replace(/\./g, '-');
-    byDay[day] = (byDay[day] || 0) + net;
-  }
-  const n = rows.length;
-  // curva de evolução: 1 ponto por dia (soma de trades acumulada — nunca saldo)
-  const days = Object.keys(byDay).sort();
-  let cum = 0; const curve = days.map(d => { cum += byDay[d]; return { day: d, pnl: +byDay[d].toFixed(2), cumulative: +cum.toFixed(2) }; });
+  if (account) { where += ' AND account = ?'; binds.push(String(account)); }
+  const agg = await env.DB.prepare(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(${NET}),0) AS gross,
+            SUM(CASE WHEN ${NET} > 0 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN ${NET} < 0 THEN 1 ELSE 0 END) AS losses,
+            MAX(${NET}) AS best, MIN(${NET}) AS worst
+     FROM trades WHERE ${where}`
+  ).bind(...binds).first();
+  const n = agg && agg.n ? +agg.n : 0;
+  const gross = agg ? (+agg.gross || 0) : 0;
+  const wins = agg && agg.wins ? +agg.wins : 0;
+  const losses = agg && agg.losses ? +agg.losses : 0;
+  const best = (n && agg.best != null) ? +agg.best : null;
+  const worst = (n && agg.worst != null) ? +agg.worst : null;
+  // curva de evolução: soma de trades por dia no SQL (nunca saldo), acumulada
+  const dayRows = await env.DB.prepare(
+    `SELECT substr(close_time,1,10) AS d, SUM(${NET}) AS pnl
+     FROM trades WHERE ${where} GROUP BY d ORDER BY d ASC`
+  ).bind(...binds).all();
+  let cum = 0;
+  const curve = (dayRows.results || []).map(r => {
+    const day = String(r.d || '').replace(/\./g, '-');
+    const pnl = +(+r.pnl || 0).toFixed(2);
+    cum += pnl;
+    return { day, pnl, cumulative: +cum.toFixed(2) };
+  });
+
+  // v24: saldo INÍCIO/FIM do período via balance_history (informativo). O % é
+  // sobre o saldo INICIAL (regra do Luiz), NUNCA por diferença de saldo.
+  let startBalance = null, endBalance = null, deposits = null;
+  try {
+    let bsql = "SELECT balance, ts FROM balance_history WHERE email = ? AND substr(ts,1,10) >= ? AND substr(ts,1,10) < ?";
+    const bb = [target, from, to];
+    if (account) { bsql += ' AND account = ?'; bb.push(String(account)); }
+    bsql += ' ORDER BY ts ASC';
+    const bh = await env.DB.prepare(bsql).bind(...bb).all();
+    const brows = (bh.results || []).filter(r => r.balance != null);
+    if (brows.length) {
+      // com uma conta: primeiro/último direto. Com várias (geral): soma por conta
+      if (account) { startBalance = +brows[0].balance; endBalance = +brows[brows.length - 1].balance; }
+      else {
+        // agrega por conta o primeiro e o último ponto de cada uma
+        const firstByAcc = {}, lastByAcc = {};
+        const bh2 = await env.DB.prepare("SELECT account, balance, ts FROM balance_history WHERE email = ? AND substr(ts,1,10) >= ? AND substr(ts,1,10) < ? AND balance IS NOT NULL ORDER BY ts ASC").bind(target, from, to).all();
+        (bh2.results || []).forEach(r => { const a = String(r.account); if (!(a in firstByAcc)) firstByAcc[a] = +r.balance; lastByAcc[a] = +r.balance; });
+        startBalance = Object.values(firstByAcc).reduce((s, v) => s + v, 0);
+        endBalance = Object.values(lastByAcc).reduce((s, v) => s + v, 0);
+      }
+      startBalance = +startBalance.toFixed(2); endBalance = +endBalance.toFixed(2);
+      // discrepância entre variação de saldo e soma de trades = depósito/saque
+      const drift = endBalance - startBalance - gross;
+      deposits = Math.abs(drift) > 0.5 ? +drift.toFixed(2) : 0;
+    }
+  } catch (e) { logEvent({ evt: 'reports_balance_fail', target }); }
+  const resultPct = (startBalance && startBalance > 0) ? +(gross / startBalance * 100).toFixed(2) : null;
+
   return json({
     ok: true, period, from, to, account: account || null, shared: !!(u && u.results_source),
     summary: {
-      result: +gross.toFixed(2), trades: n, wins, losses,
+      result: +gross.toFixed(2), resultPct, trades: n, wins, losses,
       winRate: n ? +(wins / n * 100).toFixed(2) : 0,
       best: best != null ? +best.toFixed(2) : 0,
       worst: worst != null ? +worst.toFixed(2) : 0,
+      startBalance, endBalance, deposits,
     },
     curve,
   });
@@ -1362,12 +1728,15 @@ async function handleMt5Account(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   let body; try { body = await request.json(); } catch(e){ return json({ error:'invalid_json' }, 400); }
-  const account = body.account != null ? String(body.account).trim() : '';
-  if (!account) return json({ error:'missing_account' }, 400);
+  const accountRaw = body.account != null ? String(body.account).trim() : '';
+  // conta MT5 é sempre numérica — valida (mesma regra do getEaAccount)
+  if (!/^\d{1,20}$/.test(accountRaw)) return json({ error:'invalid_account' }, 400);
+  const account = accountRaw;
 
-  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts FROM users WHERE email = ?').bind(email).first();
+  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
   const limit = row && row.account_limit === -1 ? -1
               : (row && row.account_limit && row.account_limit > 1 ? row.account_limit : 1);
+  const lic = row && row.license_key ? row.license_key : null;
   let list = [];
   try { list = row && row.mt5_accounts ? JSON.parse(row.mt5_accounts) : []; } catch(e){ list = []; }
   if (!Array.isArray(list)) list = [];
@@ -1375,6 +1744,17 @@ async function handleMt5Account(request, env, json) {
 
   // Plano de 1 conta → troca (substitui a única conta)
   if (limit === 1) {
+    // v29 (bug de trava): a trava real é a tabela license_accounts. Trocar só o
+    // espelho (mt5_accounts) deixava a conta ANTIGA amarrada → o robô da conta NOVA
+    // levava account_mismatch e o aluno ficava travado até um admin limpar. Agora a
+    // troca solta o vínculo antigo (e o status) para o novo robô reamarrar sozinho.
+    if (lic) {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM license_accounts WHERE license_key = ?').bind(lic),
+        env.DB.prepare('DELETE FROM ea_status_acc WHERE license_key = ?').bind(lic),
+        env.DB.prepare('INSERT INTO license_accounts (license_key, account, email, bound_at) VALUES (?,?,?,?)').bind(lic, account, email, new Date().toISOString()),
+      ]);
+    }
     await env.DB.prepare('UPDATE users SET mt5_account = ?, mt5_accounts = ? WHERE email = ?')
       .bind(account, JSON.stringify([account]), email).run();
     return json({ ok: true, mt5_account: account, mt5_accounts: [account] });
