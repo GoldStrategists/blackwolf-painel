@@ -143,8 +143,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v35' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v35' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v36' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v36' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -579,14 +579,15 @@ async function handleStripeWebhook(request, env, json) {
   // real do admin — não dá pra derivar do plano porque o cupom muda o valor.
   const monthlyAmount = (obj.amount_total || obj.amount_paid || 0) / 100;
 
-  // v33: registra o pagamento num LEDGER (tabela payments) para a aba Financeiro
-  // mostrar quanto ENTROU de verdade (por período/histórico). Cria a tabela sozinho
-  // (zero setup) e dedup por event.id (não conta 2× num replay do Stripe).
+  // v33/v36: registra o pagamento num LEDGER (tabela payments). Dedup pela FATURA
+  // (obj.invoice para checkout de assinatura, ou obj.id quando o próprio obj já é a
+  // fatura). Assim o webhook e o backfill da Stripe NUNCA contam o mesmo 2×.
   try {
     await ensurePaymentsTable(env);
+    const payKey = obj.invoice || obj.id || event.id || null;
     await env.DB.prepare(
       "INSERT OR IGNORE INTO payments (email, amount, currency, plan, type, event_id, created_at) VALUES (?,?,?,?,?,?,?)"
-    ).bind(email, monthlyAmount, (obj.currency || 'usd').toUpperCase(), plan, event.type, event.id || null, new Date().toISOString()).run();
+    ).bind(email, monthlyAmount, (obj.currency || 'usd').toUpperCase(), plan, event.type, payKey, new Date().toISOString()).run();
   } catch (e) { logEvent({ evt: 'payment_log_fail', detail: String(e && e.message || e) }); }
 
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
@@ -1097,7 +1098,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v35', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v36', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1334,10 +1335,15 @@ async function handleAdminPayments(request, env, json) {
      FROM payments p WHERE ${notDemo} ORDER BY p.created_at DESC LIMIT 60`
   ).all();
 
+  // resumo de reembolsos/cancelamentos/falhas (preenchido na Sincronização com a Stripe)
+  let fin = null; try { const s = await env.SESSIONS.get('fin_summary'); fin = s ? JSON.parse(s) : null; } catch (e) {}
+
   return json({
     ok: true, currency: 'USD',
     total: +(+tot.total).toFixed(2), month: +(+tot.month).toFixed(2), year: +(+tot.year).toFixed(2), count: +tot.n,
     mrr: +mrr.toFixed(2), payingCount: paying, subscriberCount: subscribers.length,
+    refundsCount: (fin && fin.refundsCount) || 0, refundsAmount: (fin && fin.refundsAmount) || 0,
+    canceledCount: (fin && fin.canceledCount) || 0, failedCount: (fin && fin.failedCount) || 0, syncedAt: (fin && fin.syncedAt) || null,
     subscribers, recent: (recent.results || [])
   });
 }
@@ -1369,10 +1375,11 @@ async function handleAdminStripeSync(request, env, json) {
     return json({ error: 'stripe_auth', status: probe.status, message: 'A chave da Stripe não autenticou (permissão/valor). Detalhe: ' + msg }, 400);
   }
 
+  await ensurePaymentsTable(env);
   // TODOS os assinantes (mesmo sem stripe_customer salvo — a gente acha pelo e-mail)
-  const rows = await env.DB.prepare("SELECT email, stripe_customer FROM users WHERE license_key IS NOT NULL").all();
+  const rows = await env.DB.prepare("SELECT email, stripe_customer, plan FROM users WHERE license_key IS NOT NULL").all();
   const list = (rows.results || []).filter(u => !DEMO_ACCOUNTS.includes(String(u.email).toLowerCase())).slice(0, 300);
-  let checked = 0, updated = 0, noCustomer = 0, noAmount = 0; const results = [];
+  let checked = 0, updated = 0, noCustomer = 0, noAmount = 0, backfilled = 0; const results = [];
   for (const u of list) {
     checked++;
     let cust = u.stripe_customer && String(u.stripe_customer).trim();
@@ -1383,10 +1390,19 @@ async function handleAdminStripeSync(request, env, json) {
     }
     if (!cust) { noCustomer++; results.push({ email: u.email, ok: false, reason: 'no_customer' }); continue; }
     let amount = null;
-    // 1) último invoice PAGO = o valor real por ciclo (já com cupom)
-    const inv = await stripeGet(env, '/invoices?customer=' + encodeURIComponent(cust) + '&status=paid&limit=1');
-    if (inv.ok && inv.body && Array.isArray(inv.body.data) && inv.body.data[0]) amount = (inv.body.data[0].amount_paid || 0) / 100;
-    // 2) fallback: assinatura ativa → preço recorrente
+    // FATURAS PAGAS (histórico): a mais recente vira o monthly_amount; TODAS entram
+    // no ledger (backfill) com a data real — preenche recebido total/mês/ano/histórico.
+    const inv = await stripeGet(env, '/invoices?customer=' + encodeURIComponent(cust) + '&status=paid&limit=24');
+    const invoices = (inv.ok && inv.body && Array.isArray(inv.body.data)) ? inv.body.data : [];
+    if (invoices[0]) amount = (invoices[0].amount_paid || 0) / 100;
+    for (const f of invoices) {
+      try {
+        const r = await env.DB.prepare("INSERT OR IGNORE INTO payments (email, amount, currency, plan, type, event_id, created_at) VALUES (?,?,?,?,?,?,?)")
+          .bind(u.email, (f.amount_paid || 0) / 100, (f.currency || 'usd').toUpperCase(), u.plan || null, 'invoice', f.id, f.created ? new Date(f.created * 1000).toISOString() : new Date().toISOString()).run();
+        if (r && r.meta && r.meta.changes) backfilled += r.meta.changes;
+      } catch (e) {}
+    }
+    // fallback: assinatura ativa → preço recorrente (se nunca teve fatura paga)
     if (amount == null) {
       const sub = await stripeGet(env, '/subscriptions?customer=' + encodeURIComponent(cust) + '&status=active&limit=1');
       const it = sub.ok && sub.body && sub.body.data && sub.body.data[0] && sub.body.data[0].items && sub.body.data[0].items.data && sub.body.data[0].items.data[0];
@@ -1397,13 +1413,25 @@ async function handleAdminStripeSync(request, env, json) {
         .bind(amount, cust, amount, u.email).run();
       updated++; results.push({ email: u.email, ok: true, amount });
     } else {
-      // achou o cliente mas sem invoice/assinatura → ao menos salva o id
       await env.DB.prepare("UPDATE users SET stripe_customer = COALESCE(stripe_customer, ?) WHERE email = ?").bind(cust, u.email).run();
       noAmount++; results.push({ email: u.email, ok: false, reason: 'no_invoice' });
     }
   }
-  logEvent({ evt: 'stripe_sync', by: email, checked, updated, noCustomer, noAmount });
-  return json({ ok: true, checked, updated, noCustomer, noAmount });
+
+  // REEMBOLSOS + CANCELAMENTOS + FALHAS (visão do negócio) → resumo no KV
+  let refundsCount = 0, refundsAmount = 0, canceledCount = 0, failedCount = 0;
+  try {
+    const rf = await stripeGet(env, '/refunds?limit=100');
+    if (rf.ok && rf.body && Array.isArray(rf.body.data)) { refundsCount = rf.body.data.length; refundsAmount = rf.body.data.reduce((s, x) => s + (x.amount || 0) / 100, 0); }
+    const cc = await stripeGet(env, '/subscriptions?status=canceled&limit=100');
+    if (cc.ok && cc.body && Array.isArray(cc.body.data)) canceledCount = cc.body.data.length;
+    const uf = await stripeGet(env, '/invoices?status=uncollectible&limit=100');
+    if (uf.ok && uf.body && Array.isArray(uf.body.data)) failedCount = uf.body.data.length;
+    await env.SESSIONS.put('fin_summary', JSON.stringify({ refundsCount, refundsAmount: +refundsAmount.toFixed(2), canceledCount, failedCount, syncedAt: new Date().toISOString() }));
+  } catch (e) {}
+
+  logEvent({ evt: 'stripe_sync', by: email, checked, updated, noCustomer, noAmount, backfilled });
+  return json({ ok: true, checked, updated, noCustomer, noAmount, backfilled, refundsCount, canceledCount });
 }
 
 /* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════
