@@ -4324,7 +4324,7 @@ function demoPayments(){
     {email:'bruno@demo.com',name:'Bruno Lima',plan:'Alpha Pack',amount:297.9,status:'active',payment:'pagando',expires:null},
     {email:'carla@demo.com',name:'Carla Dias',plan:'Lone Wolf',amount:0,status:'active',payment:'cortesia',expires:null},
   ];
-  return {ok:true,total:1382.7,month:494.9,year:1382.7,count:6,mrr:494.9,payingCount:2,subscriberCount:3,subscribers:subs,
+  return {ok:true,total:1382.7,month:494.9,year:1382.7,count:6,mrr:494.9,payingCount:2,subscriberCount:3,refundsCount:1,refundsAmount:197,canceledCount:1,failedCount:0,syncedAt:'2026-07-22T12:00:00Z',subscribers:subs,
     recent:[{name:'Bruno Lima',email:'bruno@demo.com',plan:'Alpha Pack',amount:297.9,type:'checkout.session.completed',created_at:'2026-07-20T10:00:00Z'},{name:'Ana Souza',email:'ana@demo.com',plan:'Wolf Pack',amount:197,type:'checkout.session.completed',created_at:'2026-07-05T10:00:00Z'}]};
 }
 function payTypeLabel(t){ if(String(t).includes('invoice'))return LANG==='pt'?'Renovação':LANG==='en'?'Renewal':'Renovación'; return LANG==='pt'?'Compra':LANG==='en'?'Purchase':'Compra'; }
@@ -4335,8 +4335,8 @@ async function stripeSync(){
     const r=await apiFetch('/api/admin/stripe-sync',{method:'POST'});
     let d={}; try{ d=await r.json(); }catch(e){}
     if(r.ok){
-      const extra=[]; if(d.noCustomer)extra.push((LANG==='pt'?'sem cadastro Stripe: ':'no Stripe cust: ')+d.noCustomer); if(d.noAmount)extra.push((LANG==='pt'?'sem fatura: ':'no invoice: ')+d.noAmount);
-      toast((LANG==='pt'?'Atualizados: ':'Updated: ')+(d.updated||0)+'/'+(d.checked||0)+(extra.length?' · '+extra.join(' · '):''), (d.updated>0?'success':'info'));
+      const extra=[]; if(d.backfilled)extra.push((LANG==='pt'?'histórico: +':'history: +')+d.backfilled); if(d.noCustomer)extra.push((LANG==='pt'?'sem cadastro Stripe: ':'no Stripe cust: ')+d.noCustomer);
+      toast((LANG==='pt'?'Atualizados: ':'Updated: ')+(d.updated||0)+'/'+(d.checked||0)+(extra.length?' · '+extra.join(' · '):''), (d.updated>0||d.backfilled>0?'success':'info'));
       PAY_DATA=null; if(typeof fetchRealClients==='function')fetchRealClients(); loadAdminPayments();
     }
     else if(d.error==='stripe_key_missing'){ toast(LANG==='pt'?'Falta a STRIPE_SECRET_KEY no worker (e dar Deploy).':'Configure STRIPE_SECRET_KEY.','error'); }
@@ -4372,6 +4372,13 @@ function renderAdminPayments(){
     ${astatMoney('blue','dollar',LANG==='pt'?'Este ano':LANG==='en'?'This year':'Este año',D.year,'','')}
     ${astat('blue','check',LANG==='pt'?'Pagamentos registrados':LANG==='en'?'Payments recorded':'Pagos',D.count||0,'','')}
   </div>
+  <div class="admin-stats" style="margin-top:10px">
+    ${astatMoney('red','dollar',LANG==='pt'?'Reembolsos (valor)':LANG==='en'?'Refunds (amount)':'Reembolsos',D.refundsAmount||0,'','')}
+    ${astat('amber','users',LANG==='pt'?'Reembolsos (nº)':LANG==='en'?'Refunds (count)':'Reembolsos (nº)',D.refundsCount||0,'','')}
+    ${astat('red','clock',LANG==='pt'?'Cancelamentos':LANG==='en'?'Cancellations':'Cancelaciones',D.canceledCount||0,'','')}
+    ${astat('amber','clock',LANG==='pt'?'Pagamentos falhos':LANG==='en'?'Failed payments':'Pagos fallidos',D.failedCount||0,'','')}
+  </div>
+  ${D.syncedAt?`<div style="font-family:var(--fm);font-size:.72rem;color:var(--t3);margin-top:8px">${LANG==='pt'?'Reembolsos/cancelamentos sincronizados em':LANG==='en'?'Refunds/cancellations synced at':'Sincronizado'}: ${String(D.syncedAt).slice(0,16).replace('T',' ')}</div>`:''}
   ${(D.count===0)?`<div class="banner info rv" style="margin-top:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">${LANG==='pt'?'O histórico começa a contar a partir de agora (cada compra/renovação do Stripe entra aqui automaticamente). As assinaturas atuais já aparecem em MRR e na lista abaixo.':'History starts counting from now; current subscriptions already show in MRR.'}</div></div>`:''}
   <div class="card rv" style="margin-top:12px">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>${LANG==='pt'?'Assinantes':LANG==='en'?'Subscribers':'Suscriptores'}</div></div>
