@@ -1103,6 +1103,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
         <div class="nav-item active" data-page="admin-overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span data-i18n="nav_admin_overview">Visão Geral</span></div>
         <div class="nav-item" data-page="admin-results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span data-i18n="nav_admin_results">Resultados</span></div>
         <div class="nav-item" data-page="admin-comms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span data-i18n="nav_admin_comms">Comunicados</span></div>
+        <div class="nav-item" data-page="admin-maint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z"/></svg><span data-i18n="nav_admin_maint">Manutenção</span></div>
         <div class="nav-item" data-page="admin-clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="nav_admin_clients">Clientes</span><span class="badge" id="clientCountBadge">5</span></div>
         <div class="nav-item" data-page="admin-leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_leads">Perfis & Leads</span></div>
         <div class="nav-item" data-page="admin-licenses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="nav_admin_licenses">Licenças</span></div>
@@ -1202,7 +1203,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Dashboard",nav_results:"Meus Resultados",nav_history:"Histórico de Trades",nav_reports:"Relatórios",
     nav_strategies:"Estratégias",nav_config:"Configurar Robô",nav_section_account:"CONTA",nav_license:"Licença & Contas",
     nav_downloads:"Downloads",nav_setup:"Instalação",nav_faq:"FAQ / Suporte",nav_legal:"Termos Legais",
-    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_clients:"Clientes",nav_admin_leads:"Perfis & Leads",
+    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_leads:"Perfis & Leads",
     nav_admin_licenses:"Licenças",nav_admin_accounts:"Contas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versões do EA",nav_admin_payments:"Pagamentos",
     sidefoot_title:"Precisa de ajuda?",sidefoot_desc:"Fale com nosso suporte via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Atualizar",
@@ -1221,7 +1222,7 @@ const I18N = {
     nav_section_main:"MAIN",nav_dashboard:"Dashboard",nav_results:"My Results",nav_history:"Trade History",nav_reports:"Reports",
     nav_strategies:"Strategies",nav_config:"Configure Robot",nav_section_account:"ACCOUNT",nav_license:"License & Accounts",
     nav_downloads:"Downloads",nav_setup:"Installation",nav_faq:"FAQ / Support",nav_legal:"Legal Terms",
-    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_clients:"Clients",nav_admin_leads:"Profiles & Leads",
+    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_leads:"Profiles & Leads",
     nav_admin_licenses:"Licenses",nav_admin_accounts:"MT5 Accounts",nav_section_system:"SYSTEM",nav_admin_files:"EA Versions",nav_admin_payments:"Payments",
     sidefoot_title:"Need help?",sidefoot_desc:"Talk to our support via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancel",modal_confirm:"Confirm",refresh:"Refresh",
@@ -1240,7 +1241,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Panel",nav_results:"Mis Resultados",nav_history:"Historial de Trades",nav_reports:"Informes",
     nav_strategies:"Estrategias",nav_config:"Configurar Robot",nav_section_account:"CUENTA",nav_license:"Licencia & Cuentas",
     nav_downloads:"Descargas",nav_setup:"Instalación",nav_faq:"FAQ / Soporte",nav_legal:"Términos Legales",
-    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_clients:"Clientes",nav_admin_leads:"Perfiles & Leads",
+    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_leads:"Perfiles & Leads",
     nav_admin_licenses:"Licencias",nav_admin_accounts:"Cuentas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versiones del EA",nav_admin_payments:"Pagos",
     sidefoot_title:"¿Necesitas ayuda?",sidefoot_desc:"Habla con nuestro soporte por WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Actualizar",
@@ -1441,6 +1442,8 @@ loginForm.addEventListener('submit',async e=>{
 function enterApp(){
   loadSessionData();
   if(SESSION && SESSION.token) refreshMe();
+  // status de manutenção pro banner do cliente (e re-render do dashboard se ativo)
+  fetchMaintenancePublic().then(()=>{ if(MAINT_PUBLIC&&(MAINT_PUBLIC.active||MAINT_PUBLIC.upcoming)&&CURRENT_PAGE==='dashboard')renderPage('dashboard'); });
   document.getElementById('loginWrap').classList.add('hidden');
   document.getElementById('app').classList.add('active');
   VIEW_MODE = SESSION.role==='admin'?'admin':'client';
@@ -2047,7 +2050,7 @@ function renderPage(page){
   const map={
     dashboard:renderDashboard, results:renderResults, history:renderHistory, strategies:renderStrategies, reports:renderReports,
     license:renderLicense, downloads:renderDownloads, setup:renderSetup, faq:renderFaq, legal:renderLegalPage, settings:renderSettings,
-    'admin-overview':renderAdminOverview,'admin-results':renderAdminResults,'admin-comms':renderAdminComms,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
+    'admin-overview':renderAdminOverview,'admin-results':renderAdminResults,'admin-comms':renderAdminComms,'admin-maint':renderAdminMaint,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
     'admin-licenses':renderAdminLicenses,'admin-accounts':renderAdminAccounts,'admin-files':renderAdminFiles,'admin-payments':renderAdminPayments,
   };
   const fn=map[page]||renderDashboard;
@@ -2132,6 +2135,7 @@ function renderDashboard(){
     LANG==='pt'?'Aqui está o resumo do seu robô Black Wolf hoje.':LANG==='en'?'Here is your Black Wolf robot summary today.':'Aquí está el resumen de tu robot Black Wolf hoy.',
     refreshBtn()
   )+`
+  ${maintClientBanner()}
   ${eaStatusBanner()}
   ${dashAccountSelector(D)}
   ${dashSummaryRow(D)}
@@ -2762,7 +2766,7 @@ function renderDownloads(){
       <div class="dl-ico">🐺</div>
       <div class="dl-info"><div class="dl-name">${c.eaFile.name}<span class="pill current">v${c.eaFile.version}</span></div><div class="dl-meta">Expert Advisor · MetaTrader 5 · ${c.eaFile.size}</div></div>
       ${(c.licenseKey && c.licenseStatus==='active' && !(SESSION&&SESSION.isDemo))
-        ? `<a class="dl-btn" href="/BLACK_WOLF_CLIENTE.ex5" download="BLACK_WOLF_CLIENTE.ex5" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</a>`
+        ? `<button class="dl-btn" onclick="downloadRobot()" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</button>`
         : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</button>`}
     </div>
   </div>
@@ -3437,6 +3441,143 @@ function demoAdminClient(email){
   const days=[]; let cum=0;
   for(let i=1;i<=20;i++){ const p=+((Math.random()-0.4)*90).toFixed(2); cum=+(cum+p).toFixed(2); days.push({day:'2026-07-'+String(i).padStart(2,'0'),pnl:p,cumulative:cum}); }
   return {ok:true,email,name:email.split('@')[0],plan:'wolf',status:'active',accounts:['5001234'],currency:'USD',balance:12140.8,today:120.4,todayPct:1.0,week:340.2,month:910.5,total:2140.8,trades:64,wins:38,losses:26,winRate:59.38,maxDrawdown:210.5,curve:days};
+}
+
+/* ═══════════════ ADMIN: MANUTENÇÃO & ROBÔ ═══════════════ */
+let MAINT=null, ROBOT_META=null, MAINT_LOADING=false, MAINT_PUBLIC=null;
+async function loadAdminMaint(){
+  if(SESSION&&SESSION.isDemo){ MAINT={active:false,upcoming:null,on:false}; ROBOT_META={hasFile:true,meta:{version:'1.01',size:191620,updatedAt:'2026-07-01T12:00:00Z'}}; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint'); return; }
+  MAINT_LOADING=true;
+  try{
+    const rm=await apiFetch('/api/maintenance'); MAINT=rm.ok?await rm.json():{__err:true};
+    const rr=await apiFetch('/api/robot/meta'); ROBOT_META=rr.ok?await rr.json():{hasFile:false};
+    MAINT_PUBLIC=MAINT;
+  }catch(e){ MAINT={__err:true}; }
+  MAINT_LOADING=false; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint');
+}
+function fmtDateTime(x){ try{ const d=new Date(x); return isNaN(d)?'—':d.toLocaleString(LANG==='pt'?'pt-BR':LANG==='es'?'es-ES':'en-US',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '—'; } }
+function fmtKB(b){ if(!b)return '—'; return b>=1048576?(b/1048576).toFixed(1)+' MB':Math.round(b/1024)+' KB'; }
+function renderAdminMaint(){
+  if(MAINT===null && !MAINT_LOADING){ setTimeout(loadAdminMaint,0); }
+  const head=pageHead(
+    LANG==='pt'?'OPERAÇÃO':LANG==='en'?'OPERATIONS':'OPERACIÓN',
+    LANG==='pt'?'Manutenção & Robô':LANG==='en'?'Maintenance & Robot':'Mantenimiento y Robot',
+    LANG==='pt'?'Pause os robôs, agende manutenção e atualize o arquivo do robô — tudo sozinho, sem republicar nada.':LANG==='en'?'Pause robots, schedule maintenance and update the robot file — all self-service.':'Pausa los robots, programa mantenimiento y actualiza el robot.',
+    refreshBtn()
+  );
+  if(MAINT_LOADING&&!MAINT) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':'Loading…'}</div></div></div>`;
+  if(MAINT&&MAINT.__err) return head+`<div class="banner warn rv"><div class="banner-tx">${LANG==='pt'?'Publique o worker v32 para ligar esta tela.':'Publish worker v32 to enable this.'}</div></div>`;
+  const m=MAINT||{active:false};
+  const rm=(ROBOT_META&&ROBOT_META.meta)||null;
+  const statusPillH = m.active
+    ? `<span class="pill overdue">${LANG==='pt'?'EM MANUTENÇÃO':LANG==='en'?'IN MAINTENANCE':'EN MANTENIMIENTO'}</span>`
+    : (m.upcoming?`<span class="pill due">${LANG==='pt'?'AGENDADA':LANG==='en'?'SCHEDULED':'PROGRAMADA'}</span>`:`<span class="pill active">${LANG==='pt'?'NORMAL (robôs operando)':LANG==='en'?'NORMAL':'NORMAL'}</span>`);
+  return head+`
+  <div class="card rv">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Estado atual':LANG==='en'?'Current state':'Estado actual'}</div>${statusPillH}</div>
+    ${m.active?`<div class="banner risk rv" style="margin:6px 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'Todos os robôs estão PAUSADOS.':LANG==='en'?'All robots are PAUSED.':'Todos los robots están EN PAUSA.'} ${m.message?esc(m.message):''}</div></div>`:''}
+    ${m.upcoming?`<div class="banner info rv" style="margin:6px 0"><div class="banner-tx">${LANG==='pt'?'Manutenção agendada':LANG==='en'?'Scheduled maintenance':'Mantenimiento programado'}: <b>${fmtDateTime(m.upcoming.startAt)}</b> → <b>${fmtDateTime(m.upcoming.endAt)}</b>${m.upcoming.message?' · '+esc(m.upcoming.message):''}</div></div>`:''}
+  </div>
+
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Pausar agora':LANG==='en'?'Pause now':'Pausar ahora'}</div></div>
+    <div class="set-field"><label>${LANG==='pt'?'Mensagem (aparece no painel do cliente)':LANG==='en'?'Message (shown to clients)':'Mensaje'}</label>
+      <input type="text" class="set-input" id="maintMsg" value="${m.on&&m.message?esc(m.message):''}" placeholder="${LANG==='pt'?'Ex.: manutenção rápida, voltamos em 30 min':'e.g. quick maintenance, back in 30 min'}"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${m.active
+        ? `<button class="btn-primary" onclick="maintNow(false)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>${LANG==='pt'?'Reativar robôs':LANG==='en'?'Reactivate robots':'Reactivar'}</button>`
+        : `<button class="revoke-btn" onclick="maintNow(true)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>${LANG==='pt'?'Pausar todos os robôs':LANG==='en'?'Pause all robots':'Pausar todos'}</button>`}
+    </div>
+  </div>
+
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Agendar manutenção':LANG==='en'?'Schedule maintenance':'Programar'}</div></div>
+    <p style="color:var(--t3);font-size:.84rem;margin:0 0 12px">${LANG==='pt'?'Os robôs pausam e voltam sozinhos na janela marcada. O cliente vê o aviso no painel.':LANG==='en'?'Robots pause and resume automatically in the window. Clients see a notice.':'Los robots se pausan y vuelven solos.'}</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="set-field"><label>${LANG==='pt'?'Início':LANG==='en'?'Start':'Inicio'}</label><input type="datetime-local" class="set-input" id="maintStart"></div>
+      <div class="set-field"><label>${LANG==='pt'?'Fim':LANG==='en'?'End':'Fin'}</label><input type="datetime-local" class="set-input" id="maintEnd"></div>
+    </div>
+    <div class="set-field"><label>${LANG==='pt'?'Mensagem':LANG==='en'?'Message':'Mensaje'}</label><input type="text" class="set-input" id="maintSchedMsg" value="${m.upcoming&&m.upcoming.message?esc(m.upcoming.message):''}"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn-primary" onclick="maintSchedule()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${LANG==='pt'?'Agendar':LANG==='en'?'Schedule':'Programar'}</button>
+      ${m.upcoming?`<button class="btn-ghost" onclick="maintClear()">${LANG==='pt'?'Cancelar agendamento':LANG==='en'?'Cancel schedule':'Cancelar'}</button>`:''}
+      <button class="btn-ghost" onclick="goPage('admin-comms')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M3 11l18-5v12L3 14v-3z"/></svg>${LANG==='pt'?'Avisar por e-mail':LANG==='en'?'Notify by email':'Avisar por correo'}</button>
+    </div>
+  </div>
+
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Robô do aluno (arquivo)':LANG==='en'?'Student robot (file)':'Robot del alumno'}</div>${rm?`<span class="pill current">v${esc(rm.version||'—')}</span>`:''}</div>
+    ${rm?`<div style="font-size:.84rem;color:var(--t2);margin-bottom:12px">${LANG==='pt'?'Atual':LANG==='en'?'Current':'Actual'}: <b>${esc(rm.filename||'BLACK_WOLF_CLIENTE.ex5')}</b> · v${esc(rm.version||'—')} · ${fmtKB(rm.size)} · ${LANG==='pt'?'atualizado em':LANG==='en'?'updated':'actualizado'} ${fmtDateTime(rm.updatedAt)}${rm.mandatory?` · <span style="color:var(--amber-l)">${LANG==='pt'?'atualização obrigatória':'mandatory update'}</span>`:''}</div>`:`<div class="banner info rv" style="margin:0 0 12px"><div class="banner-tx">${LANG==='pt'?'Nenhum robô enviado pelo site ainda — o download usa o arquivo padrão. Envie um abaixo para passar a servir pelo site.':LANG==='en'?'No robot uploaded yet — download uses the default file.':'Aún no se subió un robot.'}</div></div>`}
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="set-field"><label>${LANG==='pt'?'Arquivo .ex5':'.ex5 file'}</label><input type="file" accept=".ex5" class="set-input" id="robotFile" style="padding:8px"></div>
+      <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVer" placeholder="1.02" value="${rm?esc(rm.version||''):''}"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatory"> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
+    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
+  </div>`;
+}
+function maintNow(on){
+  const msg=(document.getElementById('maintMsg')||{}).value||'';
+  if(SESSION&&SESSION.isDemo){ toast('(demo) '+(on?'pausado':'reativado'),'info'); return; }
+  const doIt=async()=>{ try{ const r=await apiFetch('/api/admin/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:on?'on':'off',message:msg})}); if(r.ok){ MAINT=await r.json(); MAINT_PUBLIC=MAINT; toast(on?(LANG==='pt'?'Robôs pausados':'Robots paused'):(LANG==='pt'?'Robôs reativados':'Robots reactivated'),'success'); renderPage('admin-maint'); } else toast(LANG==='pt'?'Falha.':'Failed.','error'); }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } };
+  if(on) showModal(LANG==='pt'?'Pausar todos os robôs?':'Pause all robots?', LANG==='pt'?'Todos os robôs vão parar de abrir ordens até você reativar. Confirma?':'All robots stop opening trades until you reactivate. Confirm?', doIt, 'danger');
+  else doIt();
+}
+function maintSchedule(){
+  if(SESSION&&SESSION.isDemo){ toast('(demo) agendado','info'); return; }
+  const s=(document.getElementById('maintStart')||{}).value, e=(document.getElementById('maintEnd')||{}).value, msg=(document.getElementById('maintSchedMsg')||{}).value||'';
+  if(!s||!e){ toast(LANG==='pt'?'Preencha início e fim.':'Fill start and end.','error'); return; }
+  const startAt=new Date(s).getTime(), endAt=new Date(e).getTime();
+  if(!(endAt>startAt)){ toast(LANG==='pt'?'O fim tem que ser depois do início.':'End must be after start.','error'); return; }
+  (async()=>{ try{ const r=await apiFetch('/api/admin/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'schedule',startAt,endAt,message:msg})}); if(r.ok){ MAINT=await r.json(); MAINT_PUBLIC=MAINT; toast(LANG==='pt'?'Manutenção agendada ✓':'Scheduled ✓','success'); renderPage('admin-maint'); } else toast(LANG==='pt'?'Falha ao agendar.':'Failed.','error'); }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } })();
+}
+function maintClear(){
+  if(SESSION&&SESSION.isDemo){ toast('(demo) cancelado','info'); return; }
+  (async()=>{ try{ const r=await apiFetch('/api/admin/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clear'})}); if(r.ok){ MAINT=await r.json(); MAINT_PUBLIC=MAINT; toast(LANG==='pt'?'Agendamento cancelado':'Schedule cleared','info'); renderPage('admin-maint'); } }catch(e){} })();
+}
+function robotUpload(){
+  if(SESSION&&SESSION.isDemo){ toast('(demo) robô enviado','info'); return; }
+  const f=(document.getElementById('robotFile')||{}).files;
+  if(!f||!f[0]){ toast(LANG==='pt'?'Escolha o arquivo .ex5.':'Choose the .ex5 file.','error'); return; }
+  const file=f[0];
+  if(file.size>4*1024*1024){ toast(LANG==='pt'?'Arquivo grande demais (máx 4MB).':'File too large.','error'); return; }
+  const ver=(document.getElementById('robotVer')||{}).value||'1.0';
+  const mandatory=!!(document.getElementById('robotMandatory')||{}).checked;
+  const btn=document.getElementById('robotUpBtn'); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Enviando…':'Uploading…'; }
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    try{
+      const b64=String(reader.result).replace(/^data:[^,]*,/,'');
+      const r=await apiFetch('/api/admin/robot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64:b64,version:ver,filename:file.name,mandatory})});
+      const d=await r.json();
+      if(r.ok){ ROBOT_META={hasFile:true,meta:d.meta}; toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage('admin-maint'); }
+      else toast(d.error==='too_large'?(LANG==='pt'?'Arquivo grande demais.':'Too large.'):(LANG==='pt'?'Falha ao enviar.':'Upload failed.'),'error');
+    }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
+    if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot'; }
+  };
+  reader.onerror=()=>{ toast(LANG==='pt'?'Erro ao ler o arquivo.':'Read error.','error'); if(btn){btn.disabled=false;btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot';} };
+  reader.readAsDataURL(file);
+}
+// baixa o robô guardado no servidor (com sessão); cai pro estático se não houver
+async function downloadRobot(){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) download simulado':'(demo) download','info'); return; }
+  try{
+    const r=await apiFetch('/api/robot/download');
+    if(r.ok){ const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='BLACK_WOLF_CLIENTE.ex5'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); }
+    else if(r.status===403){ toast(LANG==='pt'?'Sua licença está inativa.':'Your license is inactive.','error'); }
+    else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } // fallback: arquivo estático
+  }catch(e){ window.location.href='/BLACK_WOLF_CLIENTE.ex5'; }
+}
+// banner de manutenção pro CLIENTE (topo do dashboard)
+async function fetchMaintenancePublic(){
+  if(SESSION&&SESSION.isDemo){ MAINT_PUBLIC={active:false,upcoming:null}; return; }
+  try{ const r=await apiFetch('/api/maintenance'); if(r.ok) MAINT_PUBLIC=await r.json(); }catch(e){}
+}
+function maintClientBanner(){
+  const m=MAINT_PUBLIC; if(!m||(!m.active&&!m.upcoming)) return '';
+  if(m.active) return `<div class="banner warn rv" style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z"/></svg><div class="banner-tx"><b>${LANG==='pt'?'Manutenção em andamento.':LANG==='en'?'Maintenance in progress.':'Mantenimiento en curso.'}</b> ${LANG==='pt'?'O robô está pausado e volta automaticamente.':LANG==='en'?'The robot is paused and will resume automatically.':'El robot está en pausa y volverá solo.'} ${m.message?esc(m.message):''}</div></div>`;
+  if(m.upcoming) return `<div class="banner info rv" style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><div class="banner-tx"><b>${LANG==='pt'?'Manutenção programada':LANG==='en'?'Scheduled maintenance':'Mantenimiento programado'}:</b> ${fmtDateTime(m.upcoming.startAt)} → ${fmtDateTime(m.upcoming.endAt)}. ${LANG==='pt'?'O robô pausa nesse período e volta sozinho.':LANG==='en'?'The robot pauses then and resumes automatically.':'El robot se pausa y vuelve solo.'} ${m.upcoming.message?esc(m.upcoming.message):''}</div></div>`;
+  return '';
 }
 
 /* ═══════════════ ADMIN: COMUNICADOS (e-mail em massa) + LICENÇA ═══════════════ */

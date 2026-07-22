@@ -124,6 +124,11 @@ export default {
       if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/admin/broadcast' && request.method === 'POST')   return await handleAdminBroadcast(request, env, json);
       if (path === '/api/admin/reissue-license' && request.method === 'POST') return await handleAdminReissue(request, env, json);
+      if (path === '/api/maintenance' && request.method === 'GET')         return await handleMaintenanceGet(request, env, json);
+      if (path === '/api/admin/maintenance' && request.method === 'POST')  return await handleMaintenanceSet(request, env, json);
+      if (path === '/api/admin/robot' && request.method === 'POST')        return await handleRobotUpload(request, env, json);
+      if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
+      if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -136,8 +141,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v31' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v31' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v32' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v32' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1078,7 +1083,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v31', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v32', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1262,6 +1267,101 @@ async function handleAdminReissue(request, env, json) {
   if (items.length) mail = await sendResendBatch(env, items);
   logEvent({ evt: 'reissue', by: admin, count: results.filter(r => r.ok).length, emailed: mail.sent });
   return json({ ok: true, reissued: results.filter(r => r.ok).length, emailed: mail.sent, results });
+}
+
+/* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════
+   Estado de manutenção e o próprio arquivo do robô ficam no KV (env.SESSIONS),
+   que já está ligado. Nada de tabela nova nem R2. */
+
+// lê o estado de manutenção e resolve se está ATIVA agora (manual OU dentro da janela agendada)
+async function readMaintenance(env) {
+  let m = null;
+  try { const s = await env.SESSIONS.get('maintenance'); m = s ? JSON.parse(s) : null; } catch (e) { m = null; }
+  const now = Date.now();
+  let active = false, message = '', upcoming = null;
+  if (m) {
+    if (m.on) { active = true; message = m.message || ''; }
+    if (m.startAt && m.endAt) {
+      if (now >= m.startAt && now < m.endAt) { active = true; message = m.message || message; }
+      else if (now < m.startAt) { upcoming = { startAt: m.startAt, endAt: m.endAt, message: m.message || '' }; }
+    }
+  }
+  return { active, message, upcoming, startAt: (m && m.startAt) || null, endAt: (m && m.endAt) || null, on: !!(m && m.on) };
+}
+// GET /api/maintenance — status público (o painel usa pro banner)
+async function handleMaintenanceGet(request, env, json) {
+  const st = await readMaintenance(env);
+  return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt });
+}
+// POST /api/admin/maintenance  { action:'on'|'off'|'schedule'|'clear', message?, startAt?, endAt? }
+async function handleMaintenanceSet(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const b = await request.json();
+  const action = b.action;
+  let cur = {};
+  try { const s = await env.SESSIONS.get('maintenance'); cur = s ? JSON.parse(s) : {}; } catch (e) { cur = {}; }
+  if (action === 'on') { cur.on = true; cur.message = capStr(b.message, 500) || ''; }
+  else if (action === 'off') { cur.on = false; }
+  else if (action === 'clear') { cur = {}; }
+  else if (action === 'schedule') {
+    const s = parseInt(b.startAt, 10), e = parseInt(b.endAt, 10);
+    if (!s || !e || e <= s) return json({ error: 'invalid_window' }, 400);
+    cur.startAt = s; cur.endAt = e; cur.message = capStr(b.message, 500) || '';
+  } else return json({ error: 'invalid_action' }, 400);
+  await env.SESSIONS.put('maintenance', JSON.stringify(cur));
+  logEvent({ evt: 'maintenance', by: email, action });
+  const st = await readMaintenance(env);
+  return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt, on: st.on });
+}
+
+// bytes <-> base64 (o robô é binário; guardamos base64 no KV)
+function b64ToBytes(b64) { const bin = atob(b64); const n = bin.length; const out = new Uint8Array(n); for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
+// POST /api/admin/robot  { base64, version, size, filename?, mandatory? }
+async function handleRobotUpload(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const b = await request.json();
+  const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
+  if (!b64) return json({ error: 'no_file' }, 400);
+  if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
+  const size = Math.round(b64.length * 3 / 4);
+  const meta = { version: capStr(b.version, 40) || '1.0', size, filename: capStr(b.filename, 80) || 'BLACK_WOLF_CLIENTE.ex5', mandatory: !!b.mandatory, updatedAt: new Date().toISOString(), by: email };
+  await env.SESSIONS.put('robot_ex5', b64);
+  await env.SESSIONS.put('robot_meta', JSON.stringify(meta));
+  logEvent({ evt: 'robot_upload', by: email, version: meta.version, size });
+  return json({ ok: true, meta });
+}
+// GET /api/robot/meta — versão/tamanho/data (qualquer usuário logado)
+async function handleRobotMeta(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  let meta = null;
+  try { const s = await env.SESSIONS.get('robot_meta'); meta = s ? JSON.parse(s) : null; } catch (e) { meta = null; }
+  return json({ ok: true, hasFile: !!meta, meta });
+}
+// GET /api/robot/download — baixa o .ex5 guardado (exige licença ativa; admin sempre)
+async function handleRobotDownload(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const u = await env.DB.prepare('SELECT role, license_status, license_key, license_expires_at FROM users WHERE email = ?').bind(email).first();
+  if (!u) return json({ error: 'unauthorized' }, 401);
+  const isAdmin = u.role === 'admin';
+  if (!isAdmin && !licenseState(u).active) return json({ error: 'license_inactive' }, 403);
+  const b64 = await env.SESSIONS.get('robot_ex5');
+  if (!b64) return json({ error: 'no_robot', hint: 'Nenhum robô enviado ainda.' }, 404);
+  let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get('robot_meta') || '{}'); } catch (e) {}
+  const bytes = b64ToBytes(b64);
+  return new Response(bytes, { status: 200, headers: {
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': 'attachment; filename="' + (meta.filename || 'BLACK_WOLF_CLIENTE.ex5') + '"',
+    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+    'Cache-Control': 'no-store'
+  } });
 }
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────
@@ -1498,6 +1598,11 @@ async function handleEaConfig(request, env, json, url) {
   // v23: verifica status E EXPIRAÇÃO (licença vencida parava? nunca — agora sim)
   const ls = licenseState(row);
   if (!ls.active) { await recordEaError(env, license, row.email, getEaAccount(request, url, null), 'license_' + ls.status); return json({ error: 'license_' + ls.status, active: false, status: ls.status }, 403); }
+  // v32: MODO MANUTENÇÃO (global/agendado) — pausa TODOS os robôs sem mexer em licença.
+  // O robô só lê active/plan: devolvemos active:false e ele para de abrir ordens; volta
+  // sozinho quando a manutenção acaba (o robô relê a config a cada ciclo).
+  const maint = await readMaintenance(env);
+  if (maint.active) { return json({ ok: true, active: false, status: 'maintenance', maintenance: true, message: maint.message || '' }); }
   // trava: 1 licença = 1 conta
   const account = getEaAccount(request, url, null);
   const acc = await bindOrCheckAccount(env, row, account);
