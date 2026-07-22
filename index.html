@@ -4333,11 +4333,18 @@ async function stripeSync(){
   const btn=document.getElementById('stripeSyncBtn'); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Sincronizando…':'Syncing…'; }
   try{
     const r=await apiFetch('/api/admin/stripe-sync',{method:'POST'});
-    const d=await r.json();
-    if(r.ok){ toast((LANG==='pt'?'Sincronizado: ':'Synced: ')+d.updated+'/'+d.checked+(d.noData?(LANG==='pt'?' · sem dado: '+d.noData:' · no data: '+d.noData):''),'success'); PAY_DATA=null; if(typeof fetchRealClients==='function')fetchRealClients(); loadAdminPayments(); }
-    else if(d.error==='stripe_key_missing'){ toast(LANG==='pt'?'Falta configurar STRIPE_SECRET_KEY no worker (veja instruções).':'Configure STRIPE_SECRET_KEY in the worker.','error'); }
-    else toast(LANG==='pt'?'Falha na sincronização.':'Sync failed.','error');
-  }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(r.ok){
+      const extra=[]; if(d.noCustomer)extra.push((LANG==='pt'?'sem cadastro Stripe: ':'no Stripe cust: ')+d.noCustomer); if(d.noAmount)extra.push((LANG==='pt'?'sem fatura: ':'no invoice: ')+d.noAmount);
+      toast((LANG==='pt'?'Atualizados: ':'Updated: ')+(d.updated||0)+'/'+(d.checked||0)+(extra.length?' · '+extra.join(' · '):''), (d.updated>0?'success':'info'));
+      PAY_DATA=null; if(typeof fetchRealClients==='function')fetchRealClients(); loadAdminPayments();
+    }
+    else if(d.error==='stripe_key_missing'){ toast(LANG==='pt'?'Falta a STRIPE_SECRET_KEY no worker (e dar Deploy).':'Configure STRIPE_SECRET_KEY.','error'); }
+    else if(d.error==='stripe_auth'){ toast((LANG==='pt'?'Chave Stripe recusada: ':'Stripe key rejected: ')+(d.message||''),'error'); }
+    else if(r.status===404){ toast(LANG==='pt'?'Worker sem o endpoint — publique o v35 e dê Deploy.':'Publish worker v35.','error'); }
+    else if(r.status===403){ toast(LANG==='pt'?'Sua conta não é admin no servidor.':'Your account is not admin.','error'); }
+    else toast((LANG==='pt'?'Falha (HTTP ':'Failed (HTTP ')+r.status+').','error');
+  }catch(e){ toast(LANG==='pt'?'Sem conexão com o servidor.':'No connection.','error'); }
   if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Sincronizar Stripe':'Sync Stripe'; }
 }
 function renderAdminPayments(){
