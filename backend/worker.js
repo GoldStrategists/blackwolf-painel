@@ -143,8 +143,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v34' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v34' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v35' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v35' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1097,7 +1097,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v34', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v35', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1346,12 +1346,14 @@ async function handleAdminPayments(request, env, json) {
    Puxa o VALOR REAL que cada cliente paga por ciclo (último invoice pago — já com
    cupom aplicado) e grava em monthly_amount. Corrige MRR/valores das compras
    antigas (feitas antes do sistema guardar o valor). Exige STRIPE_SECRET_KEY. */
+// devolve { ok, status, body } — assim dá pra distinguir chave inválida (401/403)
+// de "não achou nada" (200 com lista vazia).
 async function stripeGet(env, path) {
   try {
     const r = await fetch('https://api.stripe.com/v1' + path, { headers: { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY } });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch (e) { return null; }
+    let body = null; try { body = await r.json(); } catch (e) {}
+    return { ok: r.ok, status: r.status, body };
+  } catch (e) { return { ok: false, status: 0, body: null }; }
 }
 async function handleAdminStripeSync(request, env, json) {
   const email = await getSessionEmail(request, env);
@@ -1360,32 +1362,48 @@ async function handleAdminStripeSync(request, env, json) {
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'stripe_key_missing', message: 'Configure STRIPE_SECRET_KEY nas variáveis do worker.' }, 400);
 
-  const rows = await env.DB.prepare(
-    "SELECT email, stripe_customer FROM users WHERE stripe_customer IS NOT NULL AND stripe_customer != '' AND license_key IS NOT NULL"
-  ).all();
+  // 0) TESTA a chave antes de tudo (motivo do erro fica claro em vez de "falha")
+  const probe = await stripeGet(env, '/customers?limit=1');
+  if (!probe.ok) {
+    const msg = (probe.body && probe.body.error && probe.body.error.message) || ('HTTP ' + probe.status);
+    return json({ error: 'stripe_auth', status: probe.status, message: 'A chave da Stripe não autenticou (permissão/valor). Detalhe: ' + msg }, 400);
+  }
+
+  // TODOS os assinantes (mesmo sem stripe_customer salvo — a gente acha pelo e-mail)
+  const rows = await env.DB.prepare("SELECT email, stripe_customer FROM users WHERE license_key IS NOT NULL").all();
   const list = (rows.results || []).filter(u => !DEMO_ACCOUNTS.includes(String(u.email).toLowerCase())).slice(0, 300);
-  let checked = 0, updated = 0, noData = 0; const results = [];
+  let checked = 0, updated = 0, noCustomer = 0, noAmount = 0; const results = [];
   for (const u of list) {
     checked++;
-    const cust = encodeURIComponent(u.stripe_customer);
-    let amount = null, currency = 'usd';
-    // 1) último invoice PAGO = o valor real que ele paga por ciclo (com cupom)
-    const inv = await stripeGet(env, '/invoices?customer=' + cust + '&status=paid&limit=1');
-    if (inv && Array.isArray(inv.data) && inv.data[0]) { amount = (inv.data[0].amount_paid || 0) / 100; currency = inv.data[0].currency || currency; }
-    // 2) fallback: assinatura ativa → preço recorrente cadastrado
-    if (amount == null) {
-      const sub = await stripeGet(env, '/subscriptions?customer=' + cust + '&status=active&limit=1');
-      const it = sub && sub.data && sub.data[0] && sub.data[0].items && sub.data[0].items.data && sub.data[0].items.data[0];
-      if (it && it.price && it.price.unit_amount != null) { amount = it.price.unit_amount / 100; currency = it.price.currency || currency; }
+    let cust = u.stripe_customer && String(u.stripe_customer).trim();
+    // sem id salvo → procura o cliente na Stripe pelo e-mail
+    if (!cust) {
+      const cs = await stripeGet(env, '/customers?email=' + encodeURIComponent(String(u.email).toLowerCase()) + '&limit=1');
+      if (cs.ok && cs.body && Array.isArray(cs.body.data) && cs.body.data[0]) cust = cs.body.data[0].id;
     }
-    if (amount == null) { noData++; results.push({ email: u.email, ok: false }); continue; }
-    // grava o valor real; se > 0, garante que NÃO está marcado como cortesia
-    await env.DB.prepare("UPDATE users SET monthly_amount = ?, is_courtesy = CASE WHEN ? > 0 THEN 0 ELSE is_courtesy END WHERE email = ?")
-      .bind(amount, amount, u.email).run();
-    updated++; results.push({ email: u.email, ok: true, amount, currency: currency.toUpperCase() });
+    if (!cust) { noCustomer++; results.push({ email: u.email, ok: false, reason: 'no_customer' }); continue; }
+    let amount = null;
+    // 1) último invoice PAGO = o valor real por ciclo (já com cupom)
+    const inv = await stripeGet(env, '/invoices?customer=' + encodeURIComponent(cust) + '&status=paid&limit=1');
+    if (inv.ok && inv.body && Array.isArray(inv.body.data) && inv.body.data[0]) amount = (inv.body.data[0].amount_paid || 0) / 100;
+    // 2) fallback: assinatura ativa → preço recorrente
+    if (amount == null) {
+      const sub = await stripeGet(env, '/subscriptions?customer=' + encodeURIComponent(cust) + '&status=active&limit=1');
+      const it = sub.ok && sub.body && sub.body.data && sub.body.data[0] && sub.body.data[0].items && sub.body.data[0].items.data && sub.body.data[0].items.data[0];
+      if (it && it.price && it.price.unit_amount != null) amount = it.price.unit_amount / 100;
+    }
+    if (amount != null) {
+      await env.DB.prepare("UPDATE users SET monthly_amount = ?, stripe_customer = COALESCE(stripe_customer, ?), is_courtesy = CASE WHEN ? > 0 THEN 0 ELSE is_courtesy END WHERE email = ?")
+        .bind(amount, cust, amount, u.email).run();
+      updated++; results.push({ email: u.email, ok: true, amount });
+    } else {
+      // achou o cliente mas sem invoice/assinatura → ao menos salva o id
+      await env.DB.prepare("UPDATE users SET stripe_customer = COALESCE(stripe_customer, ?) WHERE email = ?").bind(cust, u.email).run();
+      noAmount++; results.push({ email: u.email, ok: false, reason: 'no_invoice' });
+    }
   }
-  logEvent({ evt: 'stripe_sync', by: email, checked, updated, noData });
-  return json({ ok: true, checked, updated, noData, results });
+  logEvent({ evt: 'stripe_sync', by: email, checked, updated, noCustomer, noAmount });
+  return json({ ok: true, checked, updated, noCustomer, noAmount });
 }
 
 /* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════
