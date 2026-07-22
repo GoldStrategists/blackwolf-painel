@@ -134,8 +134,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v29' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v29' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v30' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v30' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -250,11 +250,38 @@ function logEvent(obj) { try { console.log(JSON.stringify({ t: new Date().toISOS
 async function createSession(env, email) {
   const token = randomHex(32);
   await env.SESSIONS.put('sess:' + token, email, { expirationTtl: 60 * 60 * 24 * 30 });
+  // v29: registra o token numa lista por usuário para poder REVOGAR tudo quando a
+  // senha muda/reseta (antes um token roubado sobrevivia 30 dias a uma troca de senha).
+  try {
+    const k = 'usess:' + email;
+    let arr = []; try { arr = JSON.parse(await env.SESSIONS.get(k) || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) arr = [];
+    arr.push(token);
+    if (arr.length > 25) arr = arr.slice(-25);   // teto (evita crescer sem limite)
+    await env.SESSIONS.put(k, JSON.stringify(arr), { expirationTtl: 60 * 60 * 24 * 30 });
+  } catch (e) {}
   return token;
 }
-async function getSessionEmail(request, env) {
+// revoga todas as sessões de um e-mail (opcionalmente preserva uma — a atual)
+async function revokeSessions(env, email, exceptToken) {
+  try {
+    const k = 'usess:' + email;
+    let arr = []; try { arr = JSON.parse(await env.SESSIONS.get(k) || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) arr = [];
+    const keep = [];
+    for (const t of arr) {
+      if (exceptToken && t === exceptToken) { keep.push(t); continue; }
+      try { await env.SESSIONS.delete('sess:' + t); } catch (e) {}
+    }
+    await env.SESSIONS.put(k, JSON.stringify(keep), { expirationTtl: 60 * 60 * 24 * 30 });
+  } catch (e) {}
+}
+function bearerToken(request) {
   const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+}
+async function getSessionEmail(request, env) {
+  const token = bearerToken(request);
   if (!token) return null;
   return await env.SESSIONS.get('sess:' + token);
 }
@@ -525,6 +552,7 @@ async function handleStripeWebhook(request, env, json) {
 
   // Identifica o plano: metadata explícita tem prioridade; valor é só fallback.
   // (v22: evita classificar errado por moeda/centavos/plano anual)
+  const planExplicit = !!(obj.metadata && obj.metadata.plan);
   let plan = (obj.metadata && obj.metadata.plan) || null;
   if (!plan) {
     const amount = obj.amount_total || obj.amount_paid || 0;
@@ -553,10 +581,17 @@ async function handleStripeWebhook(request, env, json) {
     // Cliente já tem conta — garante licença ativa e cliente Stripe salvo
     let lic = existing.license_key;
     if (!lic) { lic = generateLicenseKey(); }
-    if (isCheckout) {
-      // compra/troca explícita: pode ajustar plano e limite
+    if (isCheckout && planExplicit) {
+      // compra/troca EXPLÍCITA (metadata.plan): pode ajustar plano e limite.
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, monthly_amount = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
         .bind(lic, plan, planAccountLimit(plan), monthlyAmount, stripeCustomer, email).run();
+    } else if (isCheckout) {
+      // checkout SEM metadata.plan: o plano foi inferido do VALOR — e um cupom pode
+      // ter baixado o valor abaixo da faixa. NÃO rebaixa plano/limite de um cliente
+      // que já pagou por mais (Alpha 3 → Lone 1). Só reafirma licença + MRR.
+      // (Corrigir plano nesse caso: setar metadata.plan no link de checkout do Stripe.)
+      await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
+        .bind(lic, monthlyAmount, stripeCustomer, email).run();
     } else {
       // renovação: reafirma licença ativa + valor recorrente (MRR), preserva plano/limite
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
@@ -757,6 +792,8 @@ async function handleChangePassword(request, env, json) {
   const salt = randomHex(16);
   const hash = await pbkdf2(new_password, salt);
   await env.DB.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE email = ?').bind(hash, salt, email).run();
+  // v29: derruba as OUTRAS sessões (mantém a atual) — token roubado morre na troca
+  await revokeSessions(env, email, bearerToken(request));
   return json({ ok: true });
 }
 // v27: limita tamanho de campo de texto (evita gravar blob de MB → DoS/inflar banco)
@@ -827,6 +864,9 @@ async function handleReset(request, env, json) {
   const hash = await pbkdf2(new_password, salt);
   await env.DB.prepare('UPDATE users SET password_hash=?,salt=? WHERE email=?').bind(hash,salt,email).run();
   await env.SESSIONS.delete('reset:' + token);
+  // v29: recuperação de conta revoga TODAS as sessões (o dono legítimo re-loga;
+  // qualquer sessão de um invasor com token roubado é derrubada)
+  await revokeSessions(env, email);
   return json({ ok: true });
 }
 
@@ -1036,7 +1076,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v29', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v30', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1177,7 +1217,12 @@ function intOrNull(v){ const n = parseInt(v,10); return Number.isFinite(n) ? n :
 function getEaAccount(request, url, body){
   let a = url.searchParams.get('account') || request.headers.get('X-Account') ||
           (body && body.account != null ? body.account : null);
-  return (a != null && String(a).trim() !== '') ? String(a).trim() : null;
+  if (a == null) return null;
+  const s = String(a).trim();
+  // conta MT5 (ACCOUNT_LOGIN) é SEMPRE um inteiro. Aceitar só dígitos fecha o vetor
+  // de XSS armazenado: um robô adulterado poderia mandar um "número" com aspas/HTML
+  // que seria ecoado no painel do admin. Não-numérico → tratado como sem conta.
+  return /^\d{1,20}$/.test(s) ? s : null;
 }
 // v23: vínculo ATÔMICO via tabela license_accounts (PK license_key+account).
 // O INSERT condicional deixa o SQLite arbitrar o limite — sem corrida entre
@@ -1424,7 +1469,9 @@ async function handleEaTrades(request, env, json, url) {
   }
   // trades fechados — dedupe por (licença, CONTA, ticket)
   const persisted = [];
-  let tradesArr = Array.isArray(body.trades) ? body.trades.filter(t => t && t.ticket != null) : [];
+  // v29: teto DURO no array cru ANTES de ordenar — uma licença válida não pode
+  // mandar um array gigante e gastar CPU/memória do worker (o robô pagina de 500).
+  let tradesArr = Array.isArray(body.trades) ? body.trades.slice(0, 2000).filter(t => t && t.ticket != null) : [];
   const totalTrades = tradesArr.length;
   // v27 (P0-B): NUNCA gravar trade sem CONTA. No SQLite, NULL é distinto no índice
   // UNIQUE, então trade sem conta furaria o dedup e DUPLICARIA a cada reenvio
@@ -1484,8 +1531,11 @@ async function handleReports(request, env, json, url) {
   const target = (u && u.results_source) ? u.results_source : email;
   const period = url.searchParams.get('period') || 'month';
   const account = url.searchParams.get('account');
-  // janela de datas: usa from/to se vier; senão período corrente
-  const now = new Date();
+  // janela de datas: usa from/to se vier; senão período corrente.
+  // v29: usa o horário do SERVIDOR da corretora (+EA_SERVER_OFFSET_MIN), igual ao
+  // /api/admin/results e ao close_time dos trades. Antes usava UTC puro → na virada
+  // de dia/mês o cliente e o admin viam números diferentes e trades da borda sumiam.
+  const now = new Date(Date.now() + EA_SERVER_OFFSET_MIN * 60000);
   let from = url.searchParams.get('from'), to = url.searchParams.get('to');
   if (!from || !to) {
     const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate(), wd = now.getUTCDay();
@@ -1678,12 +1728,15 @@ async function handleMt5Account(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   let body; try { body = await request.json(); } catch(e){ return json({ error:'invalid_json' }, 400); }
-  const account = body.account != null ? String(body.account).trim() : '';
-  if (!account) return json({ error:'missing_account' }, 400);
+  const accountRaw = body.account != null ? String(body.account).trim() : '';
+  // conta MT5 é sempre numérica — valida (mesma regra do getEaAccount)
+  if (!/^\d{1,20}$/.test(accountRaw)) return json({ error:'invalid_account' }, 400);
+  const account = accountRaw;
 
-  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts FROM users WHERE email = ?').bind(email).first();
+  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
   const limit = row && row.account_limit === -1 ? -1
               : (row && row.account_limit && row.account_limit > 1 ? row.account_limit : 1);
+  const lic = row && row.license_key ? row.license_key : null;
   let list = [];
   try { list = row && row.mt5_accounts ? JSON.parse(row.mt5_accounts) : []; } catch(e){ list = []; }
   if (!Array.isArray(list)) list = [];
@@ -1691,6 +1744,17 @@ async function handleMt5Account(request, env, json) {
 
   // Plano de 1 conta → troca (substitui a única conta)
   if (limit === 1) {
+    // v29 (bug de trava): a trava real é a tabela license_accounts. Trocar só o
+    // espelho (mt5_accounts) deixava a conta ANTIGA amarrada → o robô da conta NOVA
+    // levava account_mismatch e o aluno ficava travado até um admin limpar. Agora a
+    // troca solta o vínculo antigo (e o status) para o novo robô reamarrar sozinho.
+    if (lic) {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM license_accounts WHERE license_key = ?').bind(lic),
+        env.DB.prepare('DELETE FROM ea_status_acc WHERE license_key = ?').bind(lic),
+        env.DB.prepare('INSERT INTO license_accounts (license_key, account, email, bound_at) VALUES (?,?,?,?)').bind(lic, account, email, new Date().toISOString()),
+      ]);
+    }
     await env.DB.prepare('UPDATE users SET mt5_account = ?, mt5_accounts = ? WHERE email = ?')
       .bind(account, JSON.stringify([account]), email).run();
     return json({ ok: true, mt5_account: account, mt5_accounts: [account] });

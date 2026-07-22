@@ -1363,7 +1363,8 @@ async function submitForgotPassword(){
   err.classList.remove('show');
   // Chama o back-end real — envia email de recuperação de verdade se Resend estiver configurada
   try{ await fetch(API+'/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})}); }catch(e){}
-  const msg=LANG==='pt'?('Se houver uma conta associada a <b>'+email+'</b>, enviamos um link de recuperação. Verifique sua caixa de entrada e spam.'):LANG==='en'?('If an account is associated with <b>'+email+'</b>, we have sent a recovery link. Check your inbox and spam folder.'):('Si existe una cuenta asociada a <b>'+email+'</b>, enviamos un enlace de recuperación. Revisa tu bandeja de entrada y spam.');
+  const eem=esc(email); // nunca interpolar o e-mail digitado cru em innerHTML (DOM XSS)
+  const msg=LANG==='pt'?('Se houver uma conta associada a <b>'+eem+'</b>, enviamos um link de recuperação. Verifique sua caixa de entrada e spam.'):LANG==='en'?('If an account is associated with <b>'+eem+'</b>, we have sent a recovery link. Check your inbox and spam folder.'):('Si existe una cuenta asociada a <b>'+eem+'</b>, enviamos un enlace de recuperación. Revisa tu bandeja de entrada y spam.');
   document.getElementById('forgotSentMsg').innerHTML=msg;
   document.getElementById('forgotStep1').style.display='none';
   document.getElementById('forgotStep2').style.display='block';
@@ -1876,6 +1877,16 @@ function parseEaDate(s){
 }
 // escape de HTML para qualquer dado vindo do servidor/robô (nome, e-mail, erro...)
 function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+// escape para dado interpolado DENTRO de um argumento de onclick="fn('AQUI')".
+// esc() NÃO serve aqui: o navegador decodifica &#39; de volta para ' ANTES do JS
+// parsear, e a aspa quebra a string (XSS na sessão do admin). \xNN não tem nenhum
+// caractere HTML-especial, então sobrevive à decodificação do atributo E ao parser JS.
+function jsAttr(v){
+  return String(v==null?"":v).replace(/[\\'"&<>\r\n\u2028\u2029]/g,function(c){
+    var n=c.charCodeAt(0);
+    return (n>255?"\\u"+n.toString(16).padStart(4,"0"):"\\x"+n.toString(16).padStart(2,"0"));
+  });
+}
 // mapeia os trades do back-end para o formato que o painel exibe
 function mapRealTrades(raw, endBalance, accBalances){
   const list=(raw||[]).map(t=>{
@@ -1965,7 +1976,9 @@ function mapBackendClient(u){
   // eles são interpolados em innerHTML em vários pontos das telas de admin, e um
   // nome/cidade com HTML executaria script na sessão do ADMIN (XSS armazenado).
   const eob = {age:esc(ob.age),experience:esc(ob.experience),goal:esc(ob.goal),selfProfile:esc(ob.selfProfile),family:esc(ob.family),source:esc(ob.source),country:esc(ob.country),state:esc(ob.state),city:esc(ob.city),marketing:esc(ob.marketing)};
-  const status = u.license_status || (u.license_key ? 'active' : 'active');
+  // status sem licença NÃO é "ativo" — antes caía sempre em 'active' e mascarava
+  // conta sem licença/expirada como verde no admin
+  const status = u.license_status || (u.license_key ? 'active' : 'expired');
   const usedRaw = (u.accounts_used!=null)?u.accounts_used:0;
   // v24: status online real do cliente (último heartbeat de qualquer conta dele)
   const seenD = u.last_seen?parseEaDate(u.last_seen):null;
@@ -1978,7 +1991,7 @@ function mapBackendClient(u){
     accUsed: usedRaw, accLimit: (u.account_limit===-1?'∞':(u.account_limit!=null?u.account_limit:planAccLimit(u.plan))), pay: (status==='revoked'?'overdue':'paid'),
     seen: seenD?fmtDT(seenD).slice(5,16):'—', joined: (u.created_at||'').slice(0,10),
     net: 0, key: esc(u.license_key || '—'), expires: u.license_expires_at || null,
-    profile: ob.selfProfile? (String(ob.selfProfile).toLowerCase().includes('arroj')?'aggr':String(ob.selfProfile).toLowerCase().includes('conserv')?'cons':'mod') : 'cons',
+    profile: (function(){ const sp=String(ob.selfProfile||'').toLowerCase(); if(!sp)return 'cons'; return /(arroj|aggress|agres)/.test(sp)?'aggr':/conserv/.test(sp)?'cons':'mod'; })(),
     score: 0, risk: '—', lev: '—', freq: '—', hours: '—', ltv: 0, trades: 0, winrate: 0,
     broker: '—', country: esc(ob.country || u.country || '—'),
     onboarding: ob.age||ob.country||ob.marketing ? eob : {}
@@ -2003,6 +2016,18 @@ async function fetchRealClients(){
       if(typeof CURRENT_PAGE==='string' && CURRENT_PAGE.indexOf('admin')===0) renderPage(CURRENT_PAGE);
     }
   }catch(e){ /* offline ou endpoint ainda não publicado — mantém vazio */ }
+  // MRR + resultado agregado da Visão Geral vêm do /api/admin/results (antes ficavam
+  // fixos em 0 pra admin real — só o demo tinha número). Falha aqui não quebra a tela.
+  try{
+    const rr = await apiFetch('/api/admin/results');
+    if(rr.ok){
+      const dd = await rr.json();
+      DATA.admin.mrr = +(dd.mrr||0);
+      DATA.admin.aggNet = +((dd.aggregate&&dd.aggregate.total)||0);
+      if(dd.clientsActive!=null) DATA.admin.activeLicenses = dd.clientsActive;
+      if(typeof CURRENT_PAGE==='string' && CURRENT_PAGE.indexOf('admin')===0) renderPage(CURRENT_PAGE);
+    }
+  }catch(e){ /* endpoint de resultados ainda não publicado — mantém 0 */ }
 }
 
 /* money helpers */
@@ -2102,7 +2127,7 @@ function renderDashboard(){
   const net=c.clients?0:s.netResult;
   return pageHead(
     LANG==='pt'?'PAINEL DO CLIENTE':LANG==='en'?'CLIENT PANEL':'PANEL DEL CLIENTE',
-    (LANG==='pt'?'Olá, ':LANG==='en'?'Hello, ':'Hola, ')+esc(String(SESSION.name||'').split(' ')[0])+' 👋',
+    (LANG==='pt'?'Olá, ':LANG==='en'?'Hello, ':'Hola, ')+esc(String(getDisplayName()||SESSION.name||'').split(' ')[0])+' 👋',
     LANG==='pt'?'Aqui está o resumo do seu robô Black Wolf hoje.':LANG==='en'?'Here is your Black Wolf robot summary today.':'Aquí está el resumen de tu robot Black Wolf hoy.',
     refreshBtn()
   )+`
@@ -2176,7 +2201,7 @@ function renderDashboard(){
   <div class="grid-2">
     <div class="card rv">
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5"/></svg>${LANG==='pt'?'Licença':LANG==='en'?'License':'Licencia'}</div>${!c.licenseKey?`<span class="pill available">${LANG==='pt'?'Sem licença':LANG==='en'?'No license':'Sin licencia'}</span>`:(c.licenseStatus&&c.licenseStatus!=='active'?`<span class="pill revoked">${LANG==='pt'?'Inativa':LANG==='en'?'Inactive':'Inactiva'}</span>`:`<span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span>`)}</div>
-      <div class="keyfield"><div class="keyfield-input">${c.licenseKey||'—'}</div><button class="copy-btn" onclick="copyText('${c.licenseKey||''}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
+      <div class="keyfield"><div class="keyfield-input">${c.licenseKey||'—'}</div><button class="copy-btn" onclick="copyText('${jsAttr(c.licenseKey)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
       <div class="meta-rows">
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Plano':LANG==='en'?'Plan':'Plan'}</div><div class="val">${c.plan}</div></div>
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Expira em':LANG==='en'?'Expires':'Expira'}</div><div class="val">${c.expiresAt?c.expiresAt.slice(0,10):'—'}</div></div>
@@ -2643,7 +2668,7 @@ function renderLicense(){
     return head+`
     <div class="card grad rv">
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>${LANG==='pt'?'Chave de licença':LANG==='en'?'License key':'Clave de licencia'}</div>${statusPill}</div>
-      <div class="keyfield"><div class="keyfield-input">${c.licenseKey}</div><button class="copy-btn" onclick="copyText('${c.licenseKey}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
+      <div class="keyfield"><div class="keyfield-input">${c.licenseKey}</div><button class="copy-btn" onclick="copyText('${jsAttr(c.licenseKey)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
       <div class="banner ${revoked?'warn':'info'}" style="margin:14px 0 0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <div class="banner-tx">${revoked
@@ -2662,7 +2687,7 @@ function renderLicense(){
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg>${LANG==='pt'?'Contas MetaTrader 5':LANG==='en'?'MetaTrader 5 accounts':'Cuentas MetaTrader 5'}</div><span class="pill" style="background:rgba(45,108,255,.12);color:var(--blue-l);border-color:rgba(45,108,255,.28)">${usageTxt}</span></div>
       ${accList.length ? `
         <div class="acct-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-          ${accList.map((a,i)=>`<div class="keyfield" style="margin:0"><div class="keyfield-input">${a}${i===0?` <span style="font-size:.72rem;color:var(--t3)">(${LANG==='pt'?'principal':LANG==='en'?'primary':'principal'})</span>`:''}</div><button class="copy-btn" onclick="copyText('${a}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>`).join('')}
+          ${accList.map((a,i)=>`<div class="keyfield" style="margin:0"><div class="keyfield-input">${a}${i===0?` <span style="font-size:.72rem;color:var(--t3)">(${LANG==='pt'?'principal':LANG==='en'?'primary':'principal'})</span>`:''}</div><button class="copy-btn" onclick="copyText('${jsAttr(a)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>`).join('')}
         </div>
         <p style="font-size:.82rem;color:var(--t3);margin:12px 0 0">${LANG==='pt'?'Contas onde o robô está autorizado a rodar. Novas contas são detectadas automaticamente quando o robô roda nelas.':LANG==='en'?'Accounts where the robot is authorized to run. New accounts are detected automatically when the robot runs on them.':'Cuentas donde el robot está autorizado. Las nuevas se detectan automáticamente cuando el robot corre en ellas.'}</p>
       ` : `
@@ -2682,7 +2707,7 @@ function renderLicense(){
   return head+`
   <div class="card grad rv">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>${LANG==='pt'?'Chave de licença':LANG==='en'?'License key':'Clave de licencia'}</div><span class="pill active">${LANG==='pt'?'Ativa':LANG==='en'?'Active':'Activa'}</span></div>
-    <div class="keyfield"><div class="keyfield-input">${c.licenseKey||'—'}</div><button class="copy-btn" onclick="copyText('${c.licenseKey||''}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
+    <div class="keyfield"><div class="keyfield-input">${c.licenseKey||'—'}</div><button class="copy-btn" onclick="copyText('${jsAttr(c.licenseKey)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('copy')}</button></div>
     <div class="meta-rows">
       <div class="meta-row"><div class="lbl">${LANG==='pt'?'Plano':LANG==='en'?'Plan':'Plan'}</div><div class="val">${c.plan}</div></div>
       <div class="meta-row"><div class="lbl">${LANG==='pt'?'Emitida':LANG==='en'?'Issued':'Emitida'}</div><div class="val">${c.issuedAt}</div></div>
@@ -2793,7 +2818,7 @@ function buildWizStep(n){
       v:`<div class="wiz-visual">${mt5Bar('XAUUSD, M15')}<div class="wiz-menu-path"><span class="wiz-menu-item">Navigator</span><span class="wiz-menu-arrow">→</span><span class="wiz-menu-item hl">${LANG==='pt'?'arraste Black Wolf':LANG==='en'?'drag Black Wolf':'arrastra Black Wolf'}</span><span class="wiz-menu-arrow">→</span><span class="wiz-menu-item">${LANG==='pt'?'solte no gráfico':LANG==='en'?'drop on chart':'suelta en gráfico'}</span></div><div class="wiz-checkbox-row" style="margin-top:14px"><div class="wiz-cb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><div class="wiz-cb-tx"><b>Allow Algo Trading</b> ${LANG==='pt'?'na janela que abrir':LANG==='en'?'in the dialog':'en el diálogo'}</div></div></div>`,
       tip:LANG==='pt'?'Use o gráfico do símbolo XAUUSD (ouro). O robô foi otimizado para ele.':LANG==='en'?'Use the XAUUSD (gold) chart. The robot is optimized for it.':'Usa el gráfico XAUUSD (oro). El robot está optimizado para él.'},
     7:{t:LANG==='pt'?'Insira a licença':LANG==='en'?'Enter your license':'Ingresa la licencia',s:LANG==='pt'?'Na aba Inputs do robô, cole sua chave de licença.':LANG==='en'?'In the robot Inputs tab, paste your license key.':'En la pestaña Inputs, pega tu clave.',
-      v:`<div class="wiz-visual">${mt5Bar(LANG==='pt'?'Black Wolf — Aba Inputs':LANG==='en'?'Black Wolf — Inputs tab':'Black Wolf — Pestaña Inputs')}<p style="font-size:.8rem;color:var(--t2);margin-bottom:8px">${LANG==='pt'?'Campo':LANG==='en'?'Field':'Campo'} <code>LicenseKey</code>:</p><div class="wiz-copy-field"><div class="wiz-copy-input">${c.licenseKey}</div><button class="copy-btn" onclick="copyText('${c.licenseKey||''}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></div>`,
+      v:`<div class="wiz-visual">${mt5Bar(LANG==='pt'?'Black Wolf — Aba Inputs':LANG==='en'?'Black Wolf — Inputs tab':'Black Wolf — Pestaña Inputs')}<p style="font-size:.8rem;color:var(--t2);margin-bottom:8px">${LANG==='pt'?'Campo':LANG==='en'?'Field':'Campo'} <code>LicenseKey</code>:</p><div class="wiz-copy-field"><div class="wiz-copy-input">${c.licenseKey}</div><button class="copy-btn" onclick="copyText('${jsAttr(c.licenseKey)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></div>`,
       tip:LANG==='pt'?'Cole a chave exatamente como aparece. Nesta MESMA aba Inputs você também define, por sua conta e risco: Risco % por operação, Meta diária % e Perda máxima diária % (0 = desligado). Depois clique OK.':LANG==='en'?'Paste the key exactly as shown. In this SAME Inputs tab you also set (at your own risk): Risk % per trade, Daily target % and Daily max loss % (0 = off). Then click OK.':'Pega la clave exactamente. En esta MISMA pestaña Inputs también defines (bajo tu responsabilidad): Riesgo % por operación, Meta diaria % y Pérdida máxima diaria % (0 = apagado). Luego OK.'},
     8:{t:LANG==='pt'?'Tudo pronto! 🎉':LANG==='en'?'All set! 🎉':'¡Todo listo! 🎉',s:LANG==='pt'?'Confirme que o robô está ativo e conectado.':LANG==='en'?'Confirm the robot is active and connected.':'Confirma que el robot está activo y conectado.',
       v:`<div class="wiz-visual" style="text-align:center;padding:32px 18px"><div style="width:70px;height:70px;border-radius:50%;background:rgba(34,197,94,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" style="width:36px;height:36px"><polyline points="20 6 9 17 4 12"/></svg></div><div style="font-family:var(--fh);font-weight:700;font-size:1.1rem;margin-bottom:8px">${LANG==='pt'?'Black Wolf operando':LANG==='en'?'Black Wolf running':'Black Wolf operando'}</div><p style="font-size:.82rem;color:var(--t2);max-width:380px;margin:0 auto">${LANG==='pt'?'Procure o ícone ▶ verde sorridente no canto superior direito do gráfico e o status "Conectado" no painel.':LANG==='en'?'Look for the green smiley ▶ icon at the top-right of the chart and "Connected" status in the panel.':'Busca el ícono ▶ verde arriba a la derecha del gráfico y el estado "Conectado".'}</p></div>`,
@@ -3249,7 +3274,7 @@ function renderAdminResults(){
     const res=+(c[perKey]||0);
     const cls=res<0?'neg':(res>0?'pos':'');
     const acc=(c.accounts&&c.accounts.length)?c.accounts.join(', '):'—';
-    return `<tr class="ares-row" onclick="openAdminClient('${esc(c.email)}')" style="cursor:pointer">
+    return `<tr class="ares-row" onclick="openAdminClient('${jsAttr(c.email)}')" style="cursor:pointer">
       <td><div class="tbl-name">${esc(c.name)}${c.is_admin?' <span class="pill active" style="font-size:.6rem">admin</span>':''}</div><div style="font-size:.7rem;color:var(--t3)" class="mono">${esc(c.email)}</div></td>
       <td class="mono" style="font-size:.8rem">${esc(acc)}</td>
       <td>${statusPill(c.status||'expired')}</td>
@@ -3580,10 +3605,10 @@ function buildClientCards(){
           <div class="cc-sub">${c.plan} · ${c.email} · ${c.country}${ob.age?' · '+ob.age:''}</div>
         </div>
         <div class="cc-right">
-          <div style="text-align:right;line-height:1.3">
+          ${(SESSION&&SESSION.isDemo)?`<div style="text-align:right;line-height:1.3">
             <div style="font-family:var(--fm);font-weight:700;font-size:.9rem;color:${c.net>=0?'var(--green-l)':'var(--red-l)'}">${fmtMoney(c.net)}</div>
             <div style="font-size:.68rem;color:var(--t3)">${c.winrate}% win</div>
-          </div>
+          </div>`:`<button class="mini-btn" onclick="event.stopPropagation();openAdminClient('${jsAttr(c.rawEmail||c.email)}')" title="${LANG==='pt'?'Ver resultado real':'View real result'}">${LANG==='pt'?'Resultados':LANG==='en'?'Results':'Resultados'}</button>`}
           ${payPill(c.pay)}
           <div class="cc-expand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></div>
         </div>
@@ -3610,7 +3635,7 @@ function buildClientCards(){
             </div>
             <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
               ${c.status!=='revoked'?`<button class="revoke-btn" onclick="event.stopPropagation();revokeClient(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>${t('revoke')}</button>`:`<button class="mini-btn" onclick="event.stopPropagation();reissueClient(${idx})">${LANG==='pt'?'Reativar':LANG==='en'?'Reactivate':'Reactivar'}</button>`}
-              <button class="mini-btn" onclick="event.stopPropagation();contactClient('${c.email}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Email</button>
+              <button class="mini-btn" onclick="event.stopPropagation();contactClient('${jsAttr(c.rawEmail||c.email)}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Email</button>
             </div>
           </div>
           <!-- ONBOARDING TAB -->
@@ -3951,7 +3976,7 @@ function renderAdminAccounts(){
     const c=x.c, list=x.list;
     const lim=(c.accLimit==='∞')?'∞':c.accLimit;
     const chips=list.length? list.map(function(a){
-      return `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--s3);border:1px solid var(--bord2);border-radius:9px;padding:6px 8px 6px 12px;font-family:var(--fm);font-size:.82rem;color:var(--t1)">${esc(a)}<button title="${LANG==='pt'?'Desamarrar':'Unbind'}" onclick="adminMt5Action('${esc(c.rawEmail)}','remove','${esc(a)}')" style="width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,59,71,.3);background:transparent;color:var(--red-l);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;line-height:1">✕</button></span>`;
+      return `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--s3);border:1px solid var(--bord2);border-radius:9px;padding:6px 8px 6px 12px;font-family:var(--fm);font-size:.82rem;color:var(--t1)">${esc(a)}<button title="${LANG==='pt'?'Desamarrar':'Unbind'}" onclick="adminMt5Action('${jsAttr(c.rawEmail)}','remove','${jsAttr(a)}')" style="width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,59,71,.3);background:transparent;color:var(--red-l);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;line-height:1">✕</button></span>`;
     }).join('') : `<span style="font-size:.82rem;color:var(--t3)">${LANG==='pt'?'Nenhuma conta amarrada':LANG==='en'?'No accounts bound':'Sin cuentas'}</span>`;
     return `<div class="client-card rv" style="padding:16px 18px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
@@ -3962,8 +3987,8 @@ function renderAdminAccounts(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${chips}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--bord);padding-top:12px">
         <input id="setmt5-${esc(c.rawEmail)}" placeholder="${LANG==='pt'?'nº da conta':LANG==='en'?'account #':'nº cuenta'}" inputmode="numeric" style="background:var(--bg);border:1px solid var(--bord);border-radius:9px;padding:8px 11px;color:var(--t1);font-family:var(--fm);font-size:.82rem;width:130px">
-        <button class="mini-btn" onclick="adminSetMt5('${esc(c.rawEmail)}')">${LANG==='pt'?'Definir só esta':LANG==='en'?'Set only this':'Solo esta'}</button>
-        ${list.length?`<button class="revoke-btn" onclick="adminMt5Action('${esc(c.rawEmail)}','clear')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>${LANG==='pt'?'Limpar todas':LANG==='en'?'Clear all':'Limpiar todas'}</button>`:''}
+        <button class="mini-btn" onclick="adminSetMt5('${jsAttr(c.rawEmail)}')">${LANG==='pt'?'Definir só esta':LANG==='en'?'Set only this':'Solo esta'}</button>
+        ${list.length?`<button class="revoke-btn" onclick="adminMt5Action('${jsAttr(c.rawEmail)}','clear')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>${LANG==='pt'?'Limpar todas':LANG==='en'?'Clear all':'Limpiar todas'}</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -5203,7 +5228,7 @@ function surveyShowStep(n){
   }
   const colClass=q.cols===3?'three':q.cols===1?'single':'';
   let opts=`<div class="survey-opts ${colClass}">`;
-  q.opts.forEach(o=>{opts+=`<div class="survey-opt" onclick="surveyPick('${q.key}','${o.v}',${n})"><span class="emo">${o.e}</span>${o.l}</div>`;});
+  q.opts.forEach(o=>{opts+=`<div class="survey-opt" onclick="surveyPick('${q.key}','${o.v}',${n},event)"><span class="emo">${o.e}</span>${o.l}</div>`;});
   opts+='</div>';
   document.getElementById('surveyOpts').innerHTML=opts;
   surveyFooter();
@@ -5231,9 +5256,10 @@ function surveyFormNext(n){
   SURVEY_ANSWERS.city=city||null;
   surveyShowStep(n+1);
 }
-function surveyPick(key,val,stepIdx){
+function surveyPick(key,val,stepIdx,ev){
   SURVEY_ANSWERS[key]=val;
-  const el=event.target.closest('.survey-opt');
+  const src=(ev&&ev.target)||(typeof event!=='undefined'&&event.target)||null;
+  const el=src&&src.closest?src.closest('.survey-opt'):null;
   if(el)el.classList.add('sel');
   setTimeout(()=>surveyShowStep(stepIdx+1),350);
 }
