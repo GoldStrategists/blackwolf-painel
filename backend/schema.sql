@@ -181,6 +181,22 @@ CREATE TABLE IF NOT EXISTS config_log (
   created_at   TEXT
 );
 
+-- ─────────────── LEDGER DE PAGAMENTOS (Financeiro) ───────────────
+-- O worker cria esta tabela sozinho no 1º pagamento; incluída aqui como fonte
+-- de verdade. Dedup por event_id (não conta 2× num replay do Stripe).
+CREATE TABLE IF NOT EXISTS payments (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  email       TEXT,
+  amount      REAL,
+  currency    TEXT DEFAULT 'USD',
+  plan        TEXT,
+  type        TEXT,
+  event_id    TEXT,
+  created_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_event   ON payments (event_id);
+CREATE INDEX        IF NOT EXISTS idx_payments_created ON payments (created_at);
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- FIM. Depois de rodar, confira com:
 --   SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;

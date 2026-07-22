@@ -1303,6 +1303,7 @@ function resetUserState(){
     DASH_ACCOUNT=null; EQUITY_OVERRIDE=null;
     REP_DATA=null; REP_ACCOUNT=null; REP_PERIOD='month'; REP_LOADING=false;
     ADMIN_RES=null; ADMIN_RES_LOADING=false; ADMIN_RES_PERIOD='today'; ADMIN_CLIENT=null; ADMIN_CLIENT_EMAIL=null; ADMIN_CLIENT_LOADING=false;
+    PAY_DATA=null; PAY_LOADING=false; MAINT=null; ROBOT_META=null; MAINT_PUBLIC=null;
     ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
   }catch(e){}
 }
@@ -3915,14 +3916,13 @@ function buildClientCards(){
           <div class="cc-tab-content on" id="cc-tab-${idx}-profile">
             <div class="meta-rows" style="margin-top:0">
               <div class="meta-row"><div class="lbl">${LANG==='pt'?'Plano':'Plan'}</div><div class="val" style="font-size:.85rem">${c.plan}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Desde':'Since'}</div><div class="val" style="font-size:.85rem">${c.joined}</div></div>
-              <div class="meta-row"><div class="lbl">LTV</div><div class="val" style="font-size:.85rem">US$ ${c.ltv.toFixed(0)}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Trades':'Trades'}</div><div class="val" style="font-size:.85rem">${c.trades}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Risco':'Risk'}</div><div class="val" style="font-size:.85rem">${c.risk}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Alavancagem':'Leverage'}</div><div class="val" style="font-size:.85rem">${c.lev}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Horário':'Hours'}</div><div class="val" style="font-size:.85rem">${c.hours}</div></div>
-              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Corretora':'Broker'}</div><div class="val" style="font-size:.85rem">${c.broker}</div></div>
+              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Cliente desde':'Since'}</div><div class="val" style="font-size:.85rem">${c.joined||'—'}</div></div>
+              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas MT5':'MT5 accounts'}</div><div class="val" style="font-size:.85rem">${c.accUsed||0}${c.accLimit?'/'+c.accLimit:''}</div></div>
+              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Licença':'License'}</div><div class="val" style="font-size:.85rem">${statusPill(c.status)}</div></div>
+              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Expira':'Expires'}</div><div class="val" style="font-size:.85rem">${fmtExpires(c.expires)}</div></div>
+              <div class="meta-row"><div class="lbl">${LANG==='pt'?'Robô visto':'Robot seen'}</div><div class="val" style="font-size:.85rem">${c.online?'🟢 online':(c.seen||'—')}</div></div>
             </div>
+            <div style="margin-top:12px"><button class="mini-btn" onclick="event.stopPropagation();openAdminClient('${jsAttr(c.rawEmail||c.email)}')">${LANG==='pt'?'Ver resultado financeiro real →':LANG==='en'?'View real result →':'Ver resultado →'}</button></div>
             <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
               ${c.status!=='revoked'?`<button class="revoke-btn" onclick="event.stopPropagation();revokeClient(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>${t('revoke')}</button>`:`<button class="mini-btn" onclick="event.stopPropagation();reissueClient(${idx})">${LANG==='pt'?'Reativar':LANG==='en'?'Reactivate':'Reactivar'}</button>`}
               <button class="mini-btn" onclick="event.stopPropagation();contactClient('${jsAttr(c.rawEmail||c.email)}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>Email</button>
@@ -3944,7 +3944,7 @@ function buildClientCards(){
             </div>
             <div class="banner info" style="margin-top:14px;padding:12px 14px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:17px;height:17px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/></svg>
-              <div class="banner-tx" style="font-size:.77rem">${LANG==='pt'?`Autodeclarou-se <b>${ob.selfProfile}</b> com objetivo: <b>${ob.goal}</b>. Veio via <b>${ob.source}</b>. Perfil calculado pelo sistema: <b>${profileName(c.profile)} (${c.score}/100)</b>.`:LANG==='en'?`Self-declared as <b>${ob.selfProfile}</b>, goal: <b>${ob.goal}</b>. Source: <b>${ob.source}</b>. System-calculated profile: <b>${profileName(c.profile)} (${c.score}/100)</b>.`:`Autodeclaró: <b>${ob.selfProfile}</b>, objetivo: <b>${ob.goal}</b>. Fuente: <b>${ob.source}</b>. Perfil calculado: <b>${profileName(c.profile)} (${c.score}/100)</b>.`}</div>
+              <div class="banner-tx" style="font-size:.77rem">${LANG==='pt'?`Autodeclarou-se <b>${ob.selfProfile||'—'}</b> com objetivo: <b>${ob.goal||'—'}</b>. Veio via <b>${ob.source||'—'}</b>.`:LANG==='en'?`Self-declared as <b>${ob.selfProfile||'—'}</b>, goal: <b>${ob.goal||'—'}</b>. Source: <b>${ob.source||'—'}</b>.`:`Autodeclaró: <b>${ob.selfProfile||'—'}</b>, objetivo: <b>${ob.goal||'—'}</b>. Fuente: <b>${ob.source||'—'}</b>.`}</div>
             </div>`:`<div class="empty" style="padding:28px"><div class="empty-t">${LANG==='pt'?'Questionário não preenchido':LANG==='en'?'Survey not filled':'Cuestionario no completado'}</div><div class="empty-d">${LANG==='pt'?'O cliente ainda não respondeu ao questionário de onboarding.':LANG==='en'?'The client has not yet answered the onboarding survey.':'El cliente aún no respondió el cuestionario.'}</div></div>`}
           </div>
           <!-- RESULTS TAB -->
@@ -3953,7 +3953,7 @@ function buildClientCards(){
           </div>
           <!-- HISTORY TAB -->
           <div class="cc-tab-content" id="cc-tab-${idx}-history">
-            <div style="margin-top:4px">${buildClientHistTable(getClientTrades(idx))}</div>
+            <div style="margin-top:4px">${(SESSION&&SESSION.isDemo)?buildClientHistTable(getClientTrades(idx)):`<div class="empty" style="padding:22px"><div class="empty-t">${LANG==='pt'?'Histórico na aba Resultados':LANG==='en'?'History in the Results tab':'Historial en Resultados'}</div><button class="mini-btn" style="margin-top:10px" onclick="event.stopPropagation();openAdminClient('${jsAttr(c.rawEmail||c.email)}')">${LANG==='pt'?'Abrir Resultados →':LANG==='en'?'Open Results →':'Abrir →'}</button></div>`}</div>
           </div>
         </div>
       </div>
@@ -3978,6 +3978,7 @@ function getClientResStats(idx){
   return deriveStats(filterByMonth(getClientTrades(idx), ym));
 }
 function buildClientResultsInner(idx){
+  if(!(SESSION&&SESSION.isDemo)){ const c=DATA.admin.clients[idx]||{}; return `<div class="empty" style="padding:22px"><div class="empty-t">${LANG==='pt'?'Resultado real na aba Resultados':LANG==='en'?'Real result in the Results tab':'Resultado real en Resultados'}</div><div class="empty-d">${LANG==='pt'?'O desempenho real (curva, drawdown, % do dia) fica na aba Resultados.':LANG==='en'?'Real performance is in the Results tab.':'El rendimiento real está en Resultados.'}</div><button class="mini-btn" style="margin-top:10px" onclick="openAdminClient('${jsAttr(c.rawEmail||c.email)}')">${LANG==='pt'?'Abrir Resultados →':LANG==='en'?'Open Results →':'Abrir Resultados →'}</button></div>`; }
   const ym=CLIENT_RES_MONTH[idx]||'all';
   const cs=getClientResStats(idx);
   const months=tradeMonths(getClientTrades(idx));
@@ -4159,7 +4160,7 @@ function renderAdminLeads(){
   )+`
   <div class="banner info rv">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'O perfil é calculado automaticamente (0–100) a partir do risco por trade, alavancagem, drawdown, frequência e estratégias. <b>0–40 Conservador · 41–60 Moderado · 61–100 Arrojado.</b>':LANG==='en'?'Profile is auto-calculated (0–100) from risk per trade, leverage, drawdown, frequency and strategies. <b>0–40 Conservative · 41–60 Moderate · 61–100 Aggressive.</b>':'El perfil se calcula automáticamente (0–100). <b>0–40 Conservador · 41–60 Moderado · 61–100 Agresivo.</b>'}</div>
+    <div class="banner-tx">${LANG==='pt'?'Dados do <b>questionário de perfil</b> que cada cliente responde ao entrar (perfil declarado, experiência, objetivo, situação e origem). Use para relacionamento e vendas.':LANG==='en'?'Data from the <b>profile survey</b> each client answers on first login (self profile, experience, goal, situation and source).':'Datos del <b>cuestionario de perfil</b> que cada cliente responde al entrar.'}</div>
   </div>
   <div class="admin-stats">
     <div class="astat rv" onclick="setLeadFilter('cons')" style="cursor:pointer"><div class="astat-ico" style="background:rgba(34,197,94,.13);color:var(--green-l)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="astat-label">${t('profile_cons')}</div><div class="astat-val pos" data-count="${dist.cons}">0</div></div>
@@ -4173,30 +4174,25 @@ function setLeadFilter(f){ LEAD_FILTER=f; document.getElementById('leadCards').i
 function buildLeadCards(){
   const clients=DATA.admin.clients.filter(c=>LEAD_FILTER==='all'||c.profile===LEAD_FILTER);
   if(clients.length===0) return `<div class="card rv"><div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><div class="empty-t">${LANG==='pt'?'Nenhum cliente ainda':LANG==='en'?'No clients yet':'Aún no hay clientes'}</div><div class="empty-d">${LANG==='pt'?'Os perfis de risco aparecem aqui conforme os clientes entram.':LANG==='en'?'Risk profiles appear here as clients join.':'Los perfiles aparecen aquí a medida que entran clientes.'}</div></div></div>`;
+  const dash=LANG==='pt'?'—':'—';
   return clients.map(c=>{
-    const off=389.6-(389.6*c.score/100);
-    const col=c.profile==='aggr'?'var(--red)':c.profile==='mod'?'var(--amber)':'var(--green)';
+    const ob=c.onboarding||{};
+    const filled=!!(ob.age||ob.experience||ob.goal||ob.family||ob.source);
     return `<div class="card rv" style="margin-bottom:14px">
-      <div class="gauge-wrap">
-        <div class="gauge">
-          <svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="62" fill="none" stroke="var(--s3)" stroke-width="11"/><circle cx="75" cy="75" r="62" fill="none" stroke="${col}" stroke-width="11" stroke-linecap="round" stroke-dasharray="389.6" stroke-dashoffset="${off}" data-gauge="${c.score}"/></svg>
-          <div class="gauge-center"><div class="gauge-score" style="color:${col}">${c.score}</div><div class="gauge-lbl">/ 100</div></div>
-        </div>
-        <div class="gauge-info">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-            <div><div style="font-family:var(--fh);font-weight:700;font-size:1.15rem">${c.name}</div><div style="font-size:.78rem;color:var(--t3)">${c.email} · ${c.country}</div></div>
-            <span class="pill ${profileClass(c.profile)}">${profileName(c.profile)}</span>
-          </div>
-          <div class="profile-factors" style="margin-top:16px;padding-top:16px">
-            ${leadFactor(LANG==='pt'?'Risco/trade':LANG==='en'?'Risk/trade':'Riesgo/trade',c.risk,c.profile)}
-            ${leadFactor(LANG==='pt'?'Alavancagem':LANG==='en'?'Leverage':'Apalancamiento',c.lev,c.profile)}
-            ${leadFactor(LANG==='pt'?'Frequência':LANG==='en'?'Frequency':'Frecuencia',c.freq,c.profile)}
-            ${leadFactor(LANG==='pt'?'Horário':LANG==='en'?'Hours':'Horario',c.hours,'info')}
-            ${leadFactor('LTV','US$ '+c.ltv.toFixed(0),'info')}
-            ${leadFactor('Win rate',c.winrate+'%','info')}
-          </div>
-        </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+        <div style="display:flex;align-items:center;gap:12px"><div class="cc-avatar">${esc((c.name||'?').slice(0,2).toUpperCase())}</div>
+          <div><div style="font-family:var(--fh);font-weight:700;font-size:1.1rem">${c.name}</div><div style="font-size:.76rem;color:var(--t3)">${c.email}${c.country&&c.country!=='—'?' · '+c.country:''}</div></div></div>
+        <span class="pill ${profileClass(c.profile)}">${profileName(c.profile)}</span>
       </div>
+      ${filled?`<div class="profile-factors" style="margin-top:16px;padding-top:16px">
+        ${leadFactor(LANG==='pt'?'Perfil declarado':LANG==='en'?'Self profile':'Perfil declarado',ob.selfProfile||dash,c.profile)}
+        ${leadFactor(LANG==='pt'?'Experiência':LANG==='en'?'Experience':'Experiencia',ob.experience||dash,'info')}
+        ${leadFactor(LANG==='pt'?'Objetivo':LANG==='en'?'Goal':'Objetivo',ob.goal||dash,'info')}
+        ${leadFactor(LANG==='pt'?'Faixa etária':LANG==='en'?'Age':'Edad',ob.age||dash,'info')}
+        ${leadFactor(LANG==='pt'?'Situação':LANG==='en'?'Family':'Situación',ob.family||dash,'info')}
+        ${leadFactor(LANG==='pt'?'Origem':LANG==='en'?'Source':'Origen',ob.source||dash,'info')}
+        ${leadFactor('Marketing',(ob.marketing===1||ob.marketing==='1'||ob.marketing==='sim'||ob.marketing===true)?(LANG==='pt'?'Aceita':'Yes'):(LANG==='pt'?'Não':'No'),'info')}
+      </div>`:`<div class="empty" style="padding:20px 0"><div class="empty-t" style="font-size:.9rem">${LANG==='pt'?'Questionário ainda não preenchido':LANG==='en'?'Survey not filled yet':'Cuestionario no completado'}</div><div class="empty-d">${LANG==='pt'?'Aparece aqui quando o cliente responder no próximo login.':LANG==='en'?'Appears here after the client answers on next login.':'Aparece cuando el cliente responda.'}</div></div>`}
     </div>`;
   }).join('');
 }
@@ -4312,36 +4308,64 @@ function renderAdminFiles(){
 }
 
 /* ─────── ADMIN: PAYMENTS ─────── */
+let PAY_DATA=null, PAY_LOADING=false;
+async function loadAdminPayments(){
+  if(SESSION&&SESSION.isDemo){ PAY_DATA=demoPayments(); if(CURRENT_PAGE==='admin-payments')renderPage('admin-payments'); return; }
+  PAY_LOADING=true; if(CURRENT_PAGE==='admin-payments')renderPage('admin-payments');
+  try{
+    const r=await apiFetch('/api/admin/payments');
+    if(r.ok){ PAY_DATA=await r.json(); } else if(r.status===404){ PAY_DATA={__noapi:true}; } else { PAY_DATA={__err:true}; }
+  }catch(e){ if(String(e&&e.message)!=='session_expired') PAY_DATA={__err:true}; }
+  PAY_LOADING=false; if(CURRENT_PAGE==='admin-payments')renderPage('admin-payments');
+}
+function demoPayments(){
+  const subs=[
+    {email:'ana@demo.com',name:'Ana Souza',plan:'Wolf Pack',amount:197,status:'active',payment:'pagando',expires:null},
+    {email:'bruno@demo.com',name:'Bruno Lima',plan:'Alpha Pack',amount:297.9,status:'active',payment:'pagando',expires:null},
+    {email:'carla@demo.com',name:'Carla Dias',plan:'Lone Wolf',amount:0,status:'active',payment:'cortesia',expires:null},
+  ];
+  return {ok:true,total:1382.7,month:494.9,year:1382.7,count:6,mrr:494.9,payingCount:2,subscriberCount:3,subscribers:subs,
+    recent:[{name:'Bruno Lima',email:'bruno@demo.com',plan:'Alpha Pack',amount:297.9,type:'checkout.session.completed',created_at:'2026-07-20T10:00:00Z'},{name:'Ana Souza',email:'ana@demo.com',plan:'Wolf Pack',amount:197,type:'checkout.session.completed',created_at:'2026-07-05T10:00:00Z'}]};
+}
+function payTypeLabel(t){ if(String(t).includes('invoice'))return LANG==='pt'?'Renovação':LANG==='en'?'Renewal':'Renovación'; return LANG==='pt'?'Compra':LANG==='en'?'Purchase':'Compra'; }
 function renderAdminPayments(){
-  const demo=!!(SESSION&&SESSION.isDemo);
-  const pays = demo ? [
-    {client:'Davi Miranda',plan:'Alpha Pack',amount:297.90,date:'2026-06-15',status:'paid'},
-    {client:'Luiz Romualdo',plan:'Alpha Pack',amount:297.90,date:'2026-06-20',status:'paid'},
-    {client:'Carlos Andrade',plan:'Wolf Pack',amount:247.90,date:'2026-06-18',status:'paid'},
-    {client:'Marina Costa',plan:'Lone Wolf',amount:197.90,date:'2026-06-30',status:'due'},
-    {client:'Diego Ferreira',plan:'Lone Wolf',amount:197.90,date:'2026-05-29',status:'overdue'},
-  ] : [];
-  const total=pays.filter(p=>p.status==='paid').reduce((s,p)=>s+p.amount,0);
-  const pending=pays.filter(p=>p.status==='due').reduce((s,p)=>s+p.amount,0);
-  const overdue=pays.filter(p=>p.status==='overdue').reduce((s,p)=>s+p.amount,0);
-  return pageHead(
+  if(PAY_DATA===null && !PAY_LOADING){ setTimeout(loadAdminPayments,0); }
+  const head=pageHead(
     LANG==='pt'?'FINANCEIRO':LANG==='en'?'FINANCE':'FINANZAS',
     LANG==='pt'?'Pagamentos':LANG==='en'?'Payments':'Pagos',
-    LANG==='pt'?'Faturamento e situação das assinaturas (via Stripe).':LANG==='en'?'Billing and subscription status (via Stripe).':'Facturación y estado de suscripciones (Stripe).',
+    LANG==='pt'?'Quanto entrou de verdade pelo Stripe — total, mês, e o histórico. A receita mensal (MRR) vem das assinaturas ativas.':LANG==='en'?'Real Stripe revenue — total, month and history.':'Ingresos reales de Stripe.',
     refreshBtn()
-  )+`
+  );
+  if(PAY_LOADING&&!PAY_DATA) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':'Loading…'}</div></div></div>`;
+  if(PAY_DATA&&PAY_DATA.__noapi) return head+`<div class="banner warn rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'Publique o worker v33 para ligar o financeiro.':'Publish worker v33.'}</div></div>`;
+  if(PAY_DATA&&PAY_DATA.__err) return head+`<div class="banner risk rv"><div class="banner-tx">${LANG==='pt'?'Não foi possível carregar. Tente de novo.':'Could not load.'}</div></div>`;
+  const D=PAY_DATA||{total:0,month:0,year:0,mrr:0,payingCount:0,subscriberCount:0,subscribers:[],recent:[]};
+  const money=v=>'US$ '+(+v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const subs=(D.subscribers||[]).slice().sort((a,b)=>(b.amount||0)-(a.amount||0));
+  return head+`
   <div class="admin-stats">
-    ${astatMoney('green','dollar',LANG==='pt'?'Recebido este mês':LANG==='en'?'Received this month':'Recibido este mes',total,'','')}
-    ${astatMoney('amber','dollar',LANG==='pt'?'A receber':LANG==='en'?'Pending':'Por recibir',pending,'','')}
-    ${astatMoney('red','dollar',LANG==='pt'?'Em atraso':LANG==='en'?'Overdue':'Atrasado',overdue,'','')}
+    ${astatMoney('green','dollar',LANG==='pt'?'Recebido no total':LANG==='en'?'Received total':'Recibido total',D.total,'','')}
+    ${astatMoney('blue','dollar',LANG==='pt'?'Este mês':LANG==='en'?'This month':'Este mes',D.month,'','')}
+    ${astatMoney('green','dollar',LANG==='pt'?'Receita mensal (MRR)':LANG==='en'?'Monthly (MRR)':'Mensual (MRR)',D.mrr,'','')}
   </div>
-  ${!demo?`<div class="banner info rv">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'Os pagamentos aparecem aqui automaticamente conforme as assinaturas são processadas pelo Stripe.':LANG==='en'?'Payments appear here automatically as subscriptions are processed by Stripe.':'Los pagos aparecen aquí automáticamente a medida que Stripe procesa las suscripciones.'}</div>
-  </div>`:''}
-  <div class="card rv" style="padding-top:14px"><div class="tbl-wrap"><table class="tbl" style="min-width:640px"><thead><tr><th>${LANG==='pt'?'Cliente':LANG==='en'?'Client':'Cliente'}</th><th>${LANG==='pt'?'Plano':LANG==='en'?'Plan':'Plan'}</th><th>${LANG==='pt'?'Valor':LANG==='en'?'Amount':'Monto'}</th><th>${LANG==='pt'?'Data':LANG==='en'?'Date':'Fecha'}</th><th>Status</th></tr></thead><tbody>
-  ${pays.length? pays.map(p=>`<tr><td class="tbl-name">${p.client}</td><td>${p.plan}</td><td class="mono">US$ ${p.amount.toFixed(2)}</td><td class="mono" style="font-size:.78rem">${p.date}</td><td>${payPill(p.status)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Nenhum pagamento ainda':LANG==='en'?'No payments yet':'Aún no hay pagos'}</td></tr>`}
-  </tbody></table></div></div>`;
+  <div class="admin-stats" style="margin-top:10px">
+    ${astat('blue','users',LANG==='pt'?'Assinantes pagantes':LANG==='en'?'Paying subscribers':'Suscriptores',D.payingCount,'','')}
+    ${astatMoney('blue','dollar',LANG==='pt'?'Este ano':LANG==='en'?'This year':'Este año',D.year,'','')}
+    ${astat('blue','check',LANG==='pt'?'Pagamentos registrados':LANG==='en'?'Payments recorded':'Pagos',D.count||0,'','')}
+  </div>
+  ${(D.count===0)?`<div class="banner info rv" style="margin-top:12px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">${LANG==='pt'?'O histórico começa a contar a partir de agora (cada compra/renovação do Stripe entra aqui automaticamente). As assinaturas atuais já aparecem em MRR e na lista abaixo.':'History starts counting from now; current subscriptions already show in MRR.'}</div></div>`:''}
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>${LANG==='pt'?'Assinantes':LANG==='en'?'Subscribers':'Suscriptores'}</div></div>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:640px"><thead><tr><th>${LANG==='pt'?'Cliente':'Client'}</th><th>${LANG==='pt'?'Plano':'Plan'}</th><th>${LANG==='pt'?'Mensalidade':'Monthly'}</th><th>${LANG==='pt'?'Pagamento':'Payment'}</th><th>${LANG==='pt'?'Validade':'Valid until'}</th></tr></thead><tbody>
+    ${subs.length? subs.map(s=>`<tr><td><div class="tbl-name">${esc(s.name)}</div><div class="mono" style="font-size:.7rem;color:var(--t3)">${esc(s.email)}</div></td><td>${esc(s.plan)}</td><td class="mono">${s.amount>0?money(s.amount):'—'}</td><td>${resPayPill(s.payment)}</td><td class="mono" style="font-size:.78rem">${fmtExpires(s.expires)}</td></tr>`).join(''):`<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Nenhum assinante ainda':'No subscribers yet'}</td></tr>`}
+    </tbody></table></div>
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>${LANG==='pt'?'Histórico de pagamentos':LANG==='en'?'Payment history':'Historial'}</div></div>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:640px"><thead><tr><th>${LANG==='pt'?'Data':'Date'}</th><th>${LANG==='pt'?'Cliente':'Client'}</th><th>${LANG==='pt'?'Plano':'Plan'}</th><th>${LANG==='pt'?'Tipo':'Type'}</th><th>${LANG==='pt'?'Valor':'Amount'}</th></tr></thead><tbody>
+    ${(D.recent&&D.recent.length)? D.recent.map(p=>`<tr><td class="mono" style="font-size:.78rem">${String(p.created_at||'').slice(0,10)}</td><td>${esc(p.name||p.email)}</td><td>${esc(p.plan||'—')}</td><td style="font-size:.8rem;color:var(--t2)">${payTypeLabel(p.type)}</td><td class="mono">${money(p.amount)}</td></tr>`).join(''):`<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:22px 0">${LANG==='pt'?'Ainda sem pagamentos registrados':'No payments recorded yet'}</td></tr>`}
+    </tbody></table></div>
+  </div>`;
 }
 
 /* ─────── ADMIN: client detail modal ─────── */
