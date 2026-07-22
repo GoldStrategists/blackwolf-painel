@@ -4413,7 +4413,15 @@ function initReveal(){
       if(e.isIntersecting){ e.target.classList.add('in'); animateEls(e.target); revealObserver.unobserve(e.target); }
     });
   },{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
-  els.forEach(el=>revealObserver.observe(el));
+  const vh=window.innerHeight||document.documentElement.clientHeight||800;
+  els.forEach(el=>{
+    // Elemento já visível (qualquer parte na tela) → revela NA HORA. Sem isto, um
+    // card muito mais alto que a viewport (ex.: Histórico com centenas de trades)
+    // nunca alcança o threshold de 12% e fica preso em opacity:0 = tela branca.
+    const r=el.getBoundingClientRect();
+    if(r.top < vh && r.bottom > 0){ el.classList.add('in'); animateEls(el); }
+    else revealObserver.observe(el);
+  });
 }
 function animateEls(scope){
   scope.querySelectorAll('[data-count]:not([data-done]),[data-money]:not([data-done])').forEach(el=>{
@@ -4596,7 +4604,7 @@ function afterRender(page){
     else { const ms=tradeMonths(ALL_TRADES); if(ms.length){ const last=ms[ms.length-1].split('-'); CAL_YEAR=+last[0]; CAL_MONTH=+last[1]-1; } }
     const cal=document.getElementById('calHeatmap'); if(cal)cal.innerHTML=buildCalHeatmap();
   }
-  if(page==='history'){ const w=document.getElementById('histTableWrap'); if(w)w.innerHTML=buildHistTable(); }
+  if(page==='history'){ const w=document.getElementById('histTableWrap'); if(w){ try{ w.innerHTML=buildHistTable(); }catch(err){ console.error('histTable',err); w.innerHTML='<div class="empty"><div class="empty-t">'+(LANG==='pt'?'Erro ao montar o histórico':LANG==='en'?'Error building history':'Error al montar el historial')+'</div><div class="empty-d">'+(LANG==='pt'?'Recarregue a página.':'Reload the page.')+'</div></div>'; } const card=w.closest('.rv'); if(card) card.classList.add('in'); } }
 }
 let chartResizeTimer=null;
 window.addEventListener('resize',()=>{ clearTimeout(chartResizeTimer); chartResizeTimer=setTimeout(()=>{ if(CURRENT_PAGE==='dashboard'||CURRENT_PAGE==='results')drawEquityChart(); if(CURRENT_PAGE==='reports')drawReportChart(); if(CURRENT_PAGE==='admin-results'&&ADMIN_CLIENT_EMAIL)drawAdminResultChart(); },250); });
