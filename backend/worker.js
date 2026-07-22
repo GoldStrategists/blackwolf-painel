@@ -129,6 +129,7 @@ export default {
       if (path === '/api/admin/robot' && request.method === 'POST')        return await handleRobotUpload(request, env, json);
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
+      if (path === '/api/admin/payments' && request.method === 'GET')      return await handleAdminPayments(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -141,8 +142,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v32' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v32' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v33' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v33' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -576,6 +577,16 @@ async function handleStripeWebhook(request, env, json) {
   // v28: guarda o VALOR REAL pago (em dólares, já com cupom aplicado) para o MRR
   // real do admin — não dá pra derivar do plano porque o cupom muda o valor.
   const monthlyAmount = (obj.amount_total || obj.amount_paid || 0) / 100;
+
+  // v33: registra o pagamento num LEDGER (tabela payments) para a aba Financeiro
+  // mostrar quanto ENTROU de verdade (por período/histórico). Cria a tabela sozinho
+  // (zero setup) e dedup por event.id (não conta 2× num replay do Stripe).
+  try {
+    await ensurePaymentsTable(env);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO payments (email, amount, currency, plan, type, event_id, created_at) VALUES (?,?,?,?,?,?,?)"
+    ).bind(email, monthlyAmount, (obj.currency || 'usd').toUpperCase(), plan, event.type, event.id || null, new Date().toISOString()).run();
+  } catch (e) { logEvent({ evt: 'payment_log_fail', detail: String(e && e.message || e) }); }
 
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
   // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
@@ -1083,7 +1094,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v32', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v33', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1267,6 +1278,63 @@ async function handleAdminReissue(request, env, json) {
   if (items.length) mail = await sendResendBatch(env, items);
   logEvent({ evt: 'reissue', by: admin, count: results.filter(r => r.ok).length, emailed: mail.sent });
   return json({ ok: true, reissued: results.filter(r => r.ok).length, emailed: mail.sent, results });
+}
+
+/* ═══════════════ FINANCEIRO / PAGAMENTOS (v33) ═══════════════
+   Ledger real de pagamentos do Stripe. A tabela é criada sozinha (zero setup). */
+async function ensurePaymentsTable(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT, amount REAL, currency TEXT DEFAULT 'USD', plan TEXT, type TEXT, event_id TEXT, created_at TEXT)").run();
+  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_event ON payments (event_id)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_payments_created ON payments (created_at)").run();
+}
+async function handleAdminPayments(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  try { await ensurePaymentsTable(env); } catch (e) {}
+
+  const nowIso = new Date().toISOString();
+  const monthPrefix = nowIso.slice(0, 7);   // YYYY-MM
+  const yearPrefix = nowIso.slice(0, 4);     // YYYY
+
+  // totais do ledger (o que ENTROU de verdade). Ignora contas demo.
+  const notDemo = "email NOT IN ('" + DEMO_ACCOUNTS.join("','") + "')";
+  const tot = await env.DB.prepare(
+    `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n,
+            COALESCE(SUM(CASE WHEN substr(created_at,1,7)=? THEN amount ELSE 0 END),0) AS month,
+            COALESCE(SUM(CASE WHEN substr(created_at,1,4)=? THEN amount ELSE 0 END),0) AS year
+     FROM payments WHERE ${notDemo}`
+  ).bind(monthPrefix, yearPrefix).first();
+
+  // MRR + assinantes pagantes (do cadastro de usuários — igual ao /api/admin/results)
+  const urows = await env.DB.prepare(
+    `SELECT email, name, plan, license_status, monthly_amount, is_courtesy, license_expires_at, created_at
+     FROM users WHERE license_key IS NOT NULL ORDER BY created_at DESC`
+  ).all();
+  let mrr = 0, paying = 0;
+  const subscribers = (urows.results || [])
+    .filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()))
+    .map(r => {
+      const amount = (r.monthly_amount != null) ? +r.monthly_amount : 0;
+      const isActive = r.license_status === 'active';
+      let pay; if (!isActive) pay = 'pendente'; else if (r.is_courtesy || amount <= 0) pay = 'cortesia'; else pay = 'pagando';
+      if (pay === 'pagando') { paying++; mrr += amount; }
+      return { email: String(r.email), name: r.name || String(r.email), plan: r.plan || '—', amount, status: r.license_status || null, payment: pay, expires: r.license_expires_at || null };
+    });
+
+  // histórico recente
+  const recent = await env.DB.prepare(
+    `SELECT p.email, p.amount, p.currency, p.plan, p.type, p.created_at, (SELECT u.name FROM users u WHERE u.email=p.email) AS name
+     FROM payments p WHERE ${notDemo} ORDER BY p.created_at DESC LIMIT 60`
+  ).all();
+
+  return json({
+    ok: true, currency: 'USD',
+    total: +(+tot.total).toFixed(2), month: +(+tot.month).toFixed(2), year: +(+tot.year).toFixed(2), count: +tot.n,
+    mrr: +mrr.toFixed(2), payingCount: paying, subscriberCount: subscribers.length,
+    subscribers, recent: (recent.results || [])
+  });
 }
 
 /* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════
