@@ -122,6 +122,13 @@ export default {
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
       if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
       if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
+      if (path === '/api/admin/broadcast' && request.method === 'POST')   return await handleAdminBroadcast(request, env, json);
+      if (path === '/api/admin/reissue-license' && request.method === 'POST') return await handleAdminReissue(request, env, json);
+      if (path === '/api/maintenance' && request.method === 'GET')         return await handleMaintenanceGet(request, env, json);
+      if (path === '/api/admin/maintenance' && request.method === 'POST')  return await handleMaintenanceSet(request, env, json);
+      if (path === '/api/admin/robot' && request.method === 'POST')        return await handleRobotUpload(request, env, json);
+      if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
+      if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
       if (path === '/api/my-data' && request.method === 'GET')           return await handleMyData(request, env, json);
@@ -134,8 +141,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v30' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v30' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v32' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v32' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1076,10 +1083,285 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v30', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v32', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
+}
+
+/* ═══════════════ COMUNICADOS + REENVIO DE LICENÇA (v31) ═══════════════
+   E-mail em massa PERSONALIZADO pros assinantes (manutenção, nova versão do robô,
+   promo) e reemissão de licença. Reusa a Resend (já usada nas boas-vindas/reset).
+   Sem IA: é template + merge determinístico dos dados do banco. */
+
+// formata a validade da licença por idioma ('sem vencimento' se vitalícia)
+function fmtValidade(x, lang) {
+  const none = lang === 'en' ? 'no expiration' : lang === 'es' ? 'sin vencimiento' : 'sem vencimento';
+  const ep = toEpoch(x); if (!ep) return none;
+  try { return new Date(ep * 1000).toISOString().slice(0, 10); } catch (e) { return none; }
+}
+// nº de contas do plano ('ilimitado' quando -1)
+function fmtContas(limit, lang) {
+  if (limit === -1) return lang === 'en' ? 'unlimited' : lang === 'es' ? 'ilimitadas' : 'ilimitadas';
+  const n = (limit != null ? limit : 1);
+  return String(n) + ' ' + (n === 1 ? (lang === 'en' ? 'account' : lang === 'es' ? 'cuenta' : 'conta') : (lang === 'en' ? 'accounts' : lang === 'es' ? 'cuentas' : 'contas'));
+}
+// escapa HTML e vira <br> nas quebras de linha (o texto do admin vira corpo do e-mail)
+function nl2brEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])).replace(/\n/g, '<br>');
+}
+// substitui {{nome}}, {{plano}}, {{contas}}, {{validade}}, {{licenca}} por valores do aluno
+function mergeTokens(str, tk) {
+  return String(str == null ? '' : str).replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => (tk[k] != null ? String(tk[k]) : m));
+}
+function tokensFor(u) {
+  const lang = ['pt', 'en', 'es'].includes(u.lang) ? u.lang : 'pt';
+  const nome = (u.display_name || u.name || String(u.email || '').split('@')[0] || '').trim();
+  return { nome, plano: u.plan || '—', contas: fmtContas(u.account_limit, lang), validade: fmtValidade(u.license_expires_at, lang), licenca: u.license_key || '—', lang };
+}
+// e-mail de COMUNICADO (título + corpo do admin + botão do painel)
+function broadcastEmailHtml(title, bodyHtml, panelUrl, lang, isPromo) {
+  const cta = ctaButton(panelUrl, lang === 'en' ? 'Open my panel &rarr;' : lang === 'es' ? 'Abrir mi panel &rarr;' : 'Acessar meu painel &rarr;');
+  const unsub = isPromo ? `<p style="margin:14px 0 0;font-size:11px;color:#6b7280;line-height:1.55;">${lang === 'en' ? 'You receive offers because you opted in. Reply STOP to opt out.' : lang === 'es' ? 'Recibes ofertas porque lo autorizaste. Responde BAJA para no recibir más.' : 'Você recebe ofertas porque autorizou. Responda SAIR para não receber mais.'}</p>` : '';
+  const inner = `
+    <h1 style="margin:0 0 14px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">${title}</h1>
+    <div style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">${bodyHtml}</div>
+    ${cta}${unsub}`;
+  return emailShell(title, inner);
+}
+// e-mail de LICENÇA (nova/reenvio) — mostra plano, nº de contas e validade REAIS
+function licenseEmailHtml(u, panelUrl) {
+  const t = tokensFor(u), lang = t.lang;
+  const L = lang === 'en' ? { h: 'Your Black Wolf license', hi: 'Hi', intro: 'here is your access license. Paste this key into the robot (license field, inside MetaTrader) to activate it.', plan: 'Plan', acc: 'Accounts', val: 'Valid until', keep: 'This key is your credential — keep it safe.', cta: 'Open my panel &rarr;' }
+    : lang === 'es' ? { h: 'Tu licencia Black Wolf', hi: 'Hola', intro: 'esta es tu licencia de acceso. Pega esta clave en el robot (campo de licencia, dentro de MetaTrader) para activarlo.', plan: 'Plan', acc: 'Cuentas', val: 'Válida hasta', keep: 'Esta clave es tu credencial — guárdala con seguridad.', cta: 'Abrir mi panel &rarr;' }
+    : { h: 'Sua licença Black Wolf', hi: 'Olá', intro: 'esta é a sua licença de acesso. Cole esta chave no robô (campo de licença, dentro do MetaTrader) para ativá-lo.', plan: 'Plano', acc: 'Contas', val: 'Válida até', keep: 'Esta chave é a sua credencial — guarde com segurança.', cta: 'Acessar meu painel &rarr;' };
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">${L.h}</h1>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:#aeb4c0;">${L.hi} <b style="color:#E8EAED;">${nl2brEsc(t.nome)}</b>, ${L.intro}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;background:#0a0c12;border:1px solid #1c2230;border-radius:14px;"><tr><td width="4" style="background:#2D6CFF;font-size:0;line-height:0;">&nbsp;</td><td style="padding:20px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:10px;">${L.h}</div>
+      <div style="font-family:'Courier New',monospace;font-size:17px;color:#7fa6ff;font-weight:bold;letter-spacing:.06em;word-break:break-all;">${nl2brEsc(t.licenca)}</div>
+      <div style="margin-top:14px;font-size:13px;color:#8b92a0;line-height:1.7;">${L.plan}: <b style="color:#E8EAED;">${nl2brEsc(t.plano)}</b><br>${L.acc}: <b style="color:#E8EAED;">${nl2brEsc(t.contas)}</b><br>${L.val}: <b style="color:#E8EAED;">${nl2brEsc(t.validade)}</b></div>
+      <div style="font-size:12px;color:#6b7280;margin-top:11px;line-height:1.55;">${L.keep}</div>
+    </td></tr></table>
+    ${ctaButton(panelUrl, L.cta)}`;
+  return emailShell(L.h, inner);
+}
+
+// seleciona os assinantes por público. b: { scope, plan, days, promoOnly }
+async function selectSubscribers(env, b) {
+  let where = "u.license_key IS NOT NULL";
+  const binds = [];
+  const scope = (b && b.scope) || 'active';
+  if (scope === 'active') where += " AND u.license_status = 'active'";
+  else if (scope === 'plan' && b.plan) { where += " AND u.plan = ?"; binds.push(String(b.plan)); }
+  else if (scope === 'expiring') {
+    const days = Math.max(1, Math.min(365, parseInt(b.days, 10) || 7));
+    const lim = new Date(Date.now() + days * 86400000).toISOString();
+    where += " AND u.license_expires_at IS NOT NULL AND u.license_expires_at <= ? AND u.license_status = 'active'";
+    binds.push(lim);
+  }
+  const rows = await env.DB.prepare(
+    `SELECT u.email, u.name, u.display_name, u.plan, u.account_limit, u.license_expires_at, u.license_key, u.lang,
+            (SELECT o.marketing_opt_in FROM onboarding o WHERE o.email = u.email) AS mkt
+     FROM users u WHERE ${where} ORDER BY u.created_at DESC`
+  ).bind(...binds).all();
+  let list = (rows.results || []).filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()));
+  if (b && b.promoOnly) list = list.filter(r => r.mkt === 1);
+  return list;
+}
+// envia em LOTE pela Resend (100 por chamada). items: [{to,subject,html}]
+async function sendResendBatch(env, items) {
+  let sent = 0, failed = 0;
+  for (let i = 0; i < items.length; i += 100) {
+    const chunk = items.slice(i, i + 100).map(e => ({ from: env.EMAIL_FROM, to: [e.to], subject: e.subject, html: e.html }));
+    try {
+      const r = await fetch('https://api.resend.com/emails/batch', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(chunk)
+      });
+      if (r.ok) sent += chunk.length; else failed += chunk.length;
+    } catch (e) { failed += chunk.length; }
+  }
+  return { sent, failed };
+}
+
+/* POST /api/admin/broadcast
+   { scope, plan?, days?, subject, title?, message, type:'service'|'promo', test?:bool } */
+async function handleAdminBroadcast(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role, name, display_name, plan, account_limit, license_expires_at, license_key, lang FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return json({ error: 'email_not_configured' }, 400);
+  const b = await request.json();
+  const subject = capStr(b.subject, 200), message = capStr(b.message, 8000);
+  if (!subject || !message) return json({ error: 'missing_fields' }, 400);
+  const title = capStr(b.title, 200) || subject;
+  const isPromo = b.type === 'promo';
+  const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+
+  // TESTE: manda só pro próprio admin (com os dados dele), pra conferir antes de disparar
+  let recips;
+  if (b.test) recips = [{ email, name: me.name, display_name: me.display_name, plan: me.plan, account_limit: me.account_limit, license_expires_at: me.license_expires_at, license_key: me.license_key, lang: me.lang }];
+  else { recips = await selectSubscribers(env, { scope: b.scope, plan: b.plan, days: b.days, promoOnly: isPromo }); }
+
+  const CAP = 500; // teto por disparo (paginação futura via scope se crescer)
+  const capped = recips.slice(0, CAP);
+  const items = capped.map(u => {
+    const tk = tokensFor(u);
+    const subj = mergeTokens(subject, tk);
+    const bodyHtml = nl2brEsc(mergeTokens(message, tk));
+    const html = broadcastEmailHtml(nl2brEsc(mergeTokens(title, tk)), bodyHtml, panelUrl, tk.lang, isPromo);
+    return { to: u.email, subject: subj, html };
+  });
+  const res = await sendResendBatch(env, items);
+  logEvent({ evt: 'broadcast', by: email, scope: b.scope || 'active', promo: isPromo, total: recips.length, sent: res.sent, failed: res.failed, test: !!b.test });
+  return json({ ok: true, total: recips.length, attempted: capped.length, sent: res.sent, failed: res.failed, truncated: recips.length > CAP, test: !!b.test });
+}
+
+/* POST /api/admin/reissue-license
+   { emails:[...] }  ou  { scope, plan?, days? }  → gera licença nova + e-mail. */
+async function handleAdminReissue(request, env, json) {
+  const admin = await getSessionEmail(request, env);
+  if (!admin) return json({ error: 'unauthorized' }, 401);
+  const meRow = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(admin).first();
+  if (!meRow || meRow.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const b = await request.json();
+  const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+
+  let targets;
+  if (Array.isArray(b.emails) && b.emails.length) {
+    targets = b.emails.map(e => String(e).trim().toLowerCase()).filter(Boolean).slice(0, 500);
+  } else {
+    const subs = await selectSubscribers(env, { scope: b.scope, plan: b.plan, days: b.days });
+    targets = subs.map(s => String(s.email).toLowerCase()).slice(0, 500);
+  }
+  if (!targets.length) return json({ error: 'no_targets' }, 400);
+
+  const items = [], results = [];
+  for (const em of targets) {
+    if (DEMO_ACCOUNTS.includes(em)) { results.push({ email: em, ok: false, reason: 'demo' }); continue; }
+    const u = await env.DB.prepare('SELECT email, name, display_name, plan, account_limit, license_expires_at, license_key, lang FROM users WHERE email = ?').bind(em).first();
+    if (!u) { results.push({ email: em, ok: false, reason: 'not_found' }); continue; }
+    const oldKey = u.license_key;
+    const newKey = generateLicenseKey();
+    // troca a chave e SOLTA os vínculos/status da chave antiga (o robô novo reamarra;
+    // o robô com a chave antiga passa a receber license_not_found e para).
+    const stmts = [env.DB.prepare("UPDATE users SET license_key = ? WHERE email = ?").bind(newKey, em)];
+    if (oldKey) {
+      stmts.push(env.DB.prepare('DELETE FROM license_accounts WHERE license_key = ?').bind(oldKey));
+      stmts.push(env.DB.prepare('DELETE FROM ea_status_acc WHERE license_key = ?').bind(oldKey));
+      stmts.push(env.DB.prepare('DELETE FROM ea_status WHERE license_key = ?').bind(oldKey));
+    }
+    try { await env.DB.batch(stmts); } catch (e) { results.push({ email: em, ok: false, reason: 'db' }); continue; }
+    u.license_key = newKey;
+    if (b.notify !== false && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      const t = tokensFor(u);
+      const subj = t.lang === 'en' ? 'Black Wolf — your new license' : t.lang === 'es' ? 'Black Wolf — tu nueva licencia' : 'Black Wolf — sua nova licença';
+      items.push({ to: em, subject: subj, html: licenseEmailHtml(u, panelUrl) });
+    }
+    results.push({ email: em, ok: true });
+  }
+  let mail = { sent: 0, failed: 0 };
+  if (items.length) mail = await sendResendBatch(env, items);
+  logEvent({ evt: 'reissue', by: admin, count: results.filter(r => r.ok).length, emailed: mail.sent });
+  return json({ ok: true, reissued: results.filter(r => r.ok).length, emailed: mail.sent, results });
+}
+
+/* ═══════════════ MANUTENÇÃO + ROBÔ (v32, tudo em KV — zero setup) ═══════════════
+   Estado de manutenção e o próprio arquivo do robô ficam no KV (env.SESSIONS),
+   que já está ligado. Nada de tabela nova nem R2. */
+
+// lê o estado de manutenção e resolve se está ATIVA agora (manual OU dentro da janela agendada)
+async function readMaintenance(env) {
+  let m = null;
+  try { const s = await env.SESSIONS.get('maintenance'); m = s ? JSON.parse(s) : null; } catch (e) { m = null; }
+  const now = Date.now();
+  let active = false, message = '', upcoming = null;
+  if (m) {
+    if (m.on) { active = true; message = m.message || ''; }
+    if (m.startAt && m.endAt) {
+      if (now >= m.startAt && now < m.endAt) { active = true; message = m.message || message; }
+      else if (now < m.startAt) { upcoming = { startAt: m.startAt, endAt: m.endAt, message: m.message || '' }; }
+    }
+  }
+  return { active, message, upcoming, startAt: (m && m.startAt) || null, endAt: (m && m.endAt) || null, on: !!(m && m.on) };
+}
+// GET /api/maintenance — status público (o painel usa pro banner)
+async function handleMaintenanceGet(request, env, json) {
+  const st = await readMaintenance(env);
+  return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt });
+}
+// POST /api/admin/maintenance  { action:'on'|'off'|'schedule'|'clear', message?, startAt?, endAt? }
+async function handleMaintenanceSet(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const b = await request.json();
+  const action = b.action;
+  let cur = {};
+  try { const s = await env.SESSIONS.get('maintenance'); cur = s ? JSON.parse(s) : {}; } catch (e) { cur = {}; }
+  if (action === 'on') { cur.on = true; cur.message = capStr(b.message, 500) || ''; }
+  else if (action === 'off') { cur.on = false; }
+  else if (action === 'clear') { cur = {}; }
+  else if (action === 'schedule') {
+    const s = parseInt(b.startAt, 10), e = parseInt(b.endAt, 10);
+    if (!s || !e || e <= s) return json({ error: 'invalid_window' }, 400);
+    cur.startAt = s; cur.endAt = e; cur.message = capStr(b.message, 500) || '';
+  } else return json({ error: 'invalid_action' }, 400);
+  await env.SESSIONS.put('maintenance', JSON.stringify(cur));
+  logEvent({ evt: 'maintenance', by: email, action });
+  const st = await readMaintenance(env);
+  return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt, on: st.on });
+}
+
+// bytes <-> base64 (o robô é binário; guardamos base64 no KV)
+function b64ToBytes(b64) { const bin = atob(b64); const n = bin.length; const out = new Uint8Array(n); for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
+// POST /api/admin/robot  { base64, version, size, filename?, mandatory? }
+async function handleRobotUpload(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const b = await request.json();
+  const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
+  if (!b64) return json({ error: 'no_file' }, 400);
+  if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
+  const size = Math.round(b64.length * 3 / 4);
+  const meta = { version: capStr(b.version, 40) || '1.0', size, filename: capStr(b.filename, 80) || 'BLACK_WOLF_CLIENTE.ex5', mandatory: !!b.mandatory, updatedAt: new Date().toISOString(), by: email };
+  await env.SESSIONS.put('robot_ex5', b64);
+  await env.SESSIONS.put('robot_meta', JSON.stringify(meta));
+  logEvent({ evt: 'robot_upload', by: email, version: meta.version, size });
+  return json({ ok: true, meta });
+}
+// GET /api/robot/meta — versão/tamanho/data (qualquer usuário logado)
+async function handleRobotMeta(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  let meta = null;
+  try { const s = await env.SESSIONS.get('robot_meta'); meta = s ? JSON.parse(s) : null; } catch (e) { meta = null; }
+  return json({ ok: true, hasFile: !!meta, meta });
+}
+// GET /api/robot/download — baixa o .ex5 guardado (exige licença ativa; admin sempre)
+async function handleRobotDownload(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const u = await env.DB.prepare('SELECT role, license_status, license_key, license_expires_at FROM users WHERE email = ?').bind(email).first();
+  if (!u) return json({ error: 'unauthorized' }, 401);
+  const isAdmin = u.role === 'admin';
+  if (!isAdmin && !licenseState(u).active) return json({ error: 'license_inactive' }, 403);
+  const b64 = await env.SESSIONS.get('robot_ex5');
+  if (!b64) return json({ error: 'no_robot', hint: 'Nenhum robô enviado ainda.' }, 404);
+  let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get('robot_meta') || '{}'); } catch (e) {}
+  const bytes = b64ToBytes(b64);
+  return new Response(bytes, { status: 200, headers: {
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': 'attachment; filename="' + (meta.filename || 'BLACK_WOLF_CLIENTE.ex5') + '"',
+    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+    'Cache-Control': 'no-store'
+  } });
 }
 
 /* ───────────────── CONFIG DO ROBÔ (gestão de risco) ─────────────────
@@ -1316,6 +1598,11 @@ async function handleEaConfig(request, env, json, url) {
   // v23: verifica status E EXPIRAÇÃO (licença vencida parava? nunca — agora sim)
   const ls = licenseState(row);
   if (!ls.active) { await recordEaError(env, license, row.email, getEaAccount(request, url, null), 'license_' + ls.status); return json({ error: 'license_' + ls.status, active: false, status: ls.status }, 403); }
+  // v32: MODO MANUTENÇÃO (global/agendado) — pausa TODOS os robôs sem mexer em licença.
+  // O robô só lê active/plan: devolvemos active:false e ele para de abrir ordens; volta
+  // sozinho quando a manutenção acaba (o robô relê a config a cada ciclo).
+  const maint = await readMaintenance(env);
+  if (maint.active) { return json({ ok: true, active: false, status: 'maintenance', maintenance: true, message: maint.message || '' }); }
   // trava: 1 licença = 1 conta
   const account = getEaAccount(request, url, null);
   const acc = await bindOrCheckAccount(env, row, account);
