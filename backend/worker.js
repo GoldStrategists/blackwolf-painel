@@ -1369,10 +1369,17 @@ function looksLikePlan(s) { const p = String(s || '').toLowerCase(); return p.in
 function planFromMeta(m) {
   if (!m) return null;
   // 1) número de contas explícito (o mais exato, sem interpretar nome)
-  const n = parseInt(m.accounts != null ? m.accounts : (m.contas != null ? m.contas : m.account_limit), 10);
-  if (Number.isFinite(n) && n >= 1 && n <= 100) {
-    const plan = looksLikePlan(m.plan) ? m.plan : ('Plano ' + n + (n > 1 ? ' contas' : ' conta'));
-    return { plan, limit: n, explicit: true };
+  const raw = String(m.accounts != null ? m.accounts : (m.contas != null ? m.contas : (m.account_limit != null ? m.account_limit : ''))).trim().toLowerCase();
+  if (raw) {
+    // ILIMITADO: aceita -1, 0, "ilimitado", "unlimited", "∞" → limite -1 (sem teto)
+    if (raw === '-1' || raw === '0' || raw === '∞' || raw.includes('ilimit') || raw.includes('unlimit')) {
+      return { plan: (looksLikePlan(m.plan) ? m.plan : 'Ilimitado'), limit: -1, explicit: true };
+    }
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 100) {
+      const plan = looksLikePlan(m.plan) ? m.plan : ('Plano ' + n + (n > 1 ? ' contas' : ' conta'));
+      return { plan, limit: n, explicit: true };
+    }
   }
   // 2) nome do plano
   if (looksLikePlan(m.plan)) return { plan: m.plan, limit: planAccountLimit(m.plan), explicit: true };
