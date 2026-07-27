@@ -143,8 +143,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v36' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v36' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v37' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v37' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -559,17 +559,14 @@ async function handleStripeWebhook(request, env, json) {
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
-  // Identifica o plano: metadata explícita tem prioridade; valor é só fallback.
-  // (v22: evita classificar errado por moeda/centavos/plano anual)
-  const planExplicit = !!(obj.metadata && obj.metadata.plan);
-  let plan = (obj.metadata && obj.metadata.plan) || null;
-  if (!plan) {
-    const amount = obj.amount_total || obj.amount_paid || 0;
-    if (amount >= 50000) plan = 'Alpha Pack External';
-    else if (amount >= 29790) plan = 'Alpha Pack';
-    else if (amount >= 24790) plan = 'Wolf Pack';
-    else plan = 'Lone Wolf';
-  }
+  // v37: Identifica o plano SEM usar o valor pago. Promoção/cupom/sorteio NÃO podem
+  // mudar o plano. Ordem: metadata.plan (setada no Payment Link) → metadata/nickname
+  // do preço e do produto (via API Stripe, à prova de desconto) → plano PADRÃO da casa.
+  // O valor pago é IGNORADO de propósito (era a origem do bug do limite de contas).
+  const isCheckout = event.type === 'checkout.session.completed';
+  const resolvedPlan = await resolvePlan(env, obj, isCheckout);
+  let plan = resolvedPlan.plan;
+  const planExplicit = resolvedPlan.explicit;
 
   if (!email) return json({ error: 'no_email' }, 400);
 
@@ -593,7 +590,7 @@ async function handleStripeWebhook(request, env, json) {
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
   // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
   // o rebaixamento silencioso (Alpha 3 contas → Lone 1 conta) por valor de invoice.
-  const isCheckout = event.type === 'checkout.session.completed';
+  // (isCheckout já foi definido acima, na identificação do plano.)
 
   // Verifica se já tem conta
   const existing = await env.DB.prepare('SELECT email, license_key FROM users WHERE email = ?').bind(email).first();
@@ -1098,7 +1095,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v36', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v37', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1360,6 +1357,35 @@ async function stripeGet(env, path) {
     let body = null; try { body = await r.json(); } catch (e) {}
     return { ok: r.ok, status: r.status, body };
   } catch (e) { return { ok: false, status: 0, body: null }; }
+}
+
+// v37: Resolve o plano de um pagamento SEM usar o valor pago. O valor (com cupom/
+// promoção) NUNCA decide o plano — isso era a origem do bug do limite de contas.
+// Padrão da casa quando nada indica o plano: Wolf Pack (2 contas). Setar metadata.plan
+// no Stripe (Payment Link ou Produto) deixa 100% correto p/ qualquer plano (1/2/3).
+const DEFAULT_PLAN = 'Wolf Pack';
+function looksLikePlan(s) { const p = String(s || '').toLowerCase(); return p.includes('alpha') || p.includes('pack') || p.includes('lone'); }
+async function resolvePlan(env, obj, isCheckout) {
+  // 1) metadata.plan da sessão/objeto (ex.: setada no Payment Link)
+  if (obj && obj.metadata && looksLikePlan(obj.metadata.plan)) return { plan: obj.metadata.plan, explicit: true };
+  // 2) metadata/nickname do PREÇO e do PRODUTO (à prova de desconto — só em checkout)
+  if (isCheckout && obj && obj.id && env.STRIPE_SECRET_KEY) {
+    try {
+      const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
+      const item = li && li.ok && li.body && li.body.data && li.body.data[0];
+      const price = item && item.price;
+      const prod = price && price.product;
+      const sigs = [
+        price && price.metadata && price.metadata.plan,
+        prod && prod.metadata && prod.metadata.plan,
+        price && price.nickname,
+        prod && prod.name,
+      ];
+      for (const sig of sigs) { if (looksLikePlan(sig)) return { plan: sig, explicit: true }; }
+    } catch (e) { logEvent({ evt: 'plan_resolve_fail', detail: String(e && e.message || e) }); }
+  }
+  // 3) padrão da casa — NUNCA adivinha pelo valor pago
+  return { plan: DEFAULT_PLAN, explicit: false };
 }
 async function handleAdminStripeSync(request, env, json) {
   const email = await getSessionEmail(request, env);
