@@ -559,13 +559,14 @@ async function handleStripeWebhook(request, env, json) {
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
-  // v37: Identifica o plano SEM usar o valor pago. Promoção/cupom/sorteio NÃO podem
-  // mudar o plano. Ordem: metadata.plan (setada no Payment Link) → metadata/nickname
-  // do preço e do produto (via API Stripe, à prova de desconto) → plano PADRÃO da casa.
-  // O valor pago é IGNORADO de propósito (era a origem do bug do limite de contas).
+  // v37: Identifica o plano EXATAMENTE pelo que o cliente comprou no Stripe (produto/
+  // preço), NUNCA pelo valor pago — promoção/cupom/sorteio não mudam o plano nem o
+  // número de contas. Se o Stripe não informar o plano, marca p/ revisão (mínimo 1
+  // conta) e alerta — sem chutar. (Setar metadata no produto do Stripe = 100% exato.)
   const isCheckout = event.type === 'checkout.session.completed';
   const resolvedPlan = await resolvePlan(env, obj, isCheckout);
   let plan = resolvedPlan.plan;
+  const planLimit = resolvedPlan.limit;
   const planExplicit = resolvedPlan.explicit;
 
   if (!email) return json({ error: 'no_email' }, 400);
@@ -601,12 +602,11 @@ async function handleStripeWebhook(request, env, json) {
     if (isCheckout && planExplicit) {
       // compra/troca EXPLÍCITA (metadata.plan): pode ajustar plano e limite.
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, monthly_amount = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, plan, planAccountLimit(plan), monthlyAmount, stripeCustomer, email).run();
+        .bind(lic, plan, planLimit, monthlyAmount, stripeCustomer, email).run();
     } else if (isCheckout) {
-      // checkout SEM metadata.plan: o plano foi inferido do VALOR — e um cupom pode
-      // ter baixado o valor abaixo da faixa. NÃO rebaixa plano/limite de um cliente
-      // que já pagou por mais (Alpha 3 → Lone 1). Só reafirma licença + MRR.
-      // (Corrigir plano nesse caso: setar metadata.plan no link de checkout do Stripe.)
+      // checkout mas plano NÃO identificado no Stripe (produto sem metadata): NÃO
+      // rebaixa plano/limite de um cliente que já tem plano definido. Só reafirma
+      // licença + MRR. (Corrigir: setar metadata.plan/accounts no produto do Stripe.)
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
         .bind(lic, monthlyAmount, stripeCustomer, email).run();
     } else {
@@ -628,7 +628,7 @@ async function handleStripeWebhook(request, env, json) {
   await env.DB.prepare(
     `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, monthly_amount, stripe_customer, created_at)
      VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?, ?)`
-  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), monthlyAmount, stripeCustomer, now).run();
+  ).bind(email, hash, salt, name, plan, license, planLimit, monthlyAmount, stripeCustomer, now).run();
 
   // Envia email de boas-vindas com as credenciais + licença
   if (env.RESEND_API_KEY && env.EMAIL_FROM) {
@@ -1359,33 +1359,45 @@ async function stripeGet(env, path) {
   } catch (e) { return { ok: false, status: 0, body: null }; }
 }
 
-// v37: Resolve o plano de um pagamento SEM usar o valor pago. O valor (com cupom/
-// promoção) NUNCA decide o plano — isso era a origem do bug do limite de contas.
-// Padrão da casa quando nada indica o plano: Wolf Pack (2 contas). Setar metadata.plan
-// no Stripe (Payment Link ou Produto) deixa 100% correto p/ qualquer plano (1/2/3).
-const DEFAULT_PLAN = 'Wolf Pack';
+// v37: Resolve o plano EXATO de um pagamento pelo que o cliente comprou no Stripe —
+// NUNCA pelo valor pago (cupom/promoção/sorteio não mudam o plano nem o nº de contas).
+// Prioridade máxima: um NÚMERO explícito de contas na metadata do produto/preço
+// (metadata.accounts). Depois, o nome do plano (metadata.plan / nickname / nome do
+// produto) mapeado por planAccountLimit. Se NADA disser o plano → marca p/ revisão
+// (mínimo seguro de 1 conta) e alerta; não chuta. Retorna { plan, limit, explicit }.
 function looksLikePlan(s) { const p = String(s || '').toLowerCase(); return p.includes('alpha') || p.includes('pack') || p.includes('lone'); }
+function planFromMeta(m) {
+  if (!m) return null;
+  // 1) número de contas explícito (o mais exato, sem interpretar nome)
+  const n = parseInt(m.accounts != null ? m.accounts : (m.contas != null ? m.contas : m.account_limit), 10);
+  if (Number.isFinite(n) && n >= 1 && n <= 100) {
+    const plan = looksLikePlan(m.plan) ? m.plan : ('Plano ' + n + (n > 1 ? ' contas' : ' conta'));
+    return { plan, limit: n, explicit: true };
+  }
+  // 2) nome do plano
+  if (looksLikePlan(m.plan)) return { plan: m.plan, limit: planAccountLimit(m.plan), explicit: true };
+  return null;
+}
 async function resolvePlan(env, obj, isCheckout) {
-  // 1) metadata.plan da sessão/objeto (ex.: setada no Payment Link)
-  if (obj && obj.metadata && looksLikePlan(obj.metadata.plan)) return { plan: obj.metadata.plan, explicit: true };
-  // 2) metadata/nickname do PREÇO e do PRODUTO (à prova de desconto — só em checkout)
+  // 1) metadata na própria sessão/objeto (ex.: setada no Payment Link)
+  const s = planFromMeta(obj && obj.metadata); if (s) return s;
+  // 2) metadata do PREÇO e do PRODUTO comprado + nickname/nome (à prova de desconto)
   if (isCheckout && obj && obj.id && env.STRIPE_SECRET_KEY) {
     try {
       const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
       const item = li && li.ok && li.body && li.body.data && li.body.data[0];
       const price = item && item.price;
       const prod = price && price.product;
-      const sigs = [
-        price && price.metadata && price.metadata.plan,
-        prod && prod.metadata && prod.metadata.plan,
-        price && price.nickname,
-        prod && prod.name,
-      ];
-      for (const sig of sigs) { if (looksLikePlan(sig)) return { plan: sig, explicit: true }; }
+      const p1 = planFromMeta(price && price.metadata); if (p1) return p1;
+      const p2 = planFromMeta(prod && prod.metadata); if (p2) return p2;
+      for (const sig of [price && price.nickname, prod && prod.name]) {
+        if (looksLikePlan(sig)) return { plan: sig, limit: planAccountLimit(sig), explicit: true };
+      }
     } catch (e) { logEvent({ evt: 'plan_resolve_fail', detail: String(e && e.message || e) }); }
   }
-  // 3) padrão da casa — NUNCA adivinha pelo valor pago
-  return { plan: DEFAULT_PLAN, explicit: false };
+  // 3) NÃO identificado no Stripe → NÃO adivinha. Mínimo seguro (1 conta) + alerta.
+  logEvent({ evt: 'plan_unresolved', email: (obj && (obj.customer_details && obj.customer_details.email || obj.customer_email)) || null });
+  return { plan: 'Verificar plano', limit: 1, explicit: false, unresolved: true };
 }
 async function handleAdminStripeSync(request, env, json) {
   const email = await getSessionEmail(request, env);
