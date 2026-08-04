@@ -126,6 +126,7 @@ export default {
       if (path === '/api/admin/reissue-license' && request.method === 'POST') return await handleAdminReissue(request, env, json);
       if (path === '/api/maintenance' && request.method === 'GET')         return await handleMaintenanceGet(request, env, json);
       if (path === '/api/admin/maintenance' && request.method === 'POST')  return await handleMaintenanceSet(request, env, json);
+      if (path === '/api/admin/pause')                                     return await handleAdminPause(request, env, json);
       if (path === '/api/admin/robot' && request.method === 'POST')        return await handleRobotUpload(request, env, json);
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
@@ -143,8 +144,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v36' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v36' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v38' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v38' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -559,17 +560,15 @@ async function handleStripeWebhook(request, env, json) {
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
-  // Identifica o plano: metadata explícita tem prioridade; valor é só fallback.
-  // (v22: evita classificar errado por moeda/centavos/plano anual)
-  const planExplicit = !!(obj.metadata && obj.metadata.plan);
-  let plan = (obj.metadata && obj.metadata.plan) || null;
-  if (!plan) {
-    const amount = obj.amount_total || obj.amount_paid || 0;
-    if (amount >= 50000) plan = 'Alpha Pack External';
-    else if (amount >= 29790) plan = 'Alpha Pack';
-    else if (amount >= 24790) plan = 'Wolf Pack';
-    else plan = 'Lone Wolf';
-  }
+  // v37: Identifica o plano EXATAMENTE pelo que o cliente comprou no Stripe (produto/
+  // preço), NUNCA pelo valor pago — promoção/cupom/sorteio não mudam o plano nem o
+  // número de contas. Se o Stripe não informar o plano, marca p/ revisão (mínimo 1
+  // conta) e alerta — sem chutar. (Setar metadata no produto do Stripe = 100% exato.)
+  const isCheckout = event.type === 'checkout.session.completed';
+  const resolvedPlan = await resolvePlan(env, obj, isCheckout);
+  let plan = resolvedPlan.plan;
+  const planLimit = resolvedPlan.limit;
+  const planExplicit = resolvedPlan.explicit;
 
   if (!email) return json({ error: 'no_email' }, 400);
 
@@ -593,7 +592,7 @@ async function handleStripeWebhook(request, env, json) {
   // v22: renovação (invoice.payment_succeeded) NUNCA muda o plano/limite —
   // só a compra/troca explícita (checkout.session.completed) pode. Isso impede
   // o rebaixamento silencioso (Alpha 3 contas → Lone 1 conta) por valor de invoice.
-  const isCheckout = event.type === 'checkout.session.completed';
+  // (isCheckout já foi definido acima, na identificação do plano.)
 
   // Verifica se já tem conta
   const existing = await env.DB.prepare('SELECT email, license_key FROM users WHERE email = ?').bind(email).first();
@@ -604,12 +603,11 @@ async function handleStripeWebhook(request, env, json) {
     if (isCheckout && planExplicit) {
       // compra/troca EXPLÍCITA (metadata.plan): pode ajustar plano e limite.
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', plan = ?, account_limit = ?, monthly_amount = ?, stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
-        .bind(lic, plan, planAccountLimit(plan), monthlyAmount, stripeCustomer, email).run();
+        .bind(lic, plan, planLimit, monthlyAmount, stripeCustomer, email).run();
     } else if (isCheckout) {
-      // checkout SEM metadata.plan: o plano foi inferido do VALOR — e um cupom pode
-      // ter baixado o valor abaixo da faixa. NÃO rebaixa plano/limite de um cliente
-      // que já pagou por mais (Alpha 3 → Lone 1). Só reafirma licença + MRR.
-      // (Corrigir plano nesse caso: setar metadata.plan no link de checkout do Stripe.)
+      // checkout mas plano NÃO identificado no Stripe (produto sem metadata): NÃO
+      // rebaixa plano/limite de um cliente que já tem plano definido. Só reafirma
+      // licença + MRR. (Corrigir: setar metadata.plan/accounts no produto do Stripe.)
       await env.DB.prepare("UPDATE users SET license_key = ?, license_status = 'active', monthly_amount = COALESCE(NULLIF(?,0), monthly_amount), stripe_customer = COALESCE(?, stripe_customer) WHERE email = ?")
         .bind(lic, monthlyAmount, stripeCustomer, email).run();
     } else {
@@ -631,7 +629,7 @@ async function handleStripeWebhook(request, env, json) {
   await env.DB.prepare(
     `INSERT INTO users (email, password_hash, salt, name, role, lang, plan, license_key, license_status, account_limit, monthly_amount, stripe_customer, created_at)
      VALUES (?, ?, ?, ?, 'client', 'pt', ?, ?, 'active', ?, ?, ?, ?)`
-  ).bind(email, hash, salt, name, plan, license, planAccountLimit(plan), monthlyAmount, stripeCustomer, now).run();
+  ).bind(email, hash, salt, name, plan, license, planLimit, monthlyAmount, stripeCustomer, now).run();
 
   // Envia email de boas-vindas com as credenciais + licença
   if (env.RESEND_API_KEY && env.EMAIL_FROM) {
@@ -1098,7 +1096,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v36', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v38', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1361,6 +1359,54 @@ async function stripeGet(env, path) {
     return { ok: r.ok, status: r.status, body };
   } catch (e) { return { ok: false, status: 0, body: null }; }
 }
+
+// v37: Resolve o plano EXATO de um pagamento pelo que o cliente comprou no Stripe —
+// NUNCA pelo valor pago (cupom/promoção/sorteio não mudam o plano nem o nº de contas).
+// Prioridade máxima: um NÚMERO explícito de contas na metadata do produto/preço
+// (metadata.accounts). Depois, o nome do plano (metadata.plan / nickname / nome do
+// produto) mapeado por planAccountLimit. Se NADA disser o plano → marca p/ revisão
+// (mínimo seguro de 1 conta) e alerta; não chuta. Retorna { plan, limit, explicit }.
+function looksLikePlan(s) { const p = String(s || '').toLowerCase(); return p.includes('alpha') || p.includes('pack') || p.includes('lone'); }
+function planFromMeta(m) {
+  if (!m) return null;
+  // 1) número de contas explícito (o mais exato, sem interpretar nome)
+  const raw = String(m.accounts != null ? m.accounts : (m.contas != null ? m.contas : (m.account_limit != null ? m.account_limit : ''))).trim().toLowerCase();
+  if (raw) {
+    // ILIMITADO: aceita -1, 0, "ilimitado", "unlimited", "∞" → limite -1 (sem teto)
+    if (raw === '-1' || raw === '0' || raw === '∞' || raw.includes('ilimit') || raw.includes('unlimit')) {
+      return { plan: (looksLikePlan(m.plan) ? m.plan : 'Ilimitado'), limit: -1, explicit: true };
+    }
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 100) {
+      const plan = looksLikePlan(m.plan) ? m.plan : ('Plano ' + n + (n > 1 ? ' contas' : ' conta'));
+      return { plan, limit: n, explicit: true };
+    }
+  }
+  // 2) nome do plano
+  if (looksLikePlan(m.plan)) return { plan: m.plan, limit: planAccountLimit(m.plan), explicit: true };
+  return null;
+}
+async function resolvePlan(env, obj, isCheckout) {
+  // 1) metadata na própria sessão/objeto (ex.: setada no Payment Link)
+  const s = planFromMeta(obj && obj.metadata); if (s) return s;
+  // 2) metadata do PREÇO e do PRODUTO comprado + nickname/nome (à prova de desconto)
+  if (isCheckout && obj && obj.id && env.STRIPE_SECRET_KEY) {
+    try {
+      const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
+      const item = li && li.ok && li.body && li.body.data && li.body.data[0];
+      const price = item && item.price;
+      const prod = price && price.product;
+      const p1 = planFromMeta(price && price.metadata); if (p1) return p1;
+      const p2 = planFromMeta(prod && prod.metadata); if (p2) return p2;
+      for (const sig of [price && price.nickname, prod && prod.name]) {
+        if (looksLikePlan(sig)) return { plan: sig, limit: planAccountLimit(sig), explicit: true };
+      }
+    } catch (e) { logEvent({ evt: 'plan_resolve_fail', detail: String(e && e.message || e) }); }
+  }
+  // 3) NÃO identificado no Stripe → NÃO adivinha. Mínimo seguro (1 conta) + alerta.
+  logEvent({ evt: 'plan_unresolved', email: (obj && (obj.customer_details && obj.customer_details.email || obj.customer_email)) || null });
+  return { plan: 'Verificar plano', limit: 1, explicit: false, unresolved: true };
+}
 async function handleAdminStripeSync(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
@@ -1480,6 +1526,34 @@ async function handleMaintenanceSet(request, env, json) {
   logEvent({ evt: 'maintenance', by: email, action });
   const st = await readMaintenance(env);
   return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt, on: st.on });
+}
+
+// ─────── PAUSA GLOBAL (decisão do Luiz) — pausa TODOS os robôs de uma vez ───────
+// Diferente da MANUTENÇÃO (que devolve active:false, parada total): a pausa mantém
+// active:true e envia paused:true no /api/ea/config. O robô (MT5 2.3 / NT 1.5)
+// bloqueia NOVAS entradas e CANCELA ordens pendentes, mas mantém as posições abertas
+// até TP/SL. Latência: 1 ciclo do robô (~5 min). Guardado no KV (quem/quando p/ auditoria).
+async function readPaused(env) {
+  try {
+    const s = await env.SESSIONS.get('paused_global');
+    const p = s ? JSON.parse(s) : null;
+    return { on: !!(p && p.on), at: (p && p.at) || null, by: (p && p.by) || null };
+  } catch (e) { return { on: false, at: null, by: null }; }
+}
+// GET /api/admin/pause → estado atual ; POST /api/admin/pause {paused:true|false} → liga/desliga
+async function handleAdminPause(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  if (request.method === 'GET') { const st = await readPaused(env); return json({ ok: true, paused: st.on, at: st.at, by: st.by }); }
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  let b; try { b = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const on = !!b.paused;
+  const rec = { on, at: new Date().toISOString(), by: email };
+  await env.SESSIONS.put('paused_global', JSON.stringify(rec));
+  logEvent({ evt: 'pause_global', by: email, on });
+  return json({ ok: true, paused: on, at: rec.at, by: email });
 }
 
 // bytes <-> base64 (o robô é binário; guardamos base64 no KV)
@@ -1823,6 +1897,10 @@ async function handleEaConfig(request, env, json, url) {
   const sessionOn = {};
   for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = (k in accOn) ? !!accOn[k] : !!so[k];
   config.sessionOn = sessionOn;
+  // PAUSA GLOBAL (Luiz): manda paused:true|false pra TODAS as licenças. Faz parte do
+  // config → entra no hash, então ligar/desligar a pausa muda o config_version e o robô
+  // rebaixa a config nova no próximo ciclo (obedece em ~5 min).
+  config.paused = (await readPaused(env)).on;
   // v23: config_version (ETag) — hash estável do config efetivo; o robô pode
   // mandar ?since=<v> e receber {changed:false} se nada mudou (economiza e é determinístico)
   const cv = cfgHash(config);
