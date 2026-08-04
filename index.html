@@ -3445,12 +3445,13 @@ function demoAdminClient(email){
 }
 
 /* ═══════════════ ADMIN: MANUTENÇÃO & ROBÔ ═══════════════ */
-let MAINT=null, ROBOT_META=null, MAINT_LOADING=false, MAINT_PUBLIC=null;
+let MAINT=null, ROBOT_META=null, MAINT_LOADING=false, MAINT_PUBLIC=null, PAUSED=null;
 async function loadAdminMaint(){
-  if(SESSION&&SESSION.isDemo){ MAINT={active:false,upcoming:null,on:false}; ROBOT_META={hasFile:true,meta:{version:'1.01',size:191620,updatedAt:'2026-07-01T12:00:00Z'}}; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint'); return; }
+  if(SESSION&&SESSION.isDemo){ MAINT={active:false,upcoming:null,on:false}; PAUSED={paused:false}; ROBOT_META={hasFile:true,meta:{version:'1.01',size:191620,updatedAt:'2026-07-01T12:00:00Z'}}; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint'); return; }
   MAINT_LOADING=true;
   try{
     const rm=await apiFetch('/api/maintenance'); MAINT=rm.ok?await rm.json():{__err:true};
+    const rp=await apiFetch('/api/admin/pause'); PAUSED=rp.ok?await rp.json():{paused:false};
     const rr=await apiFetch('/api/robot/meta'); ROBOT_META=rr.ok?await rr.json():{hasFile:false};
     MAINT_PUBLIC=MAINT;
   }catch(e){ MAINT={__err:true}; }
@@ -3469,25 +3470,40 @@ function renderAdminMaint(){
   if(MAINT_LOADING&&!MAINT) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':'Loading…'}</div></div></div>`;
   if(MAINT&&MAINT.__err) return head+`<div class="banner warn rv"><div class="banner-tx">${LANG==='pt'?'Publique o worker v32 para ligar esta tela.':'Publish worker v32 to enable this.'}</div></div>`;
   const m=MAINT||{active:false};
+  const p=PAUSED||{paused:false};
   const rm=(ROBOT_META&&ROBOT_META.meta)||null;
+  const pausePill = p.paused
+    ? `<span class="pill overdue">${LANG==='pt'?'ROBÔS PAUSADOS':LANG==='en'?'ROBOTS PAUSED':'ROBOTS EN PAUSA'}</span>`
+    : `<span class="pill active">${LANG==='pt'?'ROBÔS OPERANDO':LANG==='en'?'ROBOTS RUNNING':'ROBOTS OPERANDO'}</span>`;
+  const pauseCard = `
+  <div class="card rv">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Pausar todos os robôs':LANG==='en'?'Pause all robots':'Pausar todos los robots'}</div>${pausePill}</div>
+    <p style="color:var(--t3);font-size:.84rem;margin:0 0 12px">${LANG==='pt'?'Para os dias que você decide não operar. Os robôs param de abrir NOVAS operações em até 5 min e cancelam ordens pendentes. As posições já abertas continuam até TP/SL (não são fechadas).':LANG==='en'?'For days you choose not to trade. Robots stop opening NEW trades within 5 min and cancel pending orders. Open positions continue until TP/SL.':'Para los días que decides no operar. Los robots dejan de abrir operaciones nuevas en hasta 5 min.'}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      ${p.paused
+        ? `<button class="btn-primary" onclick="togglePause(false)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polygon points="5 3 19 12 5 21 5 3"/></svg>${LANG==='pt'?'Retomar operações':LANG==='en'?'Resume':'Reanudar'}</button>`
+        : `<button class="revoke-btn" onclick="togglePause(true)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>${LANG==='pt'?'Pausar todos os robôs':LANG==='en'?'Pause all robots':'Pausar todos'}</button>`}
+      ${p.paused&&p.at?`<span style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Pausado por':LANG==='en'?'Paused by':'Pausado por'} ${esc(p.by||'admin')} · ${fmtDateTime(p.at)}</span>`:''}
+    </div>
+  </div>`;
   const statusPillH = m.active
     ? `<span class="pill overdue">${LANG==='pt'?'EM MANUTENÇÃO':LANG==='en'?'IN MAINTENANCE':'EN MANTENIMIENTO'}</span>`
     : (m.upcoming?`<span class="pill due">${LANG==='pt'?'AGENDADA':LANG==='en'?'SCHEDULED':'PROGRAMADA'}</span>`:`<span class="pill active">${LANG==='pt'?'NORMAL (robôs operando)':LANG==='en'?'NORMAL':'NORMAL'}</span>`);
-  return head+`
+  return head+pauseCard+`
   <div class="card rv">
-    <div class="card-head"><div class="card-title">${LANG==='pt'?'Estado atual':LANG==='en'?'Current state':'Estado actual'}</div>${statusPillH}</div>
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Manutenção — estado atual':LANG==='en'?'Maintenance — current state':'Mantenimiento — estado'}</div>${statusPillH}</div>
     ${m.active?`<div class="banner risk rv" style="margin:6px 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg><div class="banner-tx">${LANG==='pt'?'Todos os robôs estão PAUSADOS.':LANG==='en'?'All robots are PAUSED.':'Todos los robots están EN PAUSA.'} ${m.message?esc(m.message):''}</div></div>`:''}
     ${m.upcoming?`<div class="banner info rv" style="margin:6px 0"><div class="banner-tx">${LANG==='pt'?'Manutenção agendada':LANG==='en'?'Scheduled maintenance':'Mantenimiento programado'}: <b>${fmtDateTime(m.upcoming.startAt)}</b> → <b>${fmtDateTime(m.upcoming.endAt)}</b>${m.upcoming.message?' · '+esc(m.upcoming.message):''}</div></div>`:''}
   </div>
 
   <div class="card rv" style="margin-top:12px">
-    <div class="card-head"><div class="card-title">${LANG==='pt'?'Pausar agora':LANG==='en'?'Pause now':'Pausar ahora'}</div></div>
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Manutenção manual (parada total)':LANG==='en'?'Manual maintenance (full stop)':'Mantenimiento manual'}</div></div>
     <div class="set-field"><label>${LANG==='pt'?'Mensagem (aparece no painel do cliente)':LANG==='en'?'Message (shown to clients)':'Mensaje'}</label>
       <input type="text" class="set-input" id="maintMsg" value="${m.on&&m.message?esc(m.message):''}" placeholder="${LANG==='pt'?'Ex.: manutenção rápida, voltamos em 30 min':'e.g. quick maintenance, back in 30 min'}"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       ${m.active
-        ? `<button class="btn-primary" onclick="maintNow(false)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>${LANG==='pt'?'Reativar robôs':LANG==='en'?'Reactivate robots':'Reactivar'}</button>`
-        : `<button class="revoke-btn" onclick="maintNow(true)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>${LANG==='pt'?'Pausar todos os robôs':LANG==='en'?'Pause all robots':'Pausar todos'}</button>`}
+        ? `<button class="btn-primary" onclick="maintNow(false)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>${LANG==='pt'?'Encerrar manutenção':LANG==='en'?'End maintenance':'Terminar'}</button>`
+        : `<button class="revoke-btn" onclick="maintNow(true)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>${LANG==='pt'?'Entrar em manutenção agora':LANG==='en'?'Enter maintenance now':'Entrar en mantenimiento'}</button>`}
     </div>
   </div>
 
@@ -3516,6 +3532,17 @@ function renderAdminMaint(){
     <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatory"> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
     <button class="btn-primary" id="robotUpBtn" onclick="robotUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
   </div>`;
+}
+function togglePause(on){
+  if(SESSION&&SESSION.isDemo){ PAUSED={paused:on,at:new Date().toISOString(),by:'demo'}; toast('(demo) '+(on?'pausado':'retomado'),'info'); renderPage('admin-maint'); return; }
+  if(on && !confirm(LANG==='pt'?'Pausar TODOS os robôs? Eles param de abrir NOVAS operações em até 5 min e cancelam ordens pendentes. Posições já abertas continuam até TP/SL.':LANG==='en'?'Pause ALL robots?':'¿Pausar TODOS los robots?')) return;
+  (async()=>{
+    try{
+      const r=await apiFetch('/api/admin/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:on})});
+      if(r.ok){ PAUSED=await r.json(); toast(on?(LANG==='pt'?'Robôs pausados — obedecem em até 5 min':LANG==='en'?'Robots paused — apply within 5 min':'Robots en pausa'):(LANG==='pt'?'Robôs retomados':LANG==='en'?'Robots resumed':'Robots reanudados'), on?'info':'success'); renderPage('admin-maint'); }
+      else toast(LANG==='pt'?'Falha ao mudar o estado.':'Failed.','error');
+    }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
+  })();
 }
 function maintNow(on){
   const msg=(document.getElementById('maintMsg')||{}).value||'';

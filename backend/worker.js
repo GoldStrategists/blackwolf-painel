@@ -126,6 +126,7 @@ export default {
       if (path === '/api/admin/reissue-license' && request.method === 'POST') return await handleAdminReissue(request, env, json);
       if (path === '/api/maintenance' && request.method === 'GET')         return await handleMaintenanceGet(request, env, json);
       if (path === '/api/admin/maintenance' && request.method === 'POST')  return await handleMaintenanceSet(request, env, json);
+      if (path === '/api/admin/pause')                                     return await handleAdminPause(request, env, json);
       if (path === '/api/admin/robot' && request.method === 'POST')        return await handleRobotUpload(request, env, json);
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
@@ -143,8 +144,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v37' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v37' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v38' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v38' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1095,7 +1096,7 @@ async function handleDiag(request, env, json) {
   if (typeof counts.trades === 'number' && counts.trades > 0) notes.push('Já existem ' + counts.trades + ' trade(s) gravados — o caminho de dados funciona.');
   if (!notes.length) notes.push('Sem anomalias óbvias. Veja lastSeen/eaErrors para detalhe.');
 
-  return json({ ok: true, version: 'v37', now: new Date().toISOString(),
+  return json({ ok: true, version: 'v38', now: new Date().toISOString(),
     tablesPresent: present, tablesMissing: missing, counts,
     eaErrors, eaErrorsGlobal, lastSeen, lastTrades,
     schema: master, notes });
@@ -1527,6 +1528,34 @@ async function handleMaintenanceSet(request, env, json) {
   return json({ ok: true, active: st.active, message: st.message, upcoming: st.upcoming, startAt: st.startAt, endAt: st.endAt, on: st.on });
 }
 
+// ─────── PAUSA GLOBAL (decisão do Luiz) — pausa TODOS os robôs de uma vez ───────
+// Diferente da MANUTENÇÃO (que devolve active:false, parada total): a pausa mantém
+// active:true e envia paused:true no /api/ea/config. O robô (MT5 2.3 / NT 1.5)
+// bloqueia NOVAS entradas e CANCELA ordens pendentes, mas mantém as posições abertas
+// até TP/SL. Latência: 1 ciclo do robô (~5 min). Guardado no KV (quem/quando p/ auditoria).
+async function readPaused(env) {
+  try {
+    const s = await env.SESSIONS.get('paused_global');
+    const p = s ? JSON.parse(s) : null;
+    return { on: !!(p && p.on), at: (p && p.at) || null, by: (p && p.by) || null };
+  } catch (e) { return { on: false, at: null, by: null }; }
+}
+// GET /api/admin/pause → estado atual ; POST /api/admin/pause {paused:true|false} → liga/desliga
+async function handleAdminPause(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  if (request.method === 'GET') { const st = await readPaused(env); return json({ ok: true, paused: st.on, at: st.at, by: st.by }); }
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  let b; try { b = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const on = !!b.paused;
+  const rec = { on, at: new Date().toISOString(), by: email };
+  await env.SESSIONS.put('paused_global', JSON.stringify(rec));
+  logEvent({ evt: 'pause_global', by: email, on });
+  return json({ ok: true, paused: on, at: rec.at, by: email });
+}
+
 // bytes <-> base64 (o robô é binário; guardamos base64 no KV)
 function b64ToBytes(b64) { const bin = atob(b64); const n = bin.length; const out = new Uint8Array(n); for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
 // POST /api/admin/robot  { base64, version, size, filename?, mandatory? }
@@ -1868,6 +1897,10 @@ async function handleEaConfig(request, env, json, url) {
   const sessionOn = {};
   for (const k of SESSION_ON_KEYS) sessionOn['on_' + k] = (k in accOn) ? !!accOn[k] : !!so[k];
   config.sessionOn = sessionOn;
+  // PAUSA GLOBAL (Luiz): manda paused:true|false pra TODAS as licenças. Faz parte do
+  // config → entra no hash, então ligar/desligar a pausa muda o config_version e o robô
+  // rebaixa a config nova no próximo ciclo (obedece em ~5 min).
+  config.paused = (await readPaused(env)).on;
   // v23: config_version (ETag) — hash estável do config efetivo; o robô pode
   // mandar ?since=<v> e receber {changed:false} se nada mudou (economiza e é determinístico)
   const cv = cfgHash(config);
