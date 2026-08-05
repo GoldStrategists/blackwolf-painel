@@ -3099,7 +3099,7 @@ function renderSettings(){
 
   <div class="banner info rv" style="margin-top:4px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'Estas configurações ficam salvas neste dispositivo. Quando integrarmos o sistema de login central, seu perfil será sincronizado entre todos os sites automaticamente.':LANG==='en'?'These settings are saved on this device. Once we integrate the central login system, your profile will sync across all sites automatically.':'Esta configuración se guarda en este dispositivo. Cuando integremos el inicio de sesión central, tu perfil se sincronizará en todos los sitios automáticamente.'}</div>
+    <div class="banner-tx">${LANG==='pt'?'Seus dados de perfil ficam salvos na sua conta Black Wolf e acompanham você em qualquer aparelho ao entrar.':LANG==='en'?'Your profile details are saved to your Black Wolf account and follow you on any device when you sign in.':'Tus datos de perfil se guardan en tu cuenta Black Wolf y te acompañan en cualquier dispositivo al iniciar sesión.'}</div>
   </div>
   `;
 }
@@ -3609,7 +3609,7 @@ function robotUpload(){
       const b64=String(reader.result).replace(/^data:[^,]*,/,'');
       const r=await apiFetch('/api/admin/robot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64:b64,version:ver,filename:file.name,mandatory})});
       const d=await r.json();
-      if(r.ok){ ROBOT_META={hasFile:true,meta:d.meta}; toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage('admin-maint'); }
+      if(r.ok){ ROBOT_META={hasFile:true,meta:d.meta}; toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage(CURRENT_PAGE==='admin-files'?'admin-files':'admin-maint'); }
       else toast(d.error==='too_large'?(LANG==='pt'?'Arquivo grande demais.':'Too large.'):(LANG==='pt'?'Falha ao enviar.':'Upload failed.'),'error');
     }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
     if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot'; }
@@ -4348,21 +4348,35 @@ function renderAdminAccounts(){
 
 /* ─────── ADMIN: EA FILES ─────── */
 function renderAdminFiles(){
-  const versions=[
-    {v:'1.0.4',date:'2026-06-15',status:'current',notes:LANG==='pt'?'Versão atual estável':LANG==='en'?'Current stable':'Versión estable actual'},
-    {v:'1.0.3',date:'2026-05-02',status:'old',notes:LANG==='pt'?'Correções de spread':LANG==='en'?'Spread fixes':'Correcciones de spread'},
-    {v:'1.0.2',date:'2026-03-20',status:'old',notes:LANG==='pt'?'Melhorias de execução':LANG==='en'?'Execution improvements':'Mejoras de ejecución'},
-  ];
-  return pageHead(
+  // Página REAL: mostra o robô que está sendo servido de verdade (ROBOT_META) e
+  // permite enviar uma nova versão pelo mesmo caminho da Manutenção (robotUpload).
+  if(ROBOT_META===null && !MAINT_LOADING){ setTimeout(loadAdminMaint,0); }
+  const head=pageHead(
     LANG==='pt'?'DISTRIBUIÇÃO':LANG==='en'?'DISTRIBUTION':'DISTRIBUCIÓN',
-    LANG==='pt'?'Versões do EA':LANG==='en'?'EA Versions':'Versiones del EA',
-    LANG==='pt'?'Controle as versões do robô disponibilizadas aos clientes.':LANG==='en'?'Manage robot versions released to clients.':'Controla las versiones publicadas.',
-    `<button class="btn-primary" onclick="toast(LANG==='pt'?'Upload simulado':LANG==='en'?'Simulated upload':'Subida simulada','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Nova versão':LANG==='en'?'New version':'Nueva versión'}</button>`
-  )+`<div class="card rv">${versions.map(v=>`
-    <div class="strat-item"><div class="strat-top">
-      <div style="width:48px;height:48px;border-radius:12px;background:rgba(45,108,255,.1);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🐺</div>
-      <div class="strat-body"><div class="strat-name">ExpertBlackWolfChannel v${v.v}${v.status==='current'?'<span class="pill current">'+(LANG==='pt'?'Atual':LANG==='en'?'Current':'Actual')+'</span>':'<span class="pill old">'+(LANG==='pt'?'Antiga':LANG==='en'?'Old':'Antigua')+'</span>'}</div><div class="strat-desc">${v.notes}</div><div class="strat-info"><span class="strat-info-item">${LANG==='pt'?'Publicada':LANG==='en'?'Released':'Publicada'}: <b>${v.date}</b></span></div></div>
-    </div></div>`).join('')}</div>`;
+    LANG==='pt'?'Versão do robô':LANG==='en'?'Robot version':'Versión del robot',
+    LANG==='pt'?'Envie o arquivo do robô que os clientes baixam. A nova versão passa a ser servida na hora, sem republicar o site.':LANG==='en'?'Upload the robot file clients download. The new version is served instantly.':'Sube el archivo del robot que descargan los clientes.',
+    refreshBtn()
+  );
+  if(MAINT_LOADING&&ROBOT_META===null) return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Carregando…':'Loading…'}</div></div></div>`;
+  const rm=(ROBOT_META&&ROBOT_META.meta)||null;
+  const cur = rm
+    ? `<div class="strat-item"><div class="strat-top">
+        <div style="width:48px;height:48px;border-radius:12px;background:rgba(45,108,255,.1);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🐺</div>
+        <div class="strat-body"><div class="strat-name">${esc(rm.filename||'BLACK_WOLF_CLIENTE.ex5')} <span class="pill current">v${esc(rm.version||'—')}</span>${rm.mandatory?' <span class="pill overdue">'+(LANG==='pt'?'obrigatória':LANG==='en'?'mandatory':'obligatoria')+'</span>':''}</div>
+        <div class="strat-desc">${LANG==='pt'?'Versão sendo servida agora aos clientes no download.':LANG==='en'?'Version currently served to clients on download.':'Versión servida ahora a los clientes.'}</div>
+        <div class="strat-info"><span class="strat-info-item">${fmtKB(rm.size)}</span><span class="strat-info-item">${LANG==='pt'?'atualizado':LANG==='en'?'updated':'actualizado'}: <b>${fmtDateTime(rm.updatedAt)}</b></span></div></div>
+      </div></div>`
+    : `<div class="banner info rv"><div class="banner-tx">${LANG==='pt'?'Nenhum robô enviado ainda — o download usa o arquivo padrão do site. Envie um abaixo para servir a sua própria versão.':LANG==='en'?'No robot uploaded yet — download uses the default site file. Upload one below to serve your own version.':'Aún no se subió un robot — la descarga usa el archivo por defecto.'}</div></div>`;
+  return head+`<div class="card rv">${cur}</div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Enviar nova versão':LANG==='en'?'Upload new version':'Subir nueva versión'}</div></div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="set-field"><label>${LANG==='pt'?'Arquivo .ex5':'.ex5 file'}</label><input type="file" accept=".ex5" class="set-input" id="robotFile" style="padding:8px"></div>
+      <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVer" placeholder="1.02" value="${rm?esc(rm.version||''):''}"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatory"${rm&&rm.mandatory?' checked':''}> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
+    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
+  </div>`;
 }
 
 /* ─────── ADMIN: PAYMENTS ─────── */
