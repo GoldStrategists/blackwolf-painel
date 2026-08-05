@@ -131,6 +131,7 @@ export default {
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/admin/payments' && request.method === 'GET')      return await handleAdminPayments(request, env, json);
+      if (path === '/api/admin/email-test' && request.method === 'POST')   return await handleAdminEmailTest(request, env, json);
       if (path === '/api/admin/stripe-sync' && request.method === 'POST')  return await handleAdminStripeSync(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
       if (path === '/api/mt5-account' && request.method === 'POST')      return await handleMt5Account(request, env, json);
@@ -140,12 +141,12 @@ export default {
       if (path === '/api/ea/config' && request.method === 'GET')         return await handleEaConfig(request, env, json, url);
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
-      if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json);
+      if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json, ctx);
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v38' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v38' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v39' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v39' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -495,7 +496,7 @@ async function licenseViewFor(env, row) {
 }
 
 /* ───────────────── STRIPE WEBHOOK ───────────────── */
-async function handleStripeWebhook(request, env, json) {
+async function handleStripeWebhook(request, env, json, ctx) {
   const body = await request.text();
   const sig = request.headers.get('stripe-signature') || '';
 
@@ -511,6 +512,25 @@ async function handleStripeWebhook(request, env, json) {
 
   let event;
   try { event = JSON.parse(body); } catch(e) { return json({ error: 'invalid_json' }, 400); }
+
+  // ── COBRANÇA FALHOU: manda lembrete pro cliente regularizar (NÃO derruba o robô;
+  // o Stripe ainda vai tentar de novo por alguns dias — só paramos quando ele
+  // cancelar de vez, no evento de assinatura abaixo). ──
+  if (event.type === 'invoice.payment_failed') {
+    const inv = event.data.object || {};
+    const cust = inv.customer || null;
+    const payUrl = inv.hosted_invoice_url || (env.PANEL_URL || 'https://painel.blackwolfea.com');
+    if (cust) {
+      const u = await env.DB.prepare('SELECT email, name FROM users WHERE stripe_customer = ?').bind(cust).first();
+      if (u && u.email && env.RESEND_API_KEY && env.EMAIL_FROM) {
+        const html = paymentFailedEmailHtml(u.name, payUrl);
+        const p = sendMail(env, u.email, 'Falha no pagamento — Black Wolf', html);
+        if (ctx && ctx.waitUntil) ctx.waitUntil(p); else await p;
+        logEvent({ evt: 'dunning_email', kind: 'payment_failed', customer: cust });
+      }
+    }
+    return json({ ok: true, action: 'payment_failed', customer: cust });
+  }
 
   // ── ASSINATURA: cancelamento, falha de pagamento, reativação ──
   // Regra: cancelou no meio do ciclo → MANTÉM ativo até o fim do período pago.
@@ -542,7 +562,19 @@ async function handleStripeWebhook(request, env, json) {
       }
       // past_due / incomplete → não mexe (período de novas tentativas / pagamento inicial pendente)
       if (newStatus) {
+        // pega o usuário ANTES de mudar (pra saber se estava ativo e evitar e-mail repetido)
+        const u = await env.DB.prepare('SELECT email, name, license_status FROM users WHERE stripe_customer = ?').bind(cust).first();
         await env.DB.prepare('UPDATE users SET license_status = ? WHERE stripe_customer = ?').bind(newStatus, cust).run();
+        // avisa o cliente que o robô foi cancelado — só na TRANSIÇÃO pra revoked
+        // (não reenvia se ele já estava revogado), e só se o e-mail estiver configurado
+        if (newStatus === 'revoked' && u && u.email && u.license_status !== 'revoked'
+            && env.RESEND_API_KEY && env.EMAIL_FROM) {
+          const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+          const html = subCanceledEmailHtml(u.name, panelUrl);
+          const p = sendMail(env, u.email, 'Seu Black Wolf foi cancelado', html);
+          if (ctx && ctx.waitUntil) ctx.waitUntil(p); else await p;
+          logEvent({ evt: 'dunning_email', kind: 'canceled', customer: cust });
+        }
       }
     }
     return json({ ok: true, action: event.type.split('.').pop(), status: status || null, customer: cust || null });
@@ -747,7 +779,69 @@ function resetEmailHtml(name, link) {
     <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Se voc&ecirc; n&atilde;o solicitou isso, ignore este e-mail &mdash; sua senha continua a mesma.</p>`;
   return emailShell(preheader, inner);
 }
+
+// Cobrança falhou — lembrete pro cliente regularizar antes de perder o robô.
+function paymentFailedEmailHtml(name, payUrl) {
+  const preheader = 'Nao conseguimos processar o pagamento do seu Black Wolf.';
+  const hi = name ? `Ol&aacute; <b style="color:#E8EAED;">${name}</b>, ` : 'Ol&aacute;, ';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Falha no pagamento do seu rob&ocirc;</h1>
+    <p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#aeb4c0;">${hi}tentamos cobrar a mensalidade do seu <b style="color:#E8EAED;">Black Wolf</b> e o pagamento <b style="color:#E8EAED;">n&atilde;o foi aprovado</b>.</p>
+    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">Atualize seu pagamento para <b style="color:#E8EAED;">n&atilde;o perder o acesso</b>. Se n&atilde;o for regularizado nos pr&oacute;ximos dias, sua assinatura ser&aacute; cancelada e o rob&ocirc; <b style="color:#E8EAED;">vai parar de operar</b>.</p>
+    ${ctaButton(payUrl, 'Regularizar meu pagamento &rarr;')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">J&aacute; pagou? Pode ignorar este e-mail &mdash; a confirma&ccedil;&atilde;o pode levar alguns minutos.</p>`;
+  return emailShell(preheader, inner);
+}
+
+// Assinatura cancelada — robô parou; convida a reativar.
+function subCanceledEmailHtml(name, panelUrl) {
+  const preheader = 'Sua assinatura do Black Wolf foi cancelada.';
+  const hi = name ? `Ol&aacute; <b style="color:#E8EAED;">${name}</b>, ` : 'Ol&aacute;, ';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Seu Black Wolf foi cancelado</h1>
+    <p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#aeb4c0;">${hi}sua assinatura foi cancelada por falta de pagamento e o rob&ocirc; <b style="color:#E8EAED;">parou de operar</b>.</p>
+    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">Quer voltar a operar? Voc&ecirc; pode <b style="color:#E8EAED;">reativar sua assinatura</b> a qualquer momento e o rob&ocirc; volta ao normal.</p>
+    ${ctaButton(panelUrl, 'Reativar meu rob&ocirc; &rarr;')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Precisa de ajuda? Fale com a gente no WhatsApp <b style="color:#8b92a0;">+1 (229) 296-1795</b>.</p>`;
+  return emailShell(preheader, inner);
+}
 /* ===EMAIL_TEMPLATES_END=== */
+
+// Envio genérico via Resend. Retorna { ok, status, body } para diagnóstico.
+async function sendMail(env, to, subject, html) {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return { ok: false, status: 0, body: 'email_not_configured' };
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
+    });
+    const body = await r.text().catch(() => '');
+    return { ok: r.ok, status: r.status, body: String(body).slice(0, 600) };
+  } catch (e) { return { ok: false, status: 0, body: String(e && e.message || e) }; }
+}
+
+// ADMIN: dispara um e-mail de teste e devolve a resposta REAL da Resend, pra
+// enxergar o motivo de e-mails não chegarem (chave errada, domínio não verificado…).
+async function handleAdminEmailTest(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
+  const cfg = { has_key: !!env.RESEND_API_KEY, has_from: !!env.EMAIL_FROM, from: env.EMAIL_FROM || null, panel_url: env.PANEL_URL || null };
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
+    return json({ ok: false, config: cfg, message: 'Falta configurar RESEND_API_KEY e/ou EMAIL_FROM nas variáveis do worker.' }, 400);
+  }
+  let to = email;
+  try { const b = await request.json(); if (b && b.to) to = String(b.to).trim().toLowerCase(); } catch (e) {}
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Teste de e-mail &#9989;</h1>
+    <p style="margin:0 0 10px;font-size:15px;line-height:1.65;color:#aeb4c0;">Se voc&ecirc; recebeu este e-mail, o envio do Black Wolf est&aacute; <b style="color:#E8EAED;">funcionando</b>. Recupera&ccedil;&atilde;o de senha e avisos de cobran&ccedil;a v&atilde;o chegar normalmente.</p>`;
+  const html = emailShell('Teste de e-mail do Black Wolf', inner);
+  const r = await sendMail(env, to, 'Teste de e-mail — Black Wolf', html);
+  logEvent({ evt: 'email_test', by: email, to, ok: r.ok, status: r.status });
+  return json({ ok: r.ok, to, config: cfg, resend_status: r.status, resend_response: r.body });
+}
 
 async function sendWelcomeEmail(env, to, name, plan, password, license) {
   const panelUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
