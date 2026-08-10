@@ -711,7 +711,7 @@ function emailShell(preheader, inner) {
     <tr><td style="padding:6px 30px 0;"><div style="height:1px;background:#1a1f2b;"></div></td></tr>
     <tr><td style="padding:18px 30px 30px;font-family:Arial,Helvetica,sans-serif;">
       <p style="margin:0 0 14px;font-size:13px;line-height:1.6;color:#7f8696;">Precisa de ajuda? Fale com a gente no WhatsApp <b style="color:#aeb4c0;">+1 (229) 296-1795</b> ou <a href="mailto:contact@goldstrategists.com" style="color:#7fa6ff;text-decoration:none;">contact@goldstrategists.com</a>.</p>
-      <p style="margin:0;font-size:11px;line-height:1.6;color:#4b5160;">Gold Strategists LLC &middot; 15168 Evergreen Oak Loop, FL 34787, USA</p>
+      <p style="margin:0;font-size:11px;line-height:1.6;color:#4b5160;">Gold Strategists LLC &middot; 3349 Sanctuary Drive, Clermont, FL 34714, USA</p>
     </td></tr>
   </table>
   <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#3a3f4c;margin-top:16px;">&copy; 2026 Gold Strategists LLC &middot; Black Wolf</div>
