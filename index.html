@@ -3203,7 +3203,15 @@ async function settingsChangePass(){
       toast(LANG==='pt'?'Sem conexão com o servidor — tente novamente':LANG==='en'?'No server connection — try again':'Sin conexión con el servidor — inténtalo de nuevo','error'); return;
     }
   }
-  // Fallback local
+  // Conta REAL sem token = sessão expirada/inválida. NUNCA fingir sucesso gravando
+  // a senha só no aparelho (era o bug "trocou, deu certo, mas não entra": o banco
+  // não mudava e a senha antiga continuava valendo). Erro honesto + pedir re-login.
+  if(!(SESSION&&SESSION.isDemo)){
+    toast(LANG==='pt'?'Sua sessão expirou. Saia, entre de novo e troque a senha.':LANG==='en'?'Your session expired. Sign out, sign back in, then change the password.':'Tu sesión expiró. Cierra sesión, vuelve a entrar y cambia la contraseña.','error');
+    try{ handleSessionExpired(); }catch(e){}
+    return;
+  }
+  // Fallback local — SOMENTE para as contas de demonstração.
   const storedNew=localStorage.getItem('bw_pass_'+SESSION.email);
   const realPass=storedNew||(USERS[SESSION.email]&&USERS[SESSION.email].pass);
   if(cur!==realPass){ toast(err.errCur,'error'); return; }
