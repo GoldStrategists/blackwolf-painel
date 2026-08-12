@@ -145,8 +145,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v39' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v39' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v40' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v40' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -1659,25 +1659,32 @@ async function handleRobotUpload(request, env, json) {
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
   const b = await request.json();
+  const kind = (b.type === 'nt') ? 'nt' : 'mt5';                      // v40: dois robôs (MT5 e NinjaTrader)
+  const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
+  const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
   const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
   if (!b64) return json({ error: 'no_file' }, 400);
   if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
   const size = Math.round(b64.length * 3 / 4);
-  const meta = { version: capStr(b.version, 40) || '1.0', size, filename: capStr(b.filename, 80) || 'BLACK_WOLF_CLIENTE.ex5', mandatory: !!b.mandatory, updatedAt: new Date().toISOString(), by: email };
-  await env.SESSIONS.put('robot_ex5', b64);
-  await env.SESSIONS.put('robot_meta', JSON.stringify(meta));
-  logEvent({ evt: 'robot_upload', by: email, version: meta.version, size });
+  const meta = { version: capStr(b.version, 40) || '1.0', size, filename: capStr(b.filename, 80) || defName, mandatory: !!b.mandatory, platform: kind, updatedAt: new Date().toISOString(), by: email };
+  await env.SESSIONS.put(kvFile, b64);
+  await env.SESSIONS.put(kvMeta, JSON.stringify(meta));
+  logEvent({ evt: 'robot_upload', by: email, platform: kind, version: meta.version, size });
   return json({ ok: true, meta });
 }
 // GET /api/robot/meta — versão/tamanho/data (qualquer usuário logado)
 async function handleRobotMeta(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
+  const kind = (new URL(request.url).searchParams.get('type') === 'nt') ? 'nt' : 'mt5';
+  const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
   let meta = null;
-  try { const s = await env.SESSIONS.get('robot_meta'); meta = s ? JSON.parse(s) : null; } catch (e) { meta = null; }
-  return json({ ok: true, hasFile: !!meta, meta });
+  try { const s = await env.SESSIONS.get(kvMeta); meta = s ? JSON.parse(s) : null; } catch (e) { meta = null; }
+  return json({ ok: true, hasFile: !!meta, meta, platform: kind });
 }
-// GET /api/robot/download — baixa o .ex5 guardado (exige licença ativa; admin sempre)
+// GET /api/robot/download — baixa o robô guardado (exige licença ativa; admin sempre)
+// ?type=nt baixa o pacote do NinjaTrader; padrão = .ex5 do MetaTrader.
 async function handleRobotDownload(request, env, json, url) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
@@ -1685,13 +1692,17 @@ async function handleRobotDownload(request, env, json, url) {
   if (!u) return json({ error: 'unauthorized' }, 401);
   const isAdmin = u.role === 'admin';
   if (!isAdmin && !licenseState(u).active) return json({ error: 'license_inactive' }, 403);
-  const b64 = await env.SESSIONS.get('robot_ex5');
+  const kind = (url.searchParams.get('type') === 'nt') ? 'nt' : 'mt5';
+  const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
+  const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const b64 = await env.SESSIONS.get(kvFile);
   if (!b64) return json({ error: 'no_robot', hint: 'Nenhum robô enviado ainda.' }, 404);
-  let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get('robot_meta') || '{}'); } catch (e) {}
+  let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get(kvMeta) || '{}'); } catch (e) {}
   const bytes = b64ToBytes(b64);
   return new Response(bytes, { status: 200, headers: {
     'Content-Type': 'application/octet-stream',
-    'Content-Disposition': 'attachment; filename="' + (meta.filename || 'BLACK_WOLF_CLIENTE.ex5') + '"',
+    'Content-Disposition': 'attachment; filename="' + (meta.filename || defName) + '"',
     'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
     'Cache-Control': 'no-store'
   } });
@@ -1834,11 +1845,15 @@ function getEaAccount(request, url, body){
           (body && body.account != null ? body.account : null);
   if (a == null) return null;
   const s = String(a).trim();
-  // conta MT5 (ACCOUNT_LOGIN) é SEMPRE um inteiro. Aceitar só dígitos fecha o vetor
-  // de XSS armazenado: um robô adulterado poderia mandar um "número" com aspas/HTML
-  // que seria ecoado no painel do admin. Não-numérico → tratado como sem conta.
-  return /^\d{1,20}$/.test(s) ? s : null;
+  // Aceita conta do MT5 (login numérico) E do NinjaTrader (Account.Name em texto,
+  // ex.: APEX-611578-04, Sim101, Playback101). Restringe a um conjunto SEGURO de
+  // caracteres (letra/dígito/ . _ -), começando por letra ou dígito: fecha o vetor
+  // de XSS armazenado (nada de aspas/HTML/espaço). Fora disso → tratado como sem conta.
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(s) ? s : null;
 }
+// v40: contas de simulação/replay do NinjaTrader (e equivalentes) são ISENTAS de
+// licença — como o Testador de Estratégia do MT5. Não amarram conta nem consomem vaga.
+function isSimAccount(account){ return !!account && /^(sim|playback|replay)/i.test(String(account)); }
 // v23: vínculo ATÔMICO via tabela license_accounts (PK license_key+account).
 // O INSERT condicional deixa o SQLite arbitrar o limite — sem corrida entre
 // robôs simultâneos. users.mt5_accounts é mantido como espelho (só p/ o painel).
@@ -1936,12 +1951,14 @@ async function handleEaConfig(request, env, json, url) {
   // sozinho quando a manutenção acaba (o robô relê a config a cada ciclo).
   const maint = await readMaintenance(env);
   if (maint.active) { return json({ ok: true, active: false, status: 'maintenance', maintenance: true, message: maint.message || '' }); }
-  // trava: 1 licença = 1 conta
+  // trava: 1 licença = N contas (até account_limit) — vale igual p/ MT5 e NinjaTrader.
+  // Conta de simulação/replay do NT é isenta (não amarra, não consome vaga).
   const account = getEaAccount(request, url, null);
-  const acc = await bindOrCheckAccount(env, row, account);
+  const acc = isSimAccount(account) ? { mismatch: false, bound: account }
+                                     : await bindOrCheckAccount(env, row, account);
   if (acc.mismatch) {
     await recordEaError(env, license, row.email, account, 'account_mismatch');
-    return json({ error: 'account_mismatch', active: false, message: 'Licença já vinculada a outra conta MT5' }, 403);
+    return json({ error: 'account_mismatch', active: false, message: 'Licença já vinculada a outra conta' }, 403);
   }
   await touchEaSeen(env, license, row.email, acc.bound || account);   // marca robô online já na checagem
   // config específica DESTA conta (o robô manda a conta em toda chamada)
@@ -2052,12 +2069,13 @@ async function handleEaTrades(request, env, json, url) {
   const hasAccount = account != null && String(account).trim() !== '';
   const now = new Date().toISOString();
 
-  // trava ANTI-REVENDA: 1 licença = 1 conta. Mismatch continua rejeitando (é a
-  // fronteira de autorização; o robô legítimo da conta vinculada segue normal).
-  const acc = await bindOrCheckAccount(env, row, account);
+  // trava ANTI-REVENDA: 1 licença = N contas (até o limite). Mismatch continua
+  // rejeitando. Conta de simulação/replay do NinjaTrader é isenta (não amarra).
+  const acc = isSimAccount(account) ? { mismatch: false, bound: account }
+                                    : await bindOrCheckAccount(env, row, account);
   if (acc.mismatch) {
     await recordEaError(env, license, row.email, account, 'account_mismatch');
-    return json({ error:'account_mismatch', active:false, message:'Licença já vinculada a outra conta MT5' }, 403);
+    return json({ error:'account_mismatch', active:false, message:'Licença já vinculada a outra conta' }, 403);
   }
 
   // v23: monta TUDO como um único env.DB.batch (atômico: ou grava tudo, ou nada).
