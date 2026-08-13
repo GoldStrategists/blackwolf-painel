@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Black Wolf — Portal do Curso</title>
+<meta name="description" content="Portal do Curso Black Wolf — assista às aulas, acompanhe seu progresso e baixe os materiais.">
+<meta name="theme-color" content="#07080B">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMjMyIDEyNzUnPjxyZWN0IHdpZHRoPScxMjMyJyBoZWlnaHQ9JzEyNzUnIHJ4PScyMzAnIGZpbGw9JyMwNzA4MEInLz48ZyB0cmFuc2Zvcm09J3RyYW5zbGF0ZSgxODUsMTkxKSBzY2FsZSgwLjcpJz48cGF0aCBmaWxsPScjMkQ2Q0ZGJyBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGQ9J000MzEsODY4IDYxNiwxMjc0IDgwMCw4NjggNjE3LDk3NlogTTAsMCAzNyw1OTkgNDkxLDgxMCA2MTYsNzMxIDc0MSw4MTAgMTIwMCw1OTYgMTIzMSwwIDk1Myw0NjIgNjE4LDU2OSAyNzgsNDYyWiBNNzI1LDczMiA3MjYsNzMxIDcyNyw3MzIgNzI2LDczM1ogTTUwNCw3MzIgNTA1LDczMSA1MDYsNzMyIDUwNSw3MzNaIE05MjQsNjYyIDcyNiw3MzEgODI1LDU4NVogTTMwNyw2NjIgNDA2LDU4NSA1MDUsNzMxWicvPjwvZz48L3N2Zz4=">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══ Tokens — idênticos ao blackwolf-painel/index.html (mesma marca) ═══ */
+:root{
+  --bg:#07080B;--bg2:#0A0C10;--s1:#0E1016;--s2:#13151D;--s3:#191C26;--s4:#202430;
+  --bord:#1E222C;--bord2:#2A2F3D;--bord3:#363D4E;
+  --blue:#2D6CFF;--blue-d:#1A55E8;--blue-l:#5B8BFF;--blue-glow:rgba(45,108,255,.5);
+  --red:#FF3B47;--green:#22C55E;--green-l:#4ADE80;--amber:#F59E0B;--purple:#A855F7;
+  --t1:rgba(245,247,251,.95);--t2:rgba(148,155,172,.92);--t3:rgba(120,127,145,.6);--t4:rgba(120,127,145,.38);
+  --fh:'Space Grotesk',sans-serif;--fb:'Inter',sans-serif;--fm:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --nav-h:62px;--side-w:248px;
+  --shadow:0 18px 50px rgba(0,0,0,.5);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{background:var(--bg);color:var(--t1);font-family:var(--fb);font-size:15px;line-height:1.6;min-height:100dvh;-webkit-font-smoothing:antialiased}
+a{text-decoration:none;color:inherit}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit}
+.mono{font-family:var(--fm)}
+h1,h2,h3{font-family:var(--fh);letter-spacing:-.01em}
+::selection{background:rgba(45,108,255,.32)}
+
+/* login */
+.login-wrap{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:
+  radial-gradient(700px 420px at 15% -5%, rgba(45,108,255,.10), transparent 60%), var(--bg);}
+.login-card{width:100%;max-width:380px;background:var(--s1);border:1px solid var(--bord);border-radius:16px;padding:36px 32px;position:relative;box-shadow:var(--shadow)}
+.login-card::before{content:'';position:absolute;top:-1px;left:32px;right:32px;height:1px;background:linear-gradient(90deg,transparent,var(--blue),transparent)}
+.login-logo{font-family:var(--fh);font-weight:700;font-size:1.3rem;margin-bottom:4px}
+.login-logo .ac{color:var(--blue)}
+.login-sub{color:var(--t3);font-size:.85rem;margin-bottom:26px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:.72rem;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;font-family:var(--fm)}
+.field input,.field select{width:100%;background:var(--bg);border:1px solid var(--bord);border-radius:10px;padding:12px 14px;color:var(--t1);font-size:.92rem;outline:none;transition:border-color .2s}
+.field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(45,108,255,.13)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:10px;padding:12px 18px;font-family:var(--fh);font-weight:600;font-size:.9rem;transition:filter .15s,transform .15s}
+.btn:active{transform:scale(.98)}
+.btn-primary{width:100%;background:linear-gradient(135deg,var(--blue),var(--blue-d));color:#fff}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-ghost{background:var(--s3);color:var(--t2);border:1px solid var(--bord2)}
+.btn-ghost:hover{color:var(--t1);border-color:var(--bord3)}
+.login-link{color:var(--blue-l);font-size:.82rem;cursor:pointer;display:block;text-align:center;margin-top:16px}
+.login-err{background:rgba(255,59,71,.1);border:1px solid rgba(255,59,71,.3);color:#ff8a91;padding:9px 12px;border-radius:8px;font-size:.82rem;margin-bottom:14px}
+.login-ok{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--green-l);padding:9px 12px;border-radius:8px;font-size:.82rem;margin-bottom:14px}
+.lang-row{display:flex;gap:6px;justify-content:center;margin-top:22px}
+.lang-row button{font-family:var(--fm);font-size:.7rem;padding:5px 10px;border-radius:7px;border:1px solid var(--bord);color:var(--t3)}
+.lang-row button.on{background:rgba(45,108,255,.14);color:var(--blue-l);border-color:rgba(45,108,255,.3)}
+
+/* app shell */
+.app{display:none}
+.app.active{display:block}
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:var(--bg2);border-bottom:1px solid var(--bord);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:50}
+.tn-logo{font-family:var(--fh);font-weight:700}
+.tn-logo .ac{color:var(--blue)}
+.tn-badge{font-family:var(--fm);font-size:.55rem;letter-spacing:.1em;padding:3px 9px;border-radius:6px;background:rgba(45,108,255,.13);color:var(--blue-l);border:1px solid rgba(45,108,255,.22);margin-left:10px}
+.tn-right{display:flex;align-items:center;gap:14px}
+.tn-avatar{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--blue),#1a3f99);display:flex;align-items:center;justify-content:center;font-family:var(--fh);font-weight:700;font-size:.75rem;color:#fff}
+.side{position:fixed;top:var(--nav-h);bottom:0;left:0;width:var(--side-w);background:var(--bg2);border-right:1px solid var(--bord);padding:18px 14px;overflow-y:auto;z-index:40}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:var(--t2);font-size:.87rem;font-weight:500;margin-bottom:2px;position:relative;cursor:pointer}
+.nav-item:hover{background:var(--s2);color:var(--t1)}
+.nav-item.active{background:rgba(45,108,255,.12);color:var(--blue-l)}
+.nav-item.active::before{content:'';position:absolute;left:-14px;top:50%;transform:translateY(-50%);width:3px;height:22px;background:var(--blue);border-radius:0 3px 3px 0}
+.nav-sep{height:1px;background:var(--bord);margin:12px 0}
+main.content{margin-left:var(--side-w);margin-top:var(--nav-h);padding:32px;max-width:980px}
+.page-eyebrow{font-family:var(--fm);font-size:.66rem;letter-spacing:.15em;color:var(--blue-l);margin-bottom:9px;text-transform:uppercase}
+.page-title{font-size:1.7rem;font-weight:700;margin-bottom:24px}
+
+/* components */
+.card{background:var(--s1);border:1px solid var(--bord);border-radius:14px;padding:20px}
+.grid{display:grid;gap:14px}
+.grid-2{grid-template-columns:1fr 1fr}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.grid-2,.grid-3{grid-template-columns:1fr}.side{transform:translateX(-100%)}main.content{margin-left:0}}
+.pbar{height:8px;border-radius:99px;background:var(--s3);overflow:hidden}
+.pbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--blue-l));border-radius:99px}
+.lesson-row{display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;background:var(--s1);border:1px solid var(--bord);cursor:pointer;transition:border-color .15s}
+.lesson-row:hover{border-color:var(--bord3)}
+.lesson-status{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0;border:1px solid var(--bord2)}
+.lesson-status.done{background:rgba(34,197,94,.15);color:var(--green-l);border-color:rgba(34,197,94,.35)}
+.lesson-status.current{background:rgba(45,108,255,.15);color:var(--blue-l);border-color:rgba(45,108,255,.35)}
+.lesson-meta{color:var(--t3);font-size:.78rem;margin-top:2px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;font-size:.72rem;font-family:var(--fm);background:var(--s3);border:1px solid var(--bord2);color:var(--t2)}
+.pill.blue{background:rgba(45,108,255,.13);color:var(--blue-l);border-color:rgba(45,108,255,.25)}
+.pill.green{background:rgba(34,197,94,.13);color:var(--green-l);border-color:rgba(34,197,94,.25)}
+.pill.amber{background:rgba(245,158,11,.13);color:var(--amber);border-color:rgba(245,158,11,.25)}
+.player-box{background:#000;border-radius:14px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;border:1px solid var(--bord)}
+.player-box iframe{width:100%;height:100%;border:0}
+.player-placeholder{color:var(--t3);font-size:.85rem;text-align:center;padding:20px}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;color:var(--t3);font-family:var(--fm);font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid var(--bord)}
+td{padding:10px 12px;border-bottom:1px solid var(--bord);color:var(--t2)}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--s2);border:1px solid var(--bord2);border-radius:10px;padding:12px 18px;font-size:.85rem;box-shadow:var(--shadow);z-index:200;display:none}
+.toast.show{display:block}
+.hidden{display:none !important}
+.muted{color:var(--t3)}
+.small{font-size:.8rem}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══ -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <div class="login-logo"><span class="ac">BLACK WOLF</span></div>
+    <div class="login-sub" data-i18n="login.sub">Portal do Curso</div>
+    <div id="loginMsg"></div>
+    <form id="loginForm">
+      <div class="field"><label data-i18n="login.email">E-mail</label><input type="email" id="loginEmail" required></div>
+      <div class="field"><label data-i18n="login.password">Senha</label><input type="password" id="loginPassword" required></div>
+      <button class="btn btn-primary" type="submit" data-i18n="login.enter">Entrar</button>
+    </form>
+    <span class="login-link" id="forgotLink" data-i18n="login.forgot">Esqueci minha senha</span>
+    <div class="lang-row">
+      <button data-lang="pt" class="on">PT</button>
+      <button data-lang="en">EN</button>
+      <button data-lang="es">ES</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ FORGOT PASSWORD ═══ -->
+<div class="login-wrap hidden" id="forgotWrap">
+  <div class="login-card">
+    <div class="login-logo"><span class="ac">BLACK WOLF</span></div>
+    <div class="login-sub" data-i18n="forgot.sub">Redefinir senha</div>
+    <div id="forgotMsg"></div>
+    <form id="forgotForm">
+      <div class="field"><label data-i18n="login.email">E-mail</label><input type="email" id="forgotEmail" required></div>
+      <button class="btn btn-primary" type="submit" data-i18n="forgot.send">Enviar link</button>
+    </form>
+    <span class="login-link" id="backToLogin" data-i18n="forgot.back">Voltar ao login</span>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div class="app" id="app">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;">
+      <div class="tn-logo"><span class="ac">BLACK WOLF</span></div>
+      <span class="tn-badge" data-i18n="topbar.badge">CURSO</span>
+    </div>
+    <div class="tn-right">
+      <span class="small muted" id="tnName"></span>
+      <div class="tn-avatar" id="tnAvatar">?</div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="nav-item active" data-page="dashboard">🏠 <span data-i18n="nav.dashboard">Dashboard</span></div>
+    <div class="nav-item" data-page="lessons">🎬 <span data-i18n="nav.lessons">Aulas</span></div>
+    <div class="nav-item" data-page="materials">📚 <span data-i18n="nav.materials">Materiais</span></div>
+    <div class="nav-item" data-page="settings">⚙️ <span data-i18n="nav.settings">Configurações</span></div>
+    <div class="nav-sep" id="adminSep" style="display:none"></div>
+    <div class="nav-item hidden" data-page="admin" id="adminNav">🛠️ <span data-i18n="nav.admin">Admin</span></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" id="logoutBtn">↩ <span data-i18n="nav.logout">Sair</span></div>
+  </div>
+
+  <main class="content">
+    <!-- Dashboard -->
+    <section id="page-dashboard">
+      <div class="page-eyebrow" data-i18n="dash.eyebrow">Meu progresso</div>
+      <div class="page-title" data-i18n="dash.title">Continue de onde parou</div>
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+          <span class="small muted" id="dashProgressLabel">0 / 0 aulas</span>
+          <span class="small muted" id="dashProgressPct">0%</span>
+        </div>
+        <div class="pbar"><i id="dashProgressBar" style="width:0%"></i></div>
+      </div>
+      <div id="dashLessons" class="grid" style="gap:10px;"></div>
+    </section>
+
+    <!-- Lessons list (mesma lista, view completa) -->
+    <section id="page-lessons" class="hidden">
+      <div class="page-eyebrow" data-i18n="lessons.eyebrow">Currículo</div>
+      <div class="page-title" data-i18n="lessons.title">Todas as aulas</div>
+      <div id="allModules"></div>
+    </section>
+
+    <!-- Player -->
+    <section id="page-player" class="hidden">
+      <div class="page-eyebrow" data-i18n="player.eyebrow">Aula</div>
+      <div class="page-title" id="playerTitle">—</div>
+      <div class="player-box" id="playerBox"><div class="player-placeholder" data-i18n="player.loading">Carregando vídeo…</div></div>
+      <p class="muted small" style="margin-top:14px;" id="playerDesc"></p>
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="markDoneBtn" data-i18n="player.markDone">✓ Marcar como concluída</button>
+        <button class="btn btn-ghost" id="prevLessonBtn" data-i18n="player.prev">◀ Anterior</button>
+        <button class="btn btn-ghost" id="nextLessonBtn" data-i18n="player.next">Próxima ▶</button>
+      </div>
+      <div id="playerMaterials" style="margin-top:20px;"></div>
+    </section>
+
+    <!-- Materials -->
+    <section id="page-materials" class="hidden">
+      <div class="page-eyebrow" data-i18n="materials.eyebrow">Downloads</div>
+      <div class="page-title" data-i18n="materials.title">Materiais do curso</div>
+      <div id="materialsList" class="grid" style="gap:10px;"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="page-settings" class="hidden">
+      <div class="page-eyebrow" data-i18n="settings.eyebrow">Conta</div>
+      <div class="page-title" data-i18n="settings.title">Configurações</div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 style="margin-bottom:14px;" data-i18n="settings.profile">Perfil</h3>
+          <div class="field"><label data-i18n="settings.name">Nome</label><input id="setName"></div>
+          <div class="field"><label data-i18n="settings.lang">Idioma da interface</label>
+            <select id="setLang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select>
+          </div>
+          <button class="btn btn-primary" id="saveProfileBtn" data-i18n="settings.save">Salvar</button>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:14px;" data-i18n="settings.password">Trocar senha</h3>
+          <div id="pwMsg"></div>
+          <div class="field"><label data-i18n="settings.current">Senha atual</label><input type="password" id="pwCurrent"></div>
+          <div class="field"><label data-i18n="settings.new">Nova senha</label><input type="password" id="pwNew"></div>
+          <button class="btn btn-primary" id="changePwBtn" data-i18n="settings.changePw">Trocar senha</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Admin -->
+    <section id="page-admin" class="hidden">
+      <div class="page-eyebrow">Gestão</div>
+      <div class="page-title" data-i18n="admin.title">Painel do administrador</div>
+      <div class="grid grid-3" style="margin-bottom:20px;" id="adminMetrics"></div>
+      <div class="card" style="margin-bottom:20px;">
+        <h3 style="margin-bottom:14px;" data-i18n="admin.students">Alunos</h3>
+        <div style="overflow-x:auto;"><table id="adminStudentsTable"><thead><tr>
+          <th>E-mail</th><th>Nome</th><th>Status</th><th>Concluídas</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:14px;" data-i18n="admin.newLesson">Nova aula</h3>
+        <div class="grid grid-2">
+          <div class="field"><label>Módulo (nº)</label><input id="lsModule" type="number" value="1"></div>
+          <div class="field"><label>Ordem</label><input id="lsOrd" type="number" value="1"></div>
+        </div>
+        <div class="field"><label>Título</label><input id="lsTitle"></div>
+        <div class="field"><label>Descrição</label><input id="lsDesc"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="createLessonBtn">Criar aula</button>
+          <input type="file" id="lsVideoFile" accept="video/*" class="hidden">
+          <button class="btn btn-ghost hidden" id="uploadVideoBtn">Enviar vídeo</button>
+          <span class="small muted" id="lsStatus"></span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   BLACK WOLF — Portal do Curso — Frontend (SPA vanilla, sem build)
+   Mesmo padrão do blackwolf-painel/index.html: um arquivo só, fetch
+   direto no worker, Bearer token em localStorage.
+   ═══════════════════════════════════════════════════════════════ */
+
+// Ajuste para a URL real do worker do curso ao publicar (curso.blackwolfea.com/api
+// se o worker estiver atrás do mesmo domínio, ou a URL *.workers.dev direto).
+const API_BASE = window.BLACKWOLF_CURSO_API || '/api';
+
+const I18N = {
+  pt: {
+    'login.sub':'Portal do Curso','login.email':'E-mail','login.password':'Senha','login.enter':'Entrar','login.forgot':'Esqueci minha senha',
+    'forgot.sub':'Redefinir senha','forgot.send':'Enviar link','forgot.back':'Voltar ao login',
+    'topbar.badge':'CURSO','nav.dashboard':'Dashboard','nav.lessons':'Aulas','nav.materials':'Materiais','nav.settings':'Configurações','nav.admin':'Admin','nav.logout':'Sair',
+    'dash.eyebrow':'Meu progresso','dash.title':'Continue de onde parou',
+    'lessons.eyebrow':'Currículo','lessons.title':'Todas as aulas',
+    'player.eyebrow':'Aula','player.loading':'Carregando vídeo…','player.markDone':'✓ Marcar como concluída','player.prev':'◀ Anterior','player.next':'Próxima ▶',
+    'materials.eyebrow':'Downloads','materials.title':'Materiais do curso',
+    'settings.eyebrow':'Conta','settings.title':'Configurações','settings.profile':'Perfil','settings.name':'Nome','settings.lang':'Idioma da interface','settings.save':'Salvar',
+    'settings.password':'Trocar senha','settings.current':'Senha atual','settings.new':'Nova senha','settings.changePw':'Trocar senha',
+    'admin.title':'Painel do administrador','admin.students':'Alunos','admin.newLesson':'Nova aula',
+  },
+  en: {
+    'login.sub':'Course Portal','login.email':'Email','login.password':'Password','login.enter':'Sign in','login.forgot':'Forgot password',
+    'forgot.sub':'Reset password','forgot.send':'Send link','forgot.back':'Back to login',
+    'topbar.badge':'COURSE','nav.dashboard':'Dashboard','nav.lessons':'Lessons','nav.materials':'Materials','nav.settings':'Settings','nav.admin':'Admin','nav.logout':'Sign out',
+    'dash.eyebrow':'My progress','dash.title':'Continue where you left off',
+    'lessons.eyebrow':'Curriculum','lessons.title':'All lessons',
+    'player.eyebrow':'Lesson','player.loading':'Loading video…','player.markDone':'✓ Mark as complete','player.prev':'◀ Previous','player.next':'Next ▶',
+    'materials.eyebrow':'Downloads','materials.title':'Course materials',
+    'settings.eyebrow':'Account','settings.title':'Settings','settings.profile':'Profile','settings.name':'Name','settings.lang':'Interface language','settings.save':'Save',
+    'settings.password':'Change password','settings.current':'Current password','settings.new':'New password','settings.changePw':'Change password',
+    'admin.title':'Admin panel','admin.students':'Students','admin.newLesson':'New lesson',
+  },
+  es: {
+    'login.sub':'Portal del Curso','login.email':'Correo','login.password':'Contraseña','login.enter':'Entrar','login.forgot':'Olvidé mi contraseña',
+    'forgot.sub':'Restablecer contraseña','forgot.send':'Enviar enlace','forgot.back':'Volver al login',
+    'topbar.badge':'CURSO','nav.dashboard':'Panel','nav.lessons':'Clases','nav.materials':'Materiales','nav.settings':'Configuración','nav.admin':'Admin','nav.logout':'Salir',
+    'dash.eyebrow':'Mi progreso','dash.title':'Continúa donde lo dejaste',
+    'lessons.eyebrow':'Currículo','lessons.title':'Todas las clases',
+    'player.eyebrow':'Clase','player.loading':'Cargando video…','player.markDone':'✓ Marcar como completada','player.prev':'◀ Anterior','player.next':'Siguiente ▶',
+    'materials.eyebrow':'Descargas','materials.title':'Materiales del curso',
+    'settings.eyebrow':'Cuenta','settings.title':'Configuración','settings.profile':'Perfil','settings.name':'Nombre','settings.lang':'Idioma de la interfaz','settings.save':'Guardar',
+    'settings.password':'Cambiar contraseña','settings.current':'Contraseña actual','settings.new':'Nueva contraseña','settings.changePw':'Cambiar contraseña',
+    'admin.title':'Panel de administrador','admin.students':'Alumnos','admin.newLesson':'Nueva clase',
+  },
+};
+let currentLang = localStorage.getItem('cw_lang') || 'pt';
+function t(key){ return (I18N[currentLang] && I18N[currentLang][key]) || I18N.pt[key] || key; }
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+}
+function setLang(lang){
+  currentLang = I18N[lang] ? lang : 'pt';
+  localStorage.setItem('cw_lang', currentLang);
+  document.querySelectorAll('.lang-row button').forEach(b => b.classList.toggle('on', b.dataset.lang === currentLang));
+  applyI18n();
+}
+
+let TOKEN = localStorage.getItem('cw_token') || null;
+let ME = null;
+let LESSONS_CACHE = null;
+let CURRENT_LESSON = null;
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) { const err = new Error((data && data.error) || 'request_failed'); err.status = res.status; err.data = data; throw err; }
+  return data;
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/* ── Login / logout ── */
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const msg = document.getElementById('loginMsg');
+  msg.innerHTML = '';
+  try {
+    const data = await api('/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    TOKEN = data.token; localStorage.setItem('cw_token', TOKEN);
+    await boot();
+  } catch (err) {
+    msg.innerHTML = `<div class="login-err">${err.status === 429 ? 'Muitas tentativas. Aguarde alguns minutos.' : 'E-mail ou senha incorretos.'}</div>`;
+  }
+});
+document.getElementById('forgotLink').addEventListener('click', () => {
+  document.getElementById('loginWrap').classList.add('hidden');
+  document.getElementById('forgotWrap').classList.remove('hidden');
+});
+document.getElementById('backToLogin').addEventListener('click', () => {
+  document.getElementById('forgotWrap').classList.add('hidden');
+  document.getElementById('loginWrap').classList.remove('hidden');
+});
+document.getElementById('forgotForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('forgotEmail').value.trim();
+  await api('/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }).catch(() => {});
+  document.getElementById('forgotMsg').innerHTML = '<div class="login-ok">Se o e-mail existir, o link chega em instantes.</div>';
+});
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  try { await api('/logout', { method: 'POST' }); } catch (e) {}
+  TOKEN = null; localStorage.removeItem('cw_token');
+  location.reload();
+});
+document.querySelectorAll('.lang-row button').forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
+
+/* ── Navegação ── */
+document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+  item.addEventListener('click', () => showPage(item.dataset.page));
+});
+function showPage(page) {
+  document.querySelectorAll('main.content > section').forEach(s => s.classList.add('hidden'));
+  const target = document.getElementById('page-' + page);
+  if (target) target.classList.remove('hidden');
+  document.querySelectorAll('.nav-item[data-page]').forEach(n => n.classList.toggle('active', n.dataset.page === page));
+  if (page === 'lessons') renderAllLessons();
+  if (page === 'materials') renderMaterials();
+  if (page === 'admin') loadAdmin();
+}
+
+/* ── Boot ── */
+async function boot() {
+  try {
+    const me = await api('/me');
+    ME = me;
+    document.getElementById('loginWrap').classList.add('hidden');
+    document.getElementById('forgotWrap').classList.add('hidden');
+    document.getElementById('app').classList.add('active');
+    document.getElementById('tnName').textContent = me.user.name || me.user.email;
+    document.getElementById('tnAvatar').textContent = (me.user.name || me.user.email || '?')[0].toUpperCase();
+    document.getElementById('setName').value = me.user.name || '';
+    document.getElementById('setLang').value = me.user.lang || 'pt';
+    setLang(me.user.lang || currentLang);
+    if (me.user.role === 'admin') {
+      document.getElementById('adminNav').classList.remove('hidden');
+      document.getElementById('adminSep').style.display = 'block';
+    }
+    updateDashboardProgress(me.progress);
+    await loadLessons();
+    renderDashboard();
+  } catch (e) {
+    TOKEN = null; localStorage.removeItem('cw_token');
+    document.getElementById('loginWrap').classList.remove('hidden');
+  }
+}
+function updateDashboardProgress(p) {
+  if (!p) return;
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  document.getElementById('dashProgressLabel').textContent = `${p.done} / ${p.total} aulas`;
+  document.getElementById('dashProgressPct').textContent = pct + '%';
+  document.getElementById('dashProgressBar').style.width = pct + '%';
+}
+
+/* ── Aulas ── */
+async function loadLessons() {
+  LESSONS_CACHE = await api('/lessons');
+}
+function flatLessons() {
+  return (LESSONS_CACHE && LESSONS_CACHE.lessons) || [];
+}
+function renderDashboard() {
+  const wrap = document.getElementById('dashLessons');
+  wrap.innerHTML = '';
+  const lessons = flatLessons();
+  const nextIdx = lessons.findIndex(l => !l.progress.completed);
+  lessons.slice(0, 6).forEach((l, i) => wrap.appendChild(lessonRow(l, i === nextIdx)));
+}
+function renderAllLessons() {
+  const wrap = document.getElementById('allModules');
+  wrap.innerHTML = '';
+  const mods = (LESSONS_CACHE && LESSONS_CACHE.modules) || [];
+  const lessons = flatLessons();
+  const byModule = {};
+  lessons.forEach(l => { (byModule[l.module] = byModule[l.module] || []).push(l); });
+  const modIds = mods.length ? mods.map(m => m.id) : Object.keys(byModule).map(Number);
+  modIds.forEach(mid => {
+    const mod = mods.find(m => m.id === mid);
+    const group = byModule[mid] || [];
+    if (!group.length) return;
+    const h = document.createElement('h3');
+    h.style.margin = '20px 0 10px'; h.textContent = mod ? mod.title : ('Módulo ' + mid);
+    wrap.appendChild(h);
+    const g = document.createElement('div'); g.className = 'grid'; g.style.gap = '10px';
+    group.forEach(l => g.appendChild(lessonRow(l, false)));
+    wrap.appendChild(g);
+  });
+}
+function lessonRow(l, isCurrent) {
+  const row = document.createElement('div');
+  row.className = 'lesson-row';
+  const statusClass = l.progress.completed ? 'done' : (isCurrent ? 'current' : '');
+  const statusIcon = l.progress.completed ? '✓' : (isCurrent ? '▶' : '');
+  row.innerHTML = `
+    <div class="lesson-status ${statusClass}">${statusIcon}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:600;">${escapeHtml(l.title)}</div>
+      <div class="lesson-meta">${l.duration_s ? Math.round(l.duration_s / 60) + ' min' : ''} ${l.video_status !== 'ready' ? '· processando' : ''}</div>
+    </div>
+    <div class="pill ${l.progress.completed ? 'green' : 'blue'}">${l.progress.completed ? 'Concluída' : 'Assistir'}</div>
+  `;
+  row.addEventListener('click', () => openLesson(l.id));
+  return row;
+}
+async function openLesson(id) {
+  const lessons = flatLessons();
+  const l = lessons.find(x => x.id === id);
+  if (!l) return;
+  CURRENT_LESSON = l;
+  document.getElementById('playerTitle').textContent = l.title;
+  document.getElementById('playerDesc').textContent = l.description || '';
+  const box = document.getElementById('playerBox');
+  box.innerHTML = `<div class="player-placeholder">${t('player.loading')}</div>`;
+  showPage('player');
+  document.querySelectorAll('.nav-item[data-page]').forEach(n => n.classList.remove('active'));
+
+  const mats = document.getElementById('playerMaterials');
+  mats.innerHTML = (l.materials || []).map((m, i) =>
+    `<a class="pill" style="margin:4px 6px 0 0;display:inline-flex;" href="${API_BASE}/material/${l.id}/${i}" target="_blank">📎 ${escapeHtml(m.name)}</a>`
+  ).join('');
+
+  if (l.video_status !== 'ready') {
+    box.innerHTML = `<div class="player-placeholder">Vídeo ainda em processamento — volte em alguns minutos.</div>`;
+    return;
+  }
+  try {
+    const { token } = await api(`/lesson/${l.id}/token`);
+    // Player do Cloudflare Stream via signed token (iframe embed padrão do produto).
+    box.innerHTML = `<iframe src="https://iframe.videodelivery.net/${token}" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;" allowfullscreen></iframe>`;
+  } catch (e) {
+    box.innerHTML = `<div class="player-placeholder">Não foi possível carregar o vídeo agora.</div>`;
+  }
+  document.getElementById('markDoneBtn').onclick = () => markProgress(l.id, true);
+}
+async function markProgress(lessonId, completed) {
+  try {
+    await api('/progress', { method: 'POST', body: JSON.stringify({ lesson_id: lessonId, completed, position: 0 }) });
+    toast(completed ? 'Aula concluída ✓' : 'Progresso salvo');
+    await loadLessons();
+    const me = await api('/me'); updateDashboardProgress(me.progress);
+  } catch (e) { toast('Erro ao salvar progresso'); }
+}
+document.getElementById('prevLessonBtn').addEventListener('click', () => stepLesson(-1));
+document.getElementById('nextLessonBtn').addEventListener('click', () => stepLesson(1));
+function stepLesson(delta) {
+  const lessons = flatLessons();
+  const idx = lessons.findIndex(l => l.id === (CURRENT_LESSON && CURRENT_LESSON.id));
+  const next = lessons[idx + delta];
+  if (next) openLesson(next.id);
+}
+
+/* ── Materiais ── */
+function renderMaterials() {
+  const wrap = document.getElementById('materialsList');
+  wrap.innerHTML = '';
+  flatLessons().forEach(l => {
+    (l.materials || []).forEach((m, i) => {
+      const a = document.createElement('a');
+      a.className = 'card'; a.href = `${API_BASE}/material/${l.id}/${i}`; a.target = '_blank';
+      a.style.display = 'flex'; a.style.justifyContent = 'space-between'; a.style.alignItems = 'center';
+      a.innerHTML = `<span>📎 ${escapeHtml(m.name)}</span><span class="muted small">${escapeHtml(l.title)}</span>`;
+      wrap.appendChild(a);
+    });
+  });
+  if (!wrap.children.length) wrap.innerHTML = '<p class="muted">Nenhum material disponível ainda.</p>';
+}
+
+/* ── Configurações ── */
+document.getElementById('saveProfileBtn').addEventListener('click', async () => {
+  const name = document.getElementById('setName').value.trim();
+  const lang = document.getElementById('setLang').value;
+  try {
+    await api('/profile', { method: 'POST', body: JSON.stringify({ name, lang }) });
+    setLang(lang);
+    toast('Perfil salvo ✓');
+  } catch (e) { toast('Erro ao salvar'); }
+});
+document.getElementById('changePwBtn').addEventListener('click', async () => {
+  const current = document.getElementById('pwCurrent').value;
+  const new_password = document.getElementById('pwNew').value;
+  const msg = document.getElementById('pwMsg');
+  msg.innerHTML = '';
+  try {
+    await api('/change-password', { method: 'POST', body: JSON.stringify({ current, new_password }) });
+    msg.innerHTML = '<div class="login-ok">Senha alterada ✓</div>';
+    document.getElementById('pwCurrent').value = ''; document.getElementById('pwNew').value = '';
+  } catch (e) {
+    msg.innerHTML = `<div class="login-err">${e.data && e.data.error === 'wrong_current' ? 'Senha atual incorreta.' : 'Não foi possível trocar a senha.'}</div>`;
+  }
+});
+
+/* ── Admin ── */
+let pendingLessonId = null;
+async function loadAdmin() {
+  try {
+    const metrics = await api('/admin/metrics');
+    document.getElementById('adminMetrics').innerHTML = [
+      ['Alunos', metrics.students], ['Matrículas ativas', metrics.active_enrollments],
+      ['Conclusão média', metrics.avg_completion_pct + '%'],
+    ].map(([label, val]) => `<div class="card"><div class="muted small">${label}</div><div style="font-family:var(--fh);font-size:1.6rem;font-weight:700;margin-top:6px;">${val}</div></div>`).join('');
+
+    const students = await api('/admin/students?limit=50');
+    const tbody = document.querySelector('#adminStudentsTable tbody');
+    tbody.innerHTML = students.students.map(s => `
+      <tr>
+        <td>${escapeHtml(s.email)}</td><td>${escapeHtml(s.name || '')}</td>
+        <td><span class="pill ${s.status === 'active' ? 'green' : 'amber'}">${s.status || '—'}</span></td>
+        <td>${s.completed_lessons}</td>
+        <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:.75rem;" data-email="${escapeHtml(s.email)}" data-action="${s.status === 'active' ? 'revoke' : 'grant'}">${s.status === 'active' ? 'Revogar' : 'Liberar'}</button></td>
+      </tr>`).join('');
+    tbody.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api('/admin/enroll', { method: 'POST', body: JSON.stringify({ email: btn.dataset.email, action: btn.dataset.action }) });
+        loadAdmin();
+      });
+    });
+  } catch (e) { toast('Erro ao carregar admin'); }
+}
+document.getElementById('createLessonBtn').addEventListener('click', async () => {
+  const body = {
+    module: parseInt(document.getElementById('lsModule').value, 10) || 1,
+    ord: parseInt(document.getElementById('lsOrd').value, 10) || 1,
+    title: document.getElementById('lsTitle').value.trim(),
+    description: document.getElementById('lsDesc').value.trim(),
+    published: 0,
+  };
+  if (!body.title) return toast('Título é obrigatório');
+  try {
+    const r = await api('/admin/lesson', { method: 'POST', body: JSON.stringify(body) });
+    pendingLessonId = r.id;
+    document.getElementById('lsStatus').textContent = 'Aula criada (id ' + r.id + '). Envie o vídeo.';
+    document.getElementById('lsVideoFile').classList.remove('hidden');
+    document.getElementById('uploadVideoBtn').classList.remove('hidden');
+  } catch (e) { toast('Erro ao criar aula'); }
+});
+document.getElementById('uploadVideoBtn').addEventListener('click', async () => {
+  const file = document.getElementById('lsVideoFile').files[0];
+  if (!file || !pendingLessonId) return toast('Escolha um arquivo de vídeo');
+  document.getElementById('lsStatus').textContent = 'Pedindo URL de upload…';
+  try {
+    const { uploadURL } = await api(`/admin/lesson/${pendingLessonId}/upload-url`, { method: 'POST' });
+    document.getElementById('lsStatus').textContent = 'Enviando vídeo (não feche esta aba)…';
+    const form = new FormData(); form.append('file', file);
+    const up = await fetch(uploadURL, { method: 'POST', body: form });
+    if (!up.ok) throw new Error('upload_failed');
+    document.getElementById('lsStatus').textContent = 'Vídeo enviado — processando no Stream. Publique a aula quando o status virar "ready".';
+    toast('Upload concluído ✓');
+  } catch (e) { document.getElementById('lsStatus').textContent = 'Falha no upload.'; }
+});
+
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+/* ── Start ── */
+(async function init() {
+  setLang(currentLang);
+  const urlParams = new URLSearchParams(location.search);
+  const resetToken = urlParams.get('reset');
+  if (resetToken) {
+    const np = prompt('Digite sua nova senha (mín. 8 caracteres):');
+    if (np) {
+      try { await api('/reset-password', { method: 'POST', body: JSON.stringify({ token: resetToken, new_password: np }) }); alert('Senha redefinida — faça login.'); }
+      catch (e) { alert('Link inválido ou expirado.'); }
+    }
+    history.replaceState({}, '', location.pathname);
+  }
+  if (TOKEN) { await boot(); } else { document.getElementById('loginWrap').classList.remove('hidden'); }
+})();
+</script>
+</body>
+</html>
