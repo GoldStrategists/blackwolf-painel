@@ -1303,7 +1303,7 @@ function resetUserState(){
     DASH_ACCOUNT=null; EQUITY_OVERRIDE=null;
     REP_DATA=null; REP_ACCOUNT=null; REP_PERIOD='month'; REP_LOADING=false;
     ADMIN_RES=null; ADMIN_RES_LOADING=false; ADMIN_RES_PERIOD='today'; ADMIN_CLIENT=null; ADMIN_CLIENT_EMAIL=null; ADMIN_CLIENT_LOADING=false;
-    PAY_DATA=null; PAY_LOADING=false; MAINT=null; ROBOT_META=null; MAINT_PUBLIC=null;
+    PAY_DATA=null; PAY_LOADING=false; MAINT=null; ROBOT_META=null; ROBOT_META_NT=null; MAINT_PUBLIC=null;
     ALL_TRADES=[]; STATS=EMPTY_STATS; DATA=buildEmptyData();
   }catch(e){}
 }
@@ -2761,20 +2761,47 @@ function renderDownloads(){
     LANG==='pt'?'ARQUIVOS':LANG==='en'?'FILES':'ARCHIVOS',
     'Downloads',
     LANG==='pt'?'Baixe o robô e os arquivos necessários para operar.':LANG==='en'?'Download the robot and files needed to trade.':'Descarga el robot y archivos necesarios para operar.'
-  )+`
+  )+((function(){
+    const canDl = c.licenseKey && c.licenseStatus==='active' && !(SESSION&&SESSION.isDemo);
+    const dlBtn=(kind,label)=> canDl
+      ? `<button class="dl-btn" onclick="downloadRobot('${kind}')" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`
+      : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`;
+    const baixar = LANG==='pt'?'Baixar':LANG==='en'?'Download':'Descargar';
+    return `
+  <div class="banner info rv" style="margin-bottom:14px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div class="banner-tx">${LANG==='pt'?'Sua licença vale <b>por conta</b>, não por robô. Você pode usar uma conta na <b>MetaTrader</b> e outra no <b>NinjaTrader</b> (até o limite do seu plano).':LANG==='en'?'Your license is <b>per account</b>, not per robot. You can use one account on <b>MetaTrader</b> and another on <b>NinjaTrader</b> (up to your plan limit).':'Tu licencia es <b>por cuenta</b>, no por robot. Puedes usar una cuenta en <b>MetaTrader</b> y otra en <b>NinjaTrader</b>.'}</div>
+  </div>
   <div class="card grad rv">
     <div class="dl-card">
       <div class="dl-ico">🐺</div>
       <div class="dl-info"><div class="dl-name">${c.eaFile.name}<span class="pill current">v${c.eaFile.version}</span></div><div class="dl-meta">Expert Advisor · MetaTrader 5 · ${c.eaFile.size}</div></div>
-      ${(c.licenseKey && c.licenseStatus==='active' && !(SESSION&&SESSION.isDemo))
-        ? `<button class="dl-btn" onclick="downloadRobot()" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</button>`
-        : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${LANG==='pt'?'Baixar robô':LANG==='en'?'Download robot':'Descargar robot'}</button>`}
+      ${dlBtn('mt5', baixar+' (MT5)')}
     </div>
   </div>
-  <div class="banner info rv">
+  <div class="card grad rv" style="margin-top:12px">
+    <div class="dl-card">
+      <div class="dl-ico">🐺</div>
+      <div class="dl-info"><div class="dl-name">BlackWolf_NinjaTrader.zip<span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div><div class="dl-meta">Strategy · NinjaTrader 8 · .zip</div></div>
+      ${dlBtn('nt', baixar+' (NT8)')}
+    </div>
+  </div>
+  <div class="banner info rv" style="margin-top:14px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'Primeira vez? Siga o <b>guia de instalação visual</b> passo a passo para colocar o robô para rodar.':LANG==='en'?'First time? Follow the <b>visual installation guide</b> step by step to get the robot running.':'¿Primera vez? Sigue la <b>guía de instalación visual</b> paso a paso.'} <span class="login-link" onclick="goPage('setup')" style="color:var(--blue-l)">${LANG==='pt'?'Abrir guia →':LANG==='en'?'Open guide →':'Abrir guía →'}</span></div>
+    <div class="banner-tx">${LANG==='pt'?'Primeira vez na <b>MetaTrader</b>? Siga o guia visual passo a passo.':LANG==='en'?'First time on <b>MetaTrader</b>? Follow the visual guide.':'¿Primera vez en <b>MetaTrader</b>? Sigue la guía visual.'} <span class="login-link" onclick="goPage('setup')" style="color:var(--blue-l)">${LANG==='pt'?'Abrir guia →':LANG==='en'?'Open guide →':'Abrir guía →'}</span></div>
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Como instalar no NinjaTrader 8':LANG==='en'?'How to install on NinjaTrader 8':'Cómo instalar en NinjaTrader 8'}</div><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div>
+    <ol style="margin:8px 0 0;padding-left:20px;color:var(--t2);line-height:1.65;font-size:.9rem">
+      <li>${LANG==='pt'?'Baixe o <b>BlackWolf_NinjaTrader.zip</b> acima. <b>NÃO descompacte.</b>':LANG==='en'?'Download <b>BlackWolf_NinjaTrader.zip</b> above. <b>Do NOT unzip.</b>':'Descarga el <b>.zip</b> arriba. <b>NO lo descomprimas.</b>'}</li>
+      <li>${LANG==='pt'?'No NinjaTrader 8 (Control Center): <b>Tools → Import → NinjaScript Add-On…</b>':LANG==='en'?'In NinjaTrader 8 (Control Center): <b>Tools → Import → NinjaScript Add-On…</b>':'En NinjaTrader 8: <b>Tools → Import → NinjaScript Add-On…</b>'}</li>
+      <li>${LANG==='pt'?'Selecione o arquivo <b>.zip</b> e confirme a importação.':LANG==='en'?'Select the <b>.zip</b> and confirm the import.':'Selecciona el <b>.zip</b> y confirma.'}</li>
+      <li>${LANG==='pt'?'Abra um <b>gráfico</b> do ativo → botão <b>Strategies</b> → adicione <b>BlackWolf</b>.':LANG==='en'?'Open a <b>chart</b> → <b>Strategies</b> → add <b>BlackWolf</b>.':'Abre un <b>gráfico</b> → <b>Strategies</b> → añade <b>BlackWolf</b>.'}</li>
+      <li>${LANG==='pt'?'No campo <b>Licença</b>, cole a sua chave (a mesma do painel). Marque <b>Enabled = True</b> → <b>OK</b>.':LANG==='en'?'In the <b>License</b> input, paste your key (same as the panel). Set <b>Enabled = True</b> → <b>OK</b>.':'En <b>License</b>, pega tu clave. <b>Enabled = True</b> → <b>OK</b>.'}</li>
+    </ol>
+    <div class="banner rv" style="margin:12px 0 0;background:rgba(45,108,255,.06);border:1px solid rgba(45,108,255,.2)"><div class="banner-tx" style="font-size:.85rem">${LANG==='pt'?'💡 Para <b>testar</b> sem licença, use uma conta <b>Sim101 / Playback</b> (isentas). Em conta real, sua licença precisa estar ativa. A conta do NinjaTrader conta como uma das contas do seu plano.':LANG==='en'?'💡 To <b>test</b> without a license use a <b>Sim101 / Playback</b> account (exempt). On a real account your license must be active. The NinjaTrader account counts as one of your plan accounts.':'💡 Para <b>probar</b> usa una cuenta <b>Sim101 / Playback</b>. En cuenta real la licencia debe estar activa.'}</div></div>
   </div>`;
+  })());
 }
 
 /* ─────── CLIENT: SETUP WIZARD (visual) ─────── */
@@ -3453,14 +3480,15 @@ function demoAdminClient(email){
 }
 
 /* ═══════════════ ADMIN: MANUTENÇÃO & ROBÔ ═══════════════ */
-let MAINT=null, ROBOT_META=null, MAINT_LOADING=false, MAINT_PUBLIC=null, PAUSED=null;
+let MAINT=null, ROBOT_META=null, ROBOT_META_NT=null, MAINT_LOADING=false, MAINT_PUBLIC=null, PAUSED=null;
 async function loadAdminMaint(){
-  if(SESSION&&SESSION.isDemo){ MAINT={active:false,upcoming:null,on:false}; PAUSED={paused:false}; ROBOT_META={hasFile:true,meta:{version:'1.01',size:191620,updatedAt:'2026-07-01T12:00:00Z'}}; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint'); return; }
+  if(SESSION&&SESSION.isDemo){ MAINT={active:false,upcoming:null,on:false}; PAUSED={paused:false}; ROBOT_META={hasFile:true,meta:{version:'1.01',size:191620,updatedAt:'2026-07-01T12:00:00Z'}}; ROBOT_META_NT={hasFile:false}; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint'); return; }
   MAINT_LOADING=true;
   try{
     const rm=await apiFetch('/api/maintenance'); MAINT=rm.ok?await rm.json():{__err:true};
     const rp=await apiFetch('/api/admin/pause'); PAUSED=rp.ok?await rp.json():{paused:false};
     const rr=await apiFetch('/api/robot/meta'); ROBOT_META=rr.ok?await rr.json():{hasFile:false};
+    const rn=await apiFetch('/api/robot/meta?type=nt'); ROBOT_META_NT=rn.ok?await rn.json():{hasFile:false};
     MAINT_PUBLIC=MAINT;
   }catch(e){ MAINT={__err:true}; }
   MAINT_LOADING=false; if(CURRENT_PAGE==='admin-maint')renderPage('admin-maint');
@@ -3538,7 +3566,7 @@ function renderAdminMaint(){
       <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVer" placeholder="1.02" value="${rm?esc(rm.version||''):''}"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatory"> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
-    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
+    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload('mt5')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
   </div>
 
   <div class="card rv" style="margin-top:12px">
@@ -3602,22 +3630,27 @@ function maintClear(){
   if(SESSION&&SESSION.isDemo){ toast('(demo) cancelado','info'); return; }
   (async()=>{ try{ const r=await apiFetch('/api/admin/maintenance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clear'})}); if(r.ok){ MAINT=await r.json(); MAINT_PUBLIC=MAINT; toast(LANG==='pt'?'Agendamento cancelado':'Schedule cleared','info'); renderPage('admin-maint'); } }catch(e){} })();
 }
-function robotUpload(){
+function robotUpload(kind){
+  kind = (kind==='nt') ? 'nt' : 'mt5';
+  const isNt = kind==='nt';
   if(SESSION&&SESSION.isDemo){ toast('(demo) robô enviado','info'); return; }
-  const f=(document.getElementById('robotFile')||{}).files;
-  if(!f||!f[0]){ toast(LANG==='pt'?'Escolha o arquivo .ex5.':'Choose the .ex5 file.','error'); return; }
+  const ids = isNt
+    ? {file:'robotFileNT',ver:'robotVerNT',mand:'robotMandatoryNT',btn:'robotUpBtnNT'}
+    : {file:'robotFile',ver:'robotVer',mand:'robotMandatory',btn:'robotUpBtn'};
+  const f=(document.getElementById(ids.file)||{}).files;
+  if(!f||!f[0]){ toast(isNt?(LANG==='pt'?'Escolha o arquivo .zip do NinjaTrader.':'Choose the NinjaTrader .zip file.'):(LANG==='pt'?'Escolha o arquivo .ex5.':'Choose the .ex5 file.'),'error'); return; }
   const file=f[0];
   if(file.size>4*1024*1024){ toast(LANG==='pt'?'Arquivo grande demais (máx 4MB).':'File too large.','error'); return; }
-  const ver=(document.getElementById('robotVer')||{}).value||'1.0';
-  const mandatory=!!(document.getElementById('robotMandatory')||{}).checked;
-  const btn=document.getElementById('robotUpBtn'); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Enviando…':'Uploading…'; }
+  const ver=(document.getElementById(ids.ver)||{}).value||'1.0';
+  const mandatory=!!(document.getElementById(ids.mand)||{}).checked;
+  const btn=document.getElementById(ids.btn); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Enviando…':'Uploading…'; }
   const reader=new FileReader();
   reader.onload=async()=>{
     try{
       const b64=String(reader.result).replace(/^data:[^,]*,/,'');
-      const r=await apiFetch('/api/admin/robot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64:b64,version:ver,filename:file.name,mandatory})});
+      const r=await apiFetch('/api/admin/robot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64:b64,version:ver,filename:file.name,mandatory,type:kind})});
       const d=await r.json();
-      if(r.ok){ ROBOT_META={hasFile:true,meta:d.meta}; toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage(CURRENT_PAGE==='admin-files'?'admin-files':'admin-maint'); }
+      if(r.ok){ if(isNt){ ROBOT_META_NT={hasFile:true,meta:d.meta}; } else { ROBOT_META={hasFile:true,meta:d.meta}; } toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage(CURRENT_PAGE==='admin-files'?'admin-files':'admin-maint'); }
       else toast(d.error==='too_large'?(LANG==='pt'?'Arquivo grande demais.':'Too large.'):(LANG==='pt'?'Falha ao enviar.':'Upload failed.'),'error');
     }catch(e){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); }
     if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot'; }
@@ -3625,15 +3658,19 @@ function robotUpload(){
   reader.onerror=()=>{ toast(LANG==='pt'?'Erro ao ler o arquivo.':'Read error.','error'); if(btn){btn.disabled=false;btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot';} };
   reader.readAsDataURL(file);
 }
-// baixa o robô guardado no servidor (com sessão); cai pro estático se não houver
-async function downloadRobot(){
+// baixa o robô guardado no servidor (com sessão); MT5 cai pro estático se não houver
+async function downloadRobot(kind){
+  kind = (kind==='nt') ? 'nt' : 'mt5';
   if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) download simulado':'(demo) download','info'); return; }
+  const isNt = kind==='nt';
+  const fname = isNt ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
   try{
-    const r=await apiFetch('/api/robot/download');
-    if(r.ok){ const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='BLACK_WOLF_CLIENTE.ex5'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); }
+    const r=await apiFetch('/api/robot/download'+(isNt?'?type=nt':''));
+    if(r.ok){ const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); }
     else if(r.status===403){ toast(LANG==='pt'?'Sua licença está inativa.':'Your license is inactive.','error'); }
-    else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } // fallback: arquivo estático
-  }catch(e){ window.location.href='/BLACK_WOLF_CLIENTE.ex5'; }
+    else if(isNt){ toast(LANG==='pt'?'Robô do NinjaTrader ainda não está disponível.':LANG==='en'?'The NinjaTrader robot is not available yet.':'El robot de NinjaTrader aún no está disponible.','error'); }
+    else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } // fallback: arquivo estático (só MT5)
+  }catch(e){ if(isNt){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } }
 }
 // banner de manutenção pro CLIENTE (topo do dashboard)
 async function fetchMaintenancePublic(){
@@ -4375,15 +4412,34 @@ function renderAdminFiles(){
         <div class="strat-info"><span class="strat-info-item">${fmtKB(rm.size)}</span><span class="strat-info-item">${LANG==='pt'?'atualizado':LANG==='en'?'updated':'actualizado'}: <b>${fmtDateTime(rm.updatedAt)}</b></span></div></div>
       </div></div>`
     : `<div class="banner info rv"><div class="banner-tx">${LANG==='pt'?'Nenhum robô enviado ainda — o download usa o arquivo padrão do site. Envie um abaixo para servir a sua própria versão.':LANG==='en'?'No robot uploaded yet — download uses the default site file. Upload one below to serve your own version.':'Aún no se subió un robot — la descarga usa el archivo por defecto.'}</div></div>`;
+  const rn=(ROBOT_META_NT&&ROBOT_META_NT.meta)||null;
+  const curNT = rn
+    ? `<div class="strat-item"><div class="strat-top">
+        <div style="width:48px;height:48px;border-radius:12px;background:rgba(45,108,255,.1);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🐺</div>
+        <div class="strat-body"><div class="strat-name">${esc(rn.filename||'BlackWolf_NinjaTrader.zip')} <span class="pill current">v${esc(rn.version||'—')}</span> <span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span>${rn.mandatory?' <span class="pill overdue">'+(LANG==='pt'?'obrigatória':LANG==='en'?'mandatory':'obligatoria')+'</span>':''}</div>
+        <div class="strat-desc">${LANG==='pt'?'Versão do NinjaTrader servida agora aos clientes no download.':LANG==='en'?'NinjaTrader version currently served to clients on download.':'Versión de NinjaTrader servida ahora a los clientes.'}</div>
+        <div class="strat-info"><span class="strat-info-item">${fmtKB(rn.size)}</span><span class="strat-info-item">${LANG==='pt'?'atualizado':LANG==='en'?'updated':'actualizado'}: <b>${fmtDateTime(rn.updatedAt)}</b></span></div></div>
+      </div></div>`
+    : `<div class="banner info rv"><div class="banner-tx">${LANG==='pt'?'Nenhum robô do NinjaTrader enviado ainda. Envie o pacote .zip abaixo para liberar o download aos clientes.':LANG==='en'?'No NinjaTrader robot uploaded yet. Upload the .zip package below to enable the client download.':'Aún no se subió el robot de NinjaTrader. Sube el .zip abajo.'}</div></div>`;
   return head+`<div class="card rv">${cur}</div>
   <div class="card rv" style="margin-top:12px">
-    <div class="card-head"><div class="card-title">${LANG==='pt'?'Enviar nova versão':LANG==='en'?'Upload new version':'Subir nueva versión'}</div></div>
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Enviar nova versão (MetaTrader 5)':LANG==='en'?'Upload new version (MetaTrader 5)':'Subir nueva versión (MetaTrader 5)'}</div><span class="pill current">MT5</span></div>
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
       <div class="set-field"><label>${LANG==='pt'?'Arquivo .ex5':'.ex5 file'}</label><input type="file" accept=".ex5" class="set-input" id="robotFile" style="padding:8px"></div>
       <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVer" placeholder="1.02" value="${rm?esc(rm.version||''):''}"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatory"${rm&&rm.mandatory?' checked':''}> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
-    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
+    <button class="btn-primary" id="robotUpBtn" onclick="robotUpload('mt5')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
+  </div>
+  <div class="card rv" style="margin-top:12px">${curNT}</div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title">${LANG==='pt'?'Enviar nova versão (NinjaTrader 8)':LANG==='en'?'Upload new version (NinjaTrader 8)':'Subir nueva versión (NinjaTrader 8)'}</div><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="set-field"><label>${LANG==='pt'?'Arquivo .zip (NinjaScript Add-On)':'.zip file (NinjaScript Add-On)'}</label><input type="file" accept=".zip" class="set-input" id="robotFileNT" style="padding:8px"></div>
+      <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVerNT" placeholder="1.0" value="${rn?esc(rn.version||''):''}"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--t2);margin:2px 0 12px;cursor:pointer"><input type="checkbox" id="robotMandatoryNT"${rn&&rn.mandatory?' checked':''}> ${LANG==='pt'?'Marcar como atualização obrigatória (avisa o cliente com destaque)':LANG==='en'?'Mark as mandatory update':'Marcar como actualización obligatoria'}</label>
+    <button class="btn-primary" id="robotUpBtnNT" onclick="robotUpload('nt')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${LANG==='pt'?'Enviar robô':LANG==='en'?'Upload robot':'Subir robot'}</button>
   </div>`;
 }
 
