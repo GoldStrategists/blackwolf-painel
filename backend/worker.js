@@ -142,11 +142,12 @@ export default {
       if (path === '/api/ea/trades' && request.method === 'POST')        return await handleEaTrades(request, env, json, url);
       if (path === '/api/ea/ping' && request.method === 'GET')           return await handleEaPing(request, env, json, url);
       if (path === '/api/stripe-webhook' && request.method === 'POST')   return await handleStripeWebhook(request, env, json, ctx);
+      if (path === '/api/portal' && request.method === 'POST')           return await handleBillingPortal(request, env, json);
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v40' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v40' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v41' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v41' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -559,6 +560,16 @@ async function handleStripeWebhook(request, env, json, ctx) {
         newStatus = 'active';  // ativo, mesmo com cancelamento agendado pro fim do ciclo
       } else if (status === 'canceled' || status === 'unpaid' || status === 'incomplete_expired') {
         newStatus = 'revoked'; // ciclo encerrado / inadimplência esgotada
+      }
+      // v41: TROCA DE PLANO (upgrade/downgrade pelo Portal) — subscription.updated/created
+      // traz o novo preço. Reaplica plano + limite de contas, mas SÓ quando o plano é
+      // identificado de verdade (explicit); nunca rebaixa por assinatura sem metadata.
+      if (event.type !== 'customer.subscription.deleted') {
+        const rp = await resolvePlanFromSub(env, sub);
+        if (rp && rp.explicit) {
+          await env.DB.prepare('UPDATE users SET plan = ?, account_limit = ? WHERE stripe_customer = ?').bind(rp.plan, rp.limit, cust).run();
+          logEvent({ evt: 'plan_change', customer: cust, plan: rp.plan, limit: rp.limit });
+        }
       }
       // past_due / incomplete → não mexe (período de novas tentativas / pagamento inicial pendente)
       if (newStatus) {
@@ -1453,6 +1464,46 @@ async function stripeGet(env, path) {
     return { ok: r.ok, status: r.status, body };
   } catch (e) { return { ok: false, status: 0, body: null }; }
 }
+// POST form-encoded pra Stripe (criar sessão do Portal de Cobrança etc.)
+async function stripePost(env, path, params) {
+  try {
+    const form = new URLSearchParams();
+    for (const k in params) { if (params[k] != null) form.append(k, String(params[k])); }
+    const r = await fetch('https://api.stripe.com/v1' + path, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString()
+    });
+    let body = null; try { body = await r.json(); } catch (e) {}
+    return { ok: r.ok, status: r.status, body };
+  } catch (e) { return { ok: false, status: 0, body: null }; }
+}
+// GET /api/portal — cria uma sessão do Portal de Cobrança da Stripe JÁ AUTENTICADA
+// para o cliente logado (usa o stripe_customer dele; se faltar, acha pelo e-mail).
+// Assim o aluno troca de plano/cartão/cancela SEM logar na Stripe.
+async function handleBillingPortal(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  if (!env.STRIPE_SECRET_KEY) return json({ error: 'stripe_key_missing' }, 500);
+  const u = await env.DB.prepare('SELECT stripe_customer FROM users WHERE email = ?').bind(email).first();
+  if (!u) return json({ error: 'not_found' }, 404);
+  let cust = u.stripe_customer && String(u.stripe_customer).trim();
+  if (!cust) {
+    // sem customer salvo → tenta achar pelo e-mail e guarda pra próxima
+    const cs = await stripeGet(env, '/customers?email=' + encodeURIComponent(email) + '&limit=1');
+    if (cs.ok && cs.body && Array.isArray(cs.body.data) && cs.body.data[0]) {
+      cust = cs.body.data[0].id;
+      await env.DB.prepare('UPDATE users SET stripe_customer = COALESCE(stripe_customer, ?) WHERE email = ?').bind(cust, email).run();
+    }
+  }
+  if (!cust) return json({ error: 'no_customer', message: 'Sem assinatura Stripe vinculada.' }, 400);
+  const returnUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
+  const r = await stripePost(env, '/billing_portal/sessions', { customer: cust, return_url: returnUrl });
+  if (r.ok && r.body && r.body.url) return json({ ok: true, url: r.body.url });
+  const msg = (r.body && r.body.error && r.body.error.message) || 'portal_error';
+  logEvent({ evt: 'portal_fail', email, detail: msg });
+  return json({ error: 'portal_error', message: msg }, 400);
+}
 
 // v37: Resolve o plano EXATO de um pagamento pelo que o cliente comprou no Stripe —
 // NUNCA pelo valor pago (cupom/promoção/sorteio não mudam o plano nem o nº de contas).
@@ -1500,6 +1551,27 @@ async function resolvePlan(env, obj, isCheckout) {
   // 3) NÃO identificado no Stripe → NÃO adivinha. Mínimo seguro (1 conta) + alerta.
   logEvent({ evt: 'plan_unresolved', email: (obj && (obj.customer_details && obj.customer_details.email || obj.customer_email)) || null });
   return { plan: 'Verificar plano', limit: 1, explicit: false, unresolved: true };
+}
+// v41: resolve o plano a partir de uma ASSINATURA (evento subscription.updated/created)
+// — usado quando o aluno troca de plano no Portal. Lê metadata.accounts do PREÇO e,
+// se preciso, busca o PRODUTO pra ler metadata/nome. Só retorna quando é EXPLÍCITO
+// (nunca chuta — assim uma assinatura sem metadata não rebaixa o limite do cliente).
+async function resolvePlanFromSub(env, sub) {
+  try {
+    const item = sub && sub.items && sub.items.data && sub.items.data[0];
+    const price = item && item.price;
+    if (!price) return null;
+    const p1 = planFromMeta(price.metadata); if (p1) return p1;
+    if (looksLikePlan(price.nickname)) return { plan: price.nickname, limit: planAccountLimit(price.nickname), explicit: true };
+    const prodId = (typeof price.product === 'string') ? price.product : (price.product && price.product.id);
+    if (prodId && env.STRIPE_SECRET_KEY) {
+      const pr = await stripeGet(env, '/products/' + prodId);
+      const prod = pr && pr.ok && pr.body;
+      const p2 = planFromMeta(prod && prod.metadata); if (p2) return p2;
+      if (looksLikePlan(prod && prod.name)) return { plan: prod.name, limit: planAccountLimit(prod.name), explicit: true };
+    }
+  } catch (e) { logEvent({ evt: 'sub_plan_resolve_fail', detail: String(e && e.message || e) }); }
+  return null;
 }
 async function handleAdminStripeSync(request, env, json) {
   const email = await getSessionEmail(request, env);
