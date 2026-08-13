@@ -2687,6 +2687,8 @@ function renderLicense(){
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas':LANG==='en'?'Accounts':'Cuentas'}</div><div class="val">${accList.length} / ${limTxt}</div></div>
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Acesso pago até':LANG==='en'?'Paid access until':'Acceso pago hasta'}</div><div class="val">${paidUntil}</div></div>
       </div>
+      <button class="btn-primary" id="portalBtn" style="width:100%;justify-content:center;margin-top:18px" onclick="openBillingPortal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>${LANG==='pt'?'Gerenciar assinatura (mudar de plano)':LANG==='en'?'Manage subscription (change plan)':'Gestionar suscripción (cambiar plan)'}</button>
+      <p style="font-size:.78rem;color:var(--t3);margin:8px 0 0;text-align:center">${LANG==='pt'?'Faça upgrade/downgrade, troque o cartão, veja faturas ou cancele — sem precisar de senha.':LANG==='en'?'Upgrade/downgrade, change your card, view invoices or cancel — no password needed.':'Sube/baja de plan, cambia la tarjeta, ve facturas o cancela — sin contraseña.'}</p>
     </div>
 
     <div class="card rv">
@@ -3671,6 +3673,21 @@ async function downloadRobot(kind){
     else if(isNt){ toast(LANG==='pt'?'Robô do NinjaTrader ainda não está disponível.':LANG==='en'?'The NinjaTrader robot is not available yet.':'El robot de NinjaTrader aún no está disponible.','error'); }
     else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } // fallback: arquivo estático (só MT5)
   }catch(e){ if(isNt){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } }
+}
+// abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
+// cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
+async function openBillingPortal(btn){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o portal de assinatura':'(demo) would open the billing portal','info'); return; }
+  const old = btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Abrindo…':LANG==='en'?'Opening…':'Abriendo…'; }
+  try{
+    const r=await apiFetch('/api/portal',{method:'POST'});
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(r.ok && d.url){ window.location.href=d.url; return; } // redireciona pro portal
+    if(d.error==='no_customer'){ toast(LANG==='pt'?'Não achamos sua assinatura na Stripe. Fale com o suporte que a gente resolve.':LANG==='en'?'We could not find your Stripe subscription. Contact support.':'No encontramos tu suscripción en Stripe. Contacta al soporte.','error'); }
+    else if(d.error==='portal_error'){ toast(LANG==='pt'?'O portal de assinatura ainda não está configurado. Avise o suporte.':LANG==='en'?'The billing portal is not configured yet. Contact support.':'El portal aún no está configurado. Avisa al soporte.','error'); }
+    else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
+  }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
+  if(btn){ btn.disabled=false; btn.innerHTML=old; }
 }
 // banner de manutenção pro CLIENTE (topo do dashboard)
 async function fetchMaintenancePublic(){
