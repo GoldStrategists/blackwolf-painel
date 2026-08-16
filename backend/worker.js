@@ -120,6 +120,10 @@ export default {
       if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
+      if (path === '/api/course-leads' && request.method === 'POST')      return await handleCourseLeadCreate(request, env, json);
+      if (path === '/api/admin/course-leads' && request.method === 'GET') return await handleAdminCourseLeads(request, env, json);
+      if (path === '/api/admin/course-leads' && request.method === 'POST') return await handleAdminCourseLeadUpdate(request, env, json);
+      if (path === '/api/admin/course-bonuses' && request.method === 'GET') return await handleAdminCourseBonuses(request, env, json);
       if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
       if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/admin/broadcast' && request.method === 'POST')   return await handleAdminBroadcast(request, env, json);
@@ -157,6 +161,72 @@ export default {
     }
   },
 };
+
+/* ───────────────── CURSO: LISTA VIP E BÔNUS ─────────────────
+   Dados de captação e controle de bônus ficam em D1s próprios, jamais no
+   banco operacional do EA. Os bindings LEADS_DB e BONUS_DB são obrigatórios
+   para estas rotas; enquanto não existirem, a captação permanece desativada. */
+function normalizeCourseEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) ? email : null;
+}
+function normalizeWhatsapp(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15 ? '+' + digits : null;
+}
+async function requireAdmin(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return null;
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  return me && me.role === 'admin' ? email : null;
+}
+async function handleCourseLeadCreate(request, env, json) {
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  let data;
+  try { data = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const name = String(data.name || '').trim().replace(/\s+/g, ' ');
+  const email = normalizeCourseEmail(data.email);
+  const whatsapp = normalizeWhatsapp(data.whatsapp);
+  if (name.length < 2 || name.length > 120 || !email || !whatsapp || data.whatsapp_consent !== true) {
+    return json({ error: 'invalid_lead' }, 400);
+  }
+  const now = new Date().toISOString();
+  await env.LEADS_DB.prepare(
+    `INSERT INTO course_leads (name, email, whatsapp, whatsapp_consent, consent_at, source, status, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, 'curso.blackwolfea.com', 'new', ?, ?)
+     ON CONFLICT(email) DO UPDATE SET name=excluded.name, whatsapp=excluded.whatsapp,
+       whatsapp_consent=1, consent_at=excluded.consent_at, updated_at=excluded.updated_at`
+  ).bind(name, email, whatsapp, now, now, now).run();
+  return json({ ok: true });
+}
+async function handleAdminCourseLeads(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  const rows = await env.LEADS_DB.prepare(
+    'SELECT id, name, email, whatsapp, whatsapp_consent, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 1000'
+  ).all();
+  return json({ leads: rows.results || [] });
+}
+async function handleAdminCourseLeadUpdate(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  let data; try { data = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const id = Number(data.id);
+  const status = String(data.status || '');
+  const notes = String(data.notes || '').trim().slice(0, 1000);
+  if (!Number.isInteger(id) || id < 1 || !['new', 'contacted', 'group', 'closed'].includes(status)) return json({ error: 'invalid_update' }, 400);
+  await env.LEADS_DB.prepare('UPDATE course_leads SET status=?, notes=?, updated_at=? WHERE id=?')
+    .bind(status, notes, new Date().toISOString(), id).run();
+  return json({ ok: true });
+}
+async function handleAdminCourseBonuses(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
+  const rows = await env.BONUS_DB.prepare(
+    'SELECT email, stripe_customer, checkout_session_id, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 1000'
+  ).all();
+  return json({ bonuses: rows.results || [] });
+}
 
 /* ───────────────── CRIPTOGRAFIA ───────────────── */
 function hexToBuf(hex) {
@@ -603,6 +673,16 @@ async function handleStripeWebhook(request, env, json, ctx) {
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
+  // O Curso Manual é pagamento único e NÃO pode cair no fluxo de criação de
+  // licença/assinatura do EA. Só um identificador explícito na Stripe o marca
+  // como curso; valores monetários nunca são usados como critério.
+  if (isCheckout && await isCourseManualCheckout(env, obj)) {
+    if (!email) return json({ error: 'no_email' }, 400);
+    if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
+    await registerCourseBonus(env, obj, email.trim().toLowerCase(), stripeCustomer);
+    return json({ ok: true, action: 'course_bonus_eligible' });
+  }
+
   // v37: Identifica o plano EXATAMENTE pelo que o cliente comprou no Stripe (produto/
   // preço), NUNCA pelo valor pago — promoção/cupom/sorteio não mudam o plano nem o
   // número de contas. Se o Stripe não informar o plano, marca p/ revisão (mínimo 1
@@ -680,6 +760,37 @@ async function handleStripeWebhook(request, env, json, ctx) {
   }
 
   return json({ ok: true, action: 'created', email, plan });
+}
+
+async function isCourseManualCheckout(env, obj) {
+  const marker = (m) => String(m && m.blackwolf_product || '').trim().toLowerCase() === 'course_manual';
+  if (marker(obj && obj.metadata)) return true;
+  if (!obj || !obj.id || !env.STRIPE_SECRET_KEY) return false;
+  try {
+    const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
+    const item = li && li.ok && li.body && li.body.data && li.body.data[0];
+    const price = item && item.price;
+    return marker(price && price.metadata) || marker(price && price.product && price.product.metadata);
+  } catch (e) {
+    logEvent({ evt: 'course_marker_lookup_fail', detail: String(e && e.message || e) });
+    return false;
+  }
+}
+async function registerCourseBonus(env, obj, email, stripeCustomer) {
+  const now = new Date().toISOString();
+  const sessionId = String(obj.id || '');
+  if (!sessionId) throw new Error('course_checkout_without_session_id');
+  // As três chaves únicas no esquema impedem repetição por sessão, cliente ou
+  // e-mail. O primeiro pagamento confirmado é a única elegibilidade válida.
+  const existing = await env.BONUS_DB.prepare(
+    'SELECT checkout_session_id, email, stripe_customer FROM course_ea_bonus WHERE checkout_session_id=? OR email=? OR (stripe_customer IS NOT NULL AND stripe_customer=?) LIMIT 1'
+  ).bind(sessionId, email, stripeCustomer || '').first();
+  if (!existing) {
+    await env.BONUS_DB.prepare(
+      `INSERT INTO course_ea_bonus (checkout_session_id, email, stripe_customer, status, eligible_at)
+       VALUES (?, ?, ?, 'eligible', ?)`
+    ).bind(sessionId, email, stripeCustomer || null, now).run();
+  }
 }
 
 async function verifyStripeSignature(payload, sigHeader, secret) {
