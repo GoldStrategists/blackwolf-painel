@@ -204,7 +204,7 @@ async function handleCourseLeadCreate(request, env, json, ctx) {
     const jobs = [];
     const sent = { welcome: false, notification: false };
     if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name)).then(r => { sent.welcome = r.ok; return r; }));
+      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name), { noReply: true }).then(r => { sent.welcome = r.ok; return r; }));
     }
     let notificationEmail = normalizeCourseEmail(env.LEADS_NOTIFICATION_EMAIL);
     // Sem variável específica, o primeiro administrador do painel recebe o
@@ -888,6 +888,7 @@ function courseLeadWelcomeEmailHtml(name) {
     <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">Ol&aacute; <b style="color:#E8EAED;">${safeName}</b>, voc&ecirc; agora faz parte da Lista VIP do <b style="color:#E8EAED;">Curso Manual Black Wolf</b>.</p>
     <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">Quando houver novidades, condi&ccedil;&otilde;es de abertura ou informa&ccedil;&otilde;es importantes sobre a forma&ccedil;&atilde;o, voc&ecirc; receber&aacute; primeiro por este e-mail e, quando aplic&aacute;vel, pelo WhatsApp informado.</p>
     ${ctaButton('https://curso.blackwolfea.com/#curso', 'Conhecer a forma&ccedil;&atilde;o &rarr;')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">CANAL OFICIAL BLACK WOLF</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">Este &eacute; um e-mail autom&aacute;tico. Para suporte, use os contatos abaixo.</div></td></tr></table>
     <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">O curso tem finalidade educacional. Trading envolve risco e este e-mail n&atilde;o &eacute; recomenda&ccedil;&atilde;o de investimento.</p>`;
   return emailShell('Sua entrada na Lista VIP do Curso Manual Black Wolf foi confirmada.', inner);
 }
@@ -989,11 +990,11 @@ function subCanceledEmailHtml(name, panelUrl) {
 /* ===EMAIL_TEMPLATES_END=== */
 
 // Envio genérico via Resend. Retorna { ok, status, body } para diagnóstico.
-async function sendMail(env, to, subject, html) {
+async function sendMail(env, to, subject, html, options) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return { ok: false, status: 0, body: 'email_not_configured' };
   try {
     const payload = { from: env.EMAIL_FROM, to: [to], subject, html };
-    if (env.EMAIL_REPLY_TO) payload.reply_to = env.EMAIL_REPLY_TO;
+    if (env.EMAIL_REPLY_TO && !(options && options.noReply)) payload.reply_to = env.EMAIL_REPLY_TO;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
