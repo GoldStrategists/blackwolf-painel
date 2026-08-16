@@ -88,25 +88,44 @@
  *  Secrets:
  *    RESEND_API_KEY     → chave da Resend
  *    EMAIL_FROM         → "Black Wolf <no-reply@blackwolfea.com>"
+ *    LEADS_NOTIFICATION_EMAIL → caixa interna que recebe novos leads (opcional;
+ *                               sem ela, o primeiro admin do painel recebe)
+ *    EMAIL_REPLY_TO     → e-mail de resposta para mensagens que não são no-reply
  *    PANEL_URL          → "https://painel.blackwolfea.com"
  *    STRIPE_WEBHOOK_SECRET → whsec_... (gerado no Stripe)
  */
 
 const PBKDF2_ITER = 100000;
+// O Worker só atende páginas oficiais no navegador. O EA não envia Origin,
+// portanto continua funcionando sem receber permissões CORS desnecessárias.
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://blackwolfea.com',
+  'https://www.blackwolfea.com',
+  'https://curso.blackwolfea.com',
+  'https://painel.blackwolfea.com',
+]);
+function corsHeaders(request) {
+  const origin = request.headers.get('Origin');
+  if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+}
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
-    const origin = request.headers.get('Origin') || '*';
-
-    const cors = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    };
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    const origin = request.headers.get('Origin');
+    const cors = corsHeaders(request);
+    if (request.method === 'OPTIONS') {
+      if (origin && !ALLOWED_CORS_ORIGINS.has(origin)) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: cors });
+    }
 
     const json = (obj, status = 200) =>
       new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...cors } });
@@ -150,8 +169,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v41' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v41' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v42' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v42' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -189,6 +208,14 @@ async function handleCourseLeadCreate(request, env, json, ctx) {
   const whatsapp = normalizeWhatsapp(data.whatsapp);
   if (name.length < 2 || name.length > 120 || !email || !whatsapp || data.whatsapp_consent !== true) {
     return json({ error: 'invalid_lead' }, 400);
+  }
+  // Protege o D1 e a Resend contra spam sem bloquear uma pessoa real que
+  // corrigiu o formulário. A chave é limitada no KV e expira sozinha.
+  const ip = clientIp(request);
+  if (await rateLimited(env, 'course_lead_ip:' + ip, 5, 3600) ||
+      await rateLimited(env, 'course_lead_email:' + email, 3, 3600)) {
+    logEvent({ evt: 'course_lead_ratelimited', ip });
+    return json({ error: 'too_many_requests', message: 'Aguarde um pouco antes de tentar novamente.' }, 429);
   }
   const now = new Date().toISOString();
   // Um reenvio do formulário atualiza os dados, mas não dispara uma segunda
@@ -693,6 +720,7 @@ async function handleStripeWebhook(request, env, json, ctx) {
 
   const obj = event.data.object;
   const stripeCustomer = obj.customer || null;
+  const isCheckout = event.type === 'checkout.session.completed';
 
   // Pega email e nome do cliente
   let email = obj.customer_details?.email || obj.customer_email || null;
@@ -704,7 +732,12 @@ async function handleStripeWebhook(request, env, json, ctx) {
   if (isCheckout && await isCourseManualCheckout(env, obj)) {
     if (!email) return json({ error: 'no_email' }, 400);
     if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
-    await registerCourseBonus(env, obj, email.trim().toLowerCase(), stripeCustomer);
+    const cleanEmail = email.trim().toLowerCase();
+    const created = await registerCourseBonus(env, obj, cleanEmail, stripeCustomer);
+    if (created && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      const send = sendMail(env, cleanEmail, 'Seu bônus Black Wolf EA está reservado', courseBonusEligibleEmailHtml(name), { noReply: true });
+      if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
+    }
     return json({ ok: true, action: 'course_bonus_eligible' });
   }
 
@@ -712,7 +745,6 @@ async function handleStripeWebhook(request, env, json, ctx) {
   // preço), NUNCA pelo valor pago — promoção/cupom/sorteio não mudam o plano nem o
   // número de contas. Se o Stripe não informar o plano, marca p/ revisão (mínimo 1
   // conta) e alerta — sem chutar. (Setar metadata no produto do Stripe = 100% exato.)
-  const isCheckout = event.type === 'checkout.session.completed';
   const resolvedPlan = await resolvePlan(env, obj, isCheckout);
   let plan = resolvedPlan.plan;
   const planLimit = resolvedPlan.limit;
@@ -815,7 +847,9 @@ async function registerCourseBonus(env, obj, email, stripeCustomer) {
       `INSERT INTO course_ea_bonus (checkout_session_id, email, stripe_customer, status, eligible_at)
        VALUES (?, ?, ?, 'eligible', ?)`
     ).bind(sessionId, email, stripeCustomer || null, now).run();
+    return true;
   }
+  return false;
 }
 
 async function verifyStripeSignature(payload, sigHeader, secret) {
@@ -891,6 +925,21 @@ function courseLeadWelcomeEmailHtml(name) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">CANAL OFICIAL BLACK WOLF</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">Este &eacute; um e-mail autom&aacute;tico. Para suporte, use os contatos abaixo.</div></td></tr></table>
     <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">O curso tem finalidade educacional. Trading envolve risco e este e-mail n&atilde;o &eacute; recomenda&ccedil;&atilde;o de investimento.</p>`;
   return emailShell('Sua entrada na Lista VIP do Curso Manual Black Wolf foi confirmada.', inner);
+}
+
+// Compra do curso: e-mail transacional, separado da Lista VIP. Confirma a
+// elegibilidade sem assumir uma assinatura do EA ou autorizar cobrança futura.
+function courseBonusEligibleEmailHtml(name) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Ol&aacute; <b style="color:#E8EAED;">${safeName}</b>,` : 'Ol&aacute;,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Seu b&ocirc;nus est&aacute; reservado &#9989;</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} confirmamos sua compra do <b style="color:#E8EAED;">Curso Manual Black Wolf</b>.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Seu direito a <b style="color:#E8EAED;">1 m&ecirc;s de Black Wolf EA</b> foi registrado. A ativa&ccedil;&atilde;o acontece ap&oacute;s o onboarding e a confirma&ccedil;&atilde;o dos requisitos da conta.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">SEM COBRAN&Ccedil;A AUTOM&Aacute;TICA</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">O b&ocirc;nus n&atilde;o cria assinatura nem autoriza d&eacute;bito futuro. Ao fim da cortesia, a continuidade do EA &eacute; opcional e contratada separadamente.</div></td></tr></table>
+    ${ctaButton('https://curso.blackwolfea.com/', 'Ver o curso &rarr;')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Trading envolve risco. O EA &eacute; software de automa&ccedil;&atilde;o e n&atilde;o garante resultado.</p>`;
+  return emailShell('Seu bônus de 1 mês do Black Wolf EA foi registrado.', inner);
 }
 
 function courseLeadNotificationEmailHtml(name, email, whatsapp, createdAt) {
@@ -1948,7 +1997,7 @@ async function handleRobotDownload(request, env, json, url) {
   return new Response(bytes, { status: 200, headers: {
     'Content-Type': 'application/octet-stream',
     'Content-Disposition': 'attachment; filename="' + (meta.filename || defName) + '"',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+    ...corsHeaders(request),
     'Cache-Control': 'no-store'
   } });
 }
@@ -2186,6 +2235,7 @@ async function handleEaConfig(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
+  if (await rateLimited(env, 'ea_config:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, role, ea_config, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active: false }, 404);
   // v23: verifica status E EXPIRAÇÃO (licença vencida parava? nunca — agora sim)
@@ -2277,6 +2327,7 @@ function cfgHash(obj){
 async function handleEaPing(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ ok:false, error: 'missing_license' }, 401);
+  if (await rateLimited(env, 'ea_ping:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ ok:false, active:false, error:'license_not_found' }, 404);
   const lp = licenseState(row);
@@ -2296,6 +2347,7 @@ async function handleEaTrades(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
+  if (await rateLimited(env, 'ea_trades:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
   // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
