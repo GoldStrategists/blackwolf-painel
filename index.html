@@ -1203,7 +1203,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Dashboard",nav_results:"Meus Resultados",nav_history:"Histórico de Trades",nav_reports:"Relatórios",
     nav_strategies:"Estratégias",nav_config:"Configurar Robô",nav_section_account:"CONTA",nav_license:"Licença & Contas",
     nav_downloads:"Downloads",nav_setup:"Instalação",nav_faq:"FAQ / Suporte",nav_legal:"Termos Legais",
-    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_leads:"Perfis & Leads",
+    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_leads:"Leads do Curso",
     nav_admin_licenses:"Licenças",nav_admin_accounts:"Contas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versões do EA",nav_admin_payments:"Pagamentos",
     sidefoot_title:"Precisa de ajuda?",sidefoot_desc:"Fale com nosso suporte via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Atualizar",
@@ -1222,7 +1222,7 @@ const I18N = {
     nav_section_main:"MAIN",nav_dashboard:"Dashboard",nav_results:"My Results",nav_history:"Trade History",nav_reports:"Reports",
     nav_strategies:"Strategies",nav_config:"Configure Robot",nav_section_account:"ACCOUNT",nav_license:"License & Accounts",
     nav_downloads:"Downloads",nav_setup:"Installation",nav_faq:"FAQ / Support",nav_legal:"Legal Terms",
-    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_leads:"Profiles & Leads",
+    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_leads:"Course Leads",
     nav_admin_licenses:"Licenses",nav_admin_accounts:"MT5 Accounts",nav_section_system:"SYSTEM",nav_admin_files:"EA Versions",nav_admin_payments:"Payments",
     sidefoot_title:"Need help?",sidefoot_desc:"Talk to our support via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancel",modal_confirm:"Confirm",refresh:"Refresh",
@@ -1241,7 +1241,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Panel",nav_results:"Mis Resultados",nav_history:"Historial de Trades",nav_reports:"Informes",
     nav_strategies:"Estrategias",nav_config:"Configurar Robot",nav_section_account:"CUENTA",nav_license:"Licencia & Cuentas",
     nav_downloads:"Descargas",nav_setup:"Instalación",nav_faq:"FAQ / Soporte",nav_legal:"Términos Legales",
-    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_leads:"Perfiles & Leads",
+    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_leads:"Leads del Curso",
     nav_admin_licenses:"Licencias",nav_admin_accounts:"Cuentas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versiones del EA",nav_admin_payments:"Pagos",
     sidefoot_title:"¿Necesitas ayuda?",sidefoot_desc:"Habla con nuestro soporte por WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Actualizar",
@@ -4319,6 +4319,50 @@ function buildLeadCards(){
 function leadFactor(name,val,lvl){
   const c=lvl==='aggr'?'var(--red-l)':lvl==='mod'?'var(--amber-l)':lvl==='cons'?'var(--green-l)':'var(--blue-l)';
   return `<div class="factor"><div class="factor-top"><span class="factor-name">${name}</span></div><div class="factor-val" style="color:${c}">${val}</div></div>`;
+}
+
+/* v42: funil real da Lista VIP do Curso Manual. Os perfis dos clientes
+   continuam em dados de onboarding; esta tela passa a priorizar os leads que
+   ainda precisam de atendimento comercial. */
+let COURSE_LEADS=null, COURSE_LEADS_LOADING=false;
+async function loadCourseLeads(force){
+  if(COURSE_LEADS_LOADING || (COURSE_LEADS!==null && !force)) return;
+  COURSE_LEADS_LOADING=true;
+  try{
+    const r=await apiFetch('/api/admin/course-leads');
+    if(!r.ok) throw new Error('course_leads_unavailable');
+    const d=await r.json(); COURSE_LEADS=Array.isArray(d.leads)?d.leads:[];
+  }catch(e){ COURSE_LEADS=[]; toast('Não foi possível carregar os leads agora.','error'); }
+  COURSE_LEADS_LOADING=false;
+  if(CURRENT_PAGE==='admin-leads') renderPage('admin-leads');
+}
+async function courseLeadSetStatus(id,status){
+  const lead=(COURSE_LEADS||[]).find(x=>Number(x.id)===Number(id)); if(!lead) return;
+  try{
+    const r=await apiFetch('/api/admin/course-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(id),status:status,notes:lead.notes||''})});
+    if(!r.ok) throw new Error('update_failed');
+    lead.status=status; lead.updated_at=new Date().toISOString(); renderPage('admin-leads'); toast('Lead atualizado.','success');
+  }catch(e){ toast('Não foi possível atualizar este lead.','error'); }
+}
+function courseLeadStatusLabel(status){ return ({new:'Novo',contacted:'Contatado',group:'No grupo',closed:'Fechado'})[status]||'Novo'; }
+function renderAdminLeads(){
+  if(COURSE_LEADS===null){
+    setTimeout(()=>loadCourseLeads(false),0);
+    return pageHead('CURSO','Leads do Curso','Carregando os contatos da Lista VIP...',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`<div class="card rv"><div class="empty"><div class="empty-t">Carregando leads...</div></div></div>`;
+  }
+  const leads=COURSE_LEADS, counts={new:0,contacted:0,group:0,closed:0}; leads.forEach(l=>counts[l.status]=(counts[l.status]||0)+1);
+  const stat=(key,label,color)=>`<div class="astat rv"><div class="astat-ico" style="background:rgba(45,108,255,.13);color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg></div><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${counts[key]}">0</div></div>`;
+  return pageHead('CURSO','Leads do Curso','Contatos da Lista VIP. Atualize o estágio depois de chamar cada pessoa.',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`
+    <div class="admin-stats">${stat('new','NOVOS','var(--blue-l)')}${stat('contacted','CONTATADOS','var(--amber-l)')}${stat('group','NO GRUPO','var(--green-l)')}${stat('closed','FECHADOS','var(--t2)')}</div>
+    <div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">Cada contato chega aqui e também gera um aviso por e-mail. Use <b>Novo → Contatado → No grupo → Fechado</b> para manter o funil organizado.</div></div>
+    ${buildCourseLeadCards(leads)}`;
+}
+function buildCourseLeadCards(leads){
+  if(!leads.length) return `<div class="card rv"><div class="empty"><div class="empty-t">Nenhum lead ainda</div><div class="empty-d">Quando alguém preencher a Lista VIP do curso, o contato aparecerá aqui.</div></div></div>`;
+  return leads.map(l=>{
+    const id=Number(l.id), name=esc(l.name||'—'), email=esc(l.email||''), whatsapp=esc(l.whatsapp||''), wa=String(l.whatsapp||'').replace(/\D/g,''), date=l.created_at?new Date(l.created_at).toLocaleString('pt-BR'):'—';
+    return `<div class="card rv" style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><div class="cc-avatar">${esc((l.name||'?').slice(0,2).toUpperCase())}</div><div><div style="font-family:var(--fh);font-weight:700;font-size:1.06rem">${name}</div><div style="font-size:.76rem;color:var(--t3);margin-top:3px">Entrou em ${date}</div></div></div><select aria-label="Estágio do lead" onchange="courseLeadSetStatus(${id},this.value)" style="min-height:35px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:600 .72rem var(--fm)">${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select></div><div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><a class="mini-btn" href="mailto:${email}">E-mail: ${email}</a><a class="mini-btn" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp: ${whatsapp}</a></div></div>`;
+  }).join('');
 }
 
 /* ─────── ADMIN: LICENSES ─────── */

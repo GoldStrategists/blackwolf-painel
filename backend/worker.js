@@ -120,7 +120,7 @@ export default {
       if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
       if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
-      if (path === '/api/course-leads' && request.method === 'POST')      return await handleCourseLeadCreate(request, env, json);
+      if (path === '/api/course-leads' && request.method === 'POST')      return await handleCourseLeadCreate(request, env, json, ctx);
       if (path === '/api/admin/course-leads' && request.method === 'GET') return await handleAdminCourseLeads(request, env, json);
       if (path === '/api/admin/course-leads' && request.method === 'POST') return await handleAdminCourseLeadUpdate(request, env, json);
       if (path === '/api/admin/course-bonuses' && request.method === 'GET') return await handleAdminCourseBonuses(request, env, json);
@@ -180,7 +180,7 @@ async function requireAdmin(request, env, json) {
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   return me && me.role === 'admin' ? email : null;
 }
-async function handleCourseLeadCreate(request, env, json) {
+async function handleCourseLeadCreate(request, env, json, ctx) {
   if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
   let data;
   try { data = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
@@ -191,13 +191,29 @@ async function handleCourseLeadCreate(request, env, json) {
     return json({ error: 'invalid_lead' }, 400);
   }
   const now = new Date().toISOString();
+  // Um reenvio do formulário atualiza os dados, mas não dispara uma segunda
+  // sequência de boas-vindas nem duplica o aviso para o time.
+  const existing = await env.LEADS_DB.prepare('SELECT id FROM course_leads WHERE email=? LIMIT 1').bind(email).first();
   await env.LEADS_DB.prepare(
     `INSERT INTO course_leads (name, email, whatsapp, whatsapp_consent, consent_at, source, status, created_at, updated_at)
      VALUES (?, ?, ?, 1, ?, 'curso.blackwolfea.com', 'new', ?, ?)
      ON CONFLICT(email) DO UPDATE SET name=excluded.name, whatsapp=excluded.whatsapp,
        whatsapp_consent=1, consent_at=excluded.consent_at, updated_at=excluded.updated_at`
   ).bind(name, email, whatsapp, now, now, now).run();
-  return json({ ok: true });
+  if (!existing) {
+    const jobs = [];
+    if (env.RESEND_API_KEY && env.EMAIL_FROM) {
+      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name)));
+    }
+    if (env.LEADS_NOTIFICATION_EMAIL && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      jobs.push(sendMail(env, env.LEADS_NOTIFICATION_EMAIL, 'Novo lead da Lista VIP — Black Wolf', courseLeadNotificationEmailHtml(name, email, whatsapp, now)));
+    }
+    const send = Promise.all(jobs).then(results => {
+      logEvent({ evt: 'course_lead_created', email, welcome_sent: !!results[0] && results[0].ok, notification_sent: !!results[1] && results[1].ok });
+    }).catch(err => logEvent({ evt: 'course_lead_email_fail', email, detail: String(err && err.message || err) }));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
+  }
+  return json({ ok: true, duplicate: !!existing });
 }
 async function handleAdminCourseLeads(request, env, json) {
   if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
@@ -850,6 +866,40 @@ function ctaButton(href, label) {
     </td></tr></table>`;
 }
 
+function emailHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Lista VIP: comunicação de confirmação, sem promessas de desempenho e sem
+// induzir compra. A pessoa recebe a informação pela qual acabou de optar.
+function courseLeadWelcomeEmailHtml(name) {
+  const safeName = emailHtml(name);
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua entrada na Lista VIP foi confirmada &#9989;</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">Ol&aacute; <b style="color:#E8EAED;">${safeName}</b>, voc&ecirc; agora faz parte da Lista VIP do <b style="color:#E8EAED;">Curso Manual Black Wolf</b>.</p>
+    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">Quando houver novidades, condi&ccedil;&otilde;es de abertura ou informa&ccedil;&otilde;es importantes sobre a forma&ccedil;&atilde;o, voc&ecirc; receber&aacute; primeiro por este e-mail e, quando aplic&aacute;vel, pelo WhatsApp informado.</p>
+    ${ctaButton('https://curso.blackwolfea.com/#curso', 'Conhecer a forma&ccedil;&atilde;o &rarr;')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">O curso tem finalidade educacional. Trading envolve risco e este e-mail n&atilde;o &eacute; recomenda&ccedil;&atilde;o de investimento.</p>`;
+  return emailShell('Sua entrada na Lista VIP do Curso Manual Black Wolf foi confirmada.', inner);
+}
+
+function courseLeadNotificationEmailHtml(name, email, whatsapp, createdAt) {
+  const safeName = emailHtml(name);
+  const safeEmail = emailHtml(email);
+  const safeWhatsapp = emailHtml(whatsapp);
+  const wa = String(whatsapp || '').replace(/\D/g, '');
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Novo lead na Lista VIP</h1>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Um novo contato pediu para receber informa&ccedil;&otilde;es do Curso Manual Black Wolf.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border:1px solid #252c3a;border-radius:10px;background:#090b10;">
+      <tr><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#7f8aa0;font-size:11px;">NOME</td><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#E8EAED;font-size:14px;font-weight:700;">${safeName}</td></tr>
+      <tr><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#7f8aa0;font-size:11px;">E-MAIL</td><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#E8EAED;font-size:14px;"><a href="mailto:${safeEmail}" style="color:#9ab7ff;text-decoration:none;">${safeEmail}</a></td></tr>
+      <tr><td style="padding:14px 16px;color:#7f8aa0;font-size:11px;">WHATSAPP</td><td style="padding:14px 16px;color:#E8EAED;font-size:14px;"><a href="https://wa.me/${wa}" style="color:#9ab7ff;text-decoration:none;">${safeWhatsapp}</a></td></tr>
+    </table>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.55;">Cadastro em ${emailHtml(new Date(createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))}.</p>`;
+  return emailShell('Novo lead da Lista VIP do Curso Manual Black Wolf.', inner);
+}
+
 function welcomeEmailHtml(to, name, plan, password, license, panelUrl) {
   const isNew = !!password;
   const preheader = isNew ? 'Seu acesso ao Black Wolf esta pronto - credenciais e licenca dentro.' : 'Pagamento confirmado - seu Black Wolf esta ativo.';
@@ -933,10 +983,12 @@ function subCanceledEmailHtml(name, panelUrl) {
 async function sendMail(env, to, subject, html) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return { ok: false, status: 0, body: 'email_not_configured' };
   try {
+    const payload = { from: env.EMAIL_FROM, to: [to], subject, html };
+    if (env.EMAIL_REPLY_TO) payload.reply_to = env.EMAIL_REPLY_TO;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
+      body: JSON.stringify(payload),
     });
     const body = await r.text().catch(() => '');
     return { ok: r.ok, status: r.status, body: String(body).slice(0, 600) };
