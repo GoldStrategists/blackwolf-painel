@@ -202,14 +202,23 @@ async function handleCourseLeadCreate(request, env, json, ctx) {
   ).bind(name, email, whatsapp, now, now, now).run();
   if (!existing) {
     const jobs = [];
+    const sent = { welcome: false, notification: false };
     if (env.RESEND_API_KEY && env.EMAIL_FROM) {
-      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name)));
+      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name)).then(r => { sent.welcome = r.ok; return r; }));
     }
-    if (env.LEADS_NOTIFICATION_EMAIL && env.RESEND_API_KEY && env.EMAIL_FROM) {
-      jobs.push(sendMail(env, env.LEADS_NOTIFICATION_EMAIL, 'Novo lead da Lista VIP — Black Wolf', courseLeadNotificationEmailHtml(name, email, whatsapp, now)));
+    let notificationEmail = normalizeCourseEmail(env.LEADS_NOTIFICATION_EMAIL);
+    // Sem variável específica, o primeiro administrador do painel recebe o
+    // aviso. A variável continua sendo a forma preferida para apontar outra
+    // caixa de entrada sem mudar código.
+    if (!notificationEmail && env.DB) {
+      const admin = await env.DB.prepare("SELECT email FROM users WHERE role='admin' ORDER BY created_at ASC LIMIT 1").first();
+      notificationEmail = normalizeCourseEmail(admin && admin.email);
     }
-    const send = Promise.all(jobs).then(results => {
-      logEvent({ evt: 'course_lead_created', email, welcome_sent: !!results[0] && results[0].ok, notification_sent: !!results[1] && results[1].ok });
+    if (notificationEmail && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      jobs.push(sendMail(env, notificationEmail, 'Novo lead da Lista VIP — Black Wolf', courseLeadNotificationEmailHtml(name, email, whatsapp, now)).then(r => { sent.notification = r.ok; return r; }));
+    }
+    const send = Promise.all(jobs).then(() => {
+      logEvent({ evt: 'course_lead_created', email, welcome_sent: sent.welcome, notification_sent: sent.notification });
     }).catch(err => logEvent({ evt: 'course_lead_email_fail', email, detail: String(err && err.message || err) }));
     if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
   }
