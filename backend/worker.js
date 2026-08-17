@@ -173,8 +173,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v45' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v45' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v46' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v46' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -216,6 +216,16 @@ async function handleCourseLeadCreate(request, env, json, ctx) {
   const name = String(data.name || '').trim().replace(/\s+/g, ' ');
   const email = normalizeCourseEmail(data.email);
   const whatsapp = normalizeWhatsapp(data.whatsapp);
+  // Estas perguntas são curtas de propósito. A ficha evolui depois, durante
+  // o onboarding, em vez de pedir dados técnicos de quem só quer conhecer.
+  const interests = new Set(['course', 'ea', 'both', 'undecided']);
+  const experienceLevels = new Set(['beginner', 'intermediate', 'advanced', 'not_informed']);
+  const interest = interests.has(String(data.interest || '')) ? String(data.interest) : 'undecided';
+  const experienceLevel = experienceLevels.has(String(data.experience_level || '')) ? String(data.experience_level) : 'not_informed';
+  // Compatibilidade: a primeira versão tinha um único aceite explícito que
+  // já citava e-mail e WhatsApp. Nunca presumimos consentimento quando ele
+  // não foi marcado no formulário.
+  const emailMarketingConsent = data.email_marketing_consent === true || data.whatsapp_consent === true;
   if (name.length < 2 || name.length > 120 || !email || !whatsapp || data.whatsapp_consent !== true) {
     return json({ error: 'invalid_lead' }, 400);
   }
@@ -232,11 +242,15 @@ async function handleCourseLeadCreate(request, env, json, ctx) {
   // sequência de boas-vindas nem duplica o aviso para o time.
   const existing = await env.LEADS_DB.prepare('SELECT id FROM course_leads WHERE email=? LIMIT 1').bind(email).first();
   await env.LEADS_DB.prepare(
-    `INSERT INTO course_leads (name, email, whatsapp, whatsapp_consent, consent_at, source, status, created_at, updated_at)
-     VALUES (?, ?, ?, 1, ?, 'curso.blackwolfea.com', 'new', ?, ?)
+    `INSERT INTO course_leads (name, email, whatsapp, whatsapp_consent, email_marketing_consent, consent_at, source, interest, experience_level, status, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?, 'course_vip', ?, ?, 'new', ?, ?)
      ON CONFLICT(email) DO UPDATE SET name=excluded.name, whatsapp=excluded.whatsapp,
-       whatsapp_consent=1, consent_at=excluded.consent_at, updated_at=excluded.updated_at`
-  ).bind(name, email, whatsapp, now, now, now).run();
+       whatsapp_consent=1, email_marketing_consent=excluded.email_marketing_consent,
+       consent_at=excluded.consent_at,
+       interest=CASE WHEN excluded.interest='undecided' THEN course_leads.interest ELSE excluded.interest END,
+       experience_level=CASE WHEN excluded.experience_level='not_informed' THEN course_leads.experience_level ELSE excluded.experience_level END,
+       updated_at=excluded.updated_at`
+  ).bind(name, email, whatsapp, emailMarketingConsent ? 1 : 0, now, interest, experienceLevel, now, now).run();
   if (!existing) {
     const jobs = [];
     const sent = { welcome: false, notification: false };
@@ -265,7 +279,7 @@ async function handleAdminCourseLeads(request, env, json) {
   if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
   if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
   const rows = await env.LEADS_DB.prepare(
-    'SELECT id, name, email, whatsapp, whatsapp_consent, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 1000'
+    'SELECT id, name, email, whatsapp, whatsapp_consent, email_marketing_consent, source, interest, experience_level, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 1000'
   ).all();
   return json({ leads: rows.results || [] });
 }
@@ -276,9 +290,13 @@ async function handleAdminCourseLeadUpdate(request, env, json) {
   const id = Number(data.id);
   const status = String(data.status || '');
   const notes = String(data.notes || '').trim().slice(0, 1000);
+  const interests = new Set(['course', 'ea', 'both', 'undecided']);
+  const experienceLevels = new Set(['beginner', 'intermediate', 'advanced', 'not_informed']);
+  const interest = interests.has(String(data.interest || '')) ? String(data.interest) : 'undecided';
+  const experienceLevel = experienceLevels.has(String(data.experience_level || '')) ? String(data.experience_level) : 'not_informed';
   if (!Number.isInteger(id) || id < 1 || !['new', 'contacted', 'group', 'closed'].includes(status)) return json({ error: 'invalid_update' }, 400);
-  await env.LEADS_DB.prepare('UPDATE course_leads SET status=?, notes=?, updated_at=? WHERE id=?')
-    .bind(status, notes, new Date().toISOString(), id).run();
+  await env.LEADS_DB.prepare('UPDATE course_leads SET status=?, notes=?, interest=?, experience_level=?, updated_at=? WHERE id=?')
+    .bind(status, notes, interest, experienceLevel, new Date().toISOString(), id).run();
   return json({ ok: true });
 }
 async function handleAdminCourseBonuses(request, env, json) {
@@ -296,8 +314,8 @@ async function handleAdminCourseBonuses(request, env, json) {
 async function handleAdminRelationshipBase(request, env, json) {
   if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
   if (!env.LEADS_DB || !env.BONUS_DB) return json({ error: 'relationship_base_not_configured' }, 503);
-  const [leadRows, bonusRows, eaRows] = await Promise.all([
-    env.LEADS_DB.prepare('SELECT name, email, whatsapp, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 2000').all(),
+  const [leadRows, bonusRows, eaRows, onboardingRows] = await Promise.all([
+    env.LEADS_DB.prepare('SELECT name, email, whatsapp, status, notes, source, interest, experience_level, email_marketing_consent, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 2000').all(),
     env.BONUS_DB.prepare('SELECT email, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 2000').all(),
     env.DB.prepare(
       `SELECT email, name, plan, license_status, license_key, license_expires_at, is_courtesy, created_at
@@ -305,17 +323,19 @@ async function handleAdminRelationshipBase(request, env, json) {
        WHERE (role='client' OR license_key IS NOT NULL)
        ORDER BY created_at DESC LIMIT 2000`
     ).all(),
+    env.DB.prepare('SELECT email, experience, goal, source, marketing_opt_in, created_at FROM onboarding ORDER BY created_at DESC LIMIT 2000').all(),
   ]);
   const byEmail = new Map();
   const get = (raw) => {
     const email = normalizeCourseEmail(raw);
     if (!email) return null;
-    if (!byEmail.has(email)) byEmail.set(email, { email, lead: null, course: null, ea: null });
+    if (!byEmail.has(email)) byEmail.set(email, { email, lead: null, course: null, ea: null, onboarding: null });
     return byEmail.get(email);
   };
   for (const row of (leadRows.results || [])) { const x = get(row.email); if (x) x.lead = row; }
   for (const row of (bonusRows.results || [])) { const x = get(row.email); if (x) x.course = row; }
   for (const row of (eaRows.results || [])) { const x = get(row.email); if (x) x.ea = row; }
+  for (const row of (onboardingRows.results || [])) { const x = get(row.email); if (x) x.onboarding = row; }
   const contacts = [...byEmail.values()].map(x => {
     const hasCourse = !!x.course;
     const hasEa = !!(x.ea && x.ea.license_key);
@@ -329,6 +349,11 @@ async function handleAdminRelationshipBase(request, env, json) {
       vip: !!x.lead, lead_stage: x.lead ? x.lead.status : null,
       whatsapp: x.lead ? x.lead.whatsapp : null,
       notes: x.lead ? x.lead.notes : null,
+      source: (x.lead && x.lead.source) || (x.onboarding && x.onboarding.source) || null,
+      interest: (x.lead && x.lead.interest) || null,
+      experience_level: (x.lead && x.lead.experience_level) || (x.onboarding && x.onboarding.experience) || null,
+      goal: x.onboarding ? x.onboarding.goal : null,
+      email_marketing_consent: !!(x.lead && x.lead.email_marketing_consent),
       course_status: x.course ? x.course.status : null,
       course_at: x.course ? x.course.eligible_at : null,
       ea_status: x.ea ? (x.ea.license_status || null) : null,

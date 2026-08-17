@@ -4452,7 +4452,7 @@ function relationshipContacts(){
   const q=RELATION_VIEW.search, s=RELATION_VIEW.segment;
   return (RELATION_BASE&&RELATION_BASE.contacts||[]).filter(c=>{
     if(s!=='all'&&c.segment!==s)return false;
-    return !q || [c.name,c.email,c.whatsapp,c.notes,c.ea_plan].some(v=>String(v||'').toLowerCase().includes(q));
+    return !q || [c.name,c.email,c.whatsapp,c.notes,c.ea_plan,c.interest,c.experience_level,c.goal,c.source].some(v=>String(v||'').toLowerCase().includes(q));
   });
 }
 function relationshipPage(next,total){ const pages=Math.max(1,Math.ceil(total/RELATION_VIEW.limit)); RELATION_VIEW.page=Math.max(0,Math.min(pages-1,next)); renderPage('admin-relationship'); }
@@ -4463,8 +4463,12 @@ function relationshipTags(c){
   if(c.course_status) tags.push('<span class="pill current">Aluno do curso</span>');
   if(c.ea_status) tags.push(`<span class="pill ${c.ea_status==='active'?'active':c.ea_status==='expired'?'expired':'revoked'}">${c.ea_courtesy?'EA · cortesia':'Cliente do EA'}</span>`);
   if(c.lead_stage==='group') tags.push('<span class="pill cons">No grupo</span>');
+  if(c.interest&&c.interest!=='undecided') tags.push(`<span class="pill available">${relationshipInterestLabel(c.interest)}</span>`);
+  if(c.experience_level&&c.experience_level!=='not_informed') tags.push(`<span class="pill cons">${relationshipExperienceLabel(c.experience_level)}</span>`);
   return tags.join('');
 }
+function relationshipInterestLabel(value){ return ({course:'Quer curso',ea:'Quer EA',both:'Curso + EA'})[value]||'Interesse a completar'; }
+function relationshipExperienceLabel(value){ return ({beginner:'Iniciante',intermediate:'Intermediário',advanced:'Avançado'})[value]||'Nível a completar'; }
 function renderAdminRelationship(){
   if(RELATION_BASE===null){
     setTimeout(()=>loadRelationshipBase(false),0);
@@ -4473,7 +4477,7 @@ function renderAdminRelationship(){
   const counts=RELATION_BASE.counts||{}, all=(RELATION_BASE.contacts||[]).length;
   const stat=(key,label,color)=>`<button class="astat rv ops-stat-btn ${RELATION_VIEW.segment===key?'selected':''}" onclick="relationshipFilter('${key}')"><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${key==='all'?all:(counts[key]||0)}">0</div></button>`;
   const list=relationshipContacts();
-  return pageHead('OPERAÇÃO','Base & Relacionamento','Cada pessoa aparece uma vez. As etiquetas mostram se ela é lead, aluno do curso, cliente do robô ou os dois.',`<button class="refresh-btn" onclick="loadRelationshipBase(true)">Atualizar</button>`)+`
+  return pageHead('OPERAÇÃO','Base & Relacionamento','Uma ficha por pessoa: origem, interesse, relação com o curso/EA e próxima ação. O perfil evolui sem pedir tudo de novo.',`<button class="refresh-btn" onclick="loadRelationshipBase(true)">Atualizar</button>`)+`
     <div class="admin-stats relationship-stats">${stat('all','TODOS','var(--blue-l)')}${stat('vip','SÓ LISTA VIP','var(--amber-l)')}${stat('course_only','SÓ CURSO','var(--purple)')}${stat('ea_only','SÓ ROBÔ','var(--green-l)')}${stat('course_and_ea','CURSO + ROBÔ','var(--cyan)')}</div>
     <div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">Use esta tela para decidir quem precisa de atendimento, onboarding ou acompanhamento. A <b>Lista VIP</b> continua separada na tela Leads do Curso, onde você atualiza notas e etapas.</div></div>
     <div class="ops-toolbar rv" role="search"><label class="search-box"><span class="sr-only">Buscar pessoa na base</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="relationshipSearch" value="${esc(RELATION_VIEW.search)}" placeholder="Buscar nome, e-mail, WhatsApp ou plano" onkeydown="if(event.key==='Enter')relationshipApplySearch()"></label><button class="mini-btn ops-apply" onclick="relationshipApplySearch()">Buscar</button></div>
@@ -4511,11 +4515,15 @@ async function loadCourseLeads(force){
 async function courseLeadSetStatus(id,status){
   const lead=(COURSE_LEADS||[]).find(x=>Number(x.id)===Number(id)); if(!lead) return;
   const note=document.getElementById('lead-note-'+id);
+  const interest=document.getElementById('lead-interest-'+id);
+  const level=document.getElementById('lead-level-'+id);
   const notes=note?String(note.value||'').trim().slice(0,1000):String(lead.notes||'');
+  const interestValue=interest?interest.value:(lead.interest||'undecided');
+  const levelValue=level?level.value:(lead.experience_level||'not_informed');
   try{
-    const r=await apiFetch('/api/admin/course-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(id),status:status,notes:notes})});
+    const r=await apiFetch('/api/admin/course-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(id),status:status,notes:notes,interest:interestValue,experience_level:levelValue})});
     if(!r.ok) throw new Error('update_failed');
-    lead.status=status; lead.notes=notes; lead.updated_at=new Date().toISOString(); renderPage('admin-leads'); toast('Lead atualizado.','success');
+    lead.status=status; lead.notes=notes; lead.interest=interestValue; lead.experience_level=levelValue; lead.updated_at=new Date().toISOString(); renderPage('admin-leads'); toast('Lead atualizado.','success');
   }catch(e){ toast('Não foi possível atualizar este lead.','error'); }
 }
 function courseLeadStatusLabel(status){ return ({new:'Novo',contacted:'Contatado',group:'No grupo',closed:'Fechado'})[status]||'Novo'; }
@@ -4531,7 +4539,7 @@ function courseLeadFiltered(){
   return (COURSE_LEADS||[]).filter(l=>{
     if(st!=='all'&&l.status!==st)return false;
     if(!q)return true;
-    return [l.name,l.email,l.whatsapp,l.notes].some(v=>String(v||'').toLowerCase().includes(q));
+    return [l.name,l.email,l.whatsapp,l.notes,l.interest,l.experience_level].some(v=>String(v||'').toLowerCase().includes(q));
   });
 }
 function renderAdminLeads(){
@@ -4541,7 +4549,7 @@ function renderAdminLeads(){
   }
   const leads=COURSE_LEADS, counts={new:0,contacted:0,group:0,closed:0}; leads.forEach(l=>counts[l.status]=(counts[l.status]||0)+1);
   const stat=(key,label,color)=>`<button class="astat rv ops-stat-btn ${COURSE_LEAD_VIEW.status===key?'selected':''}" onclick="courseLeadQuickFilter('${key}')"><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${counts[key]}">0</div></button>`;
-  return pageHead('CURSO','Leads do Curso','Planilha operacional da Lista VIP. Busque, atualize o estágio e registre o próximo passo.',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`
+  return pageHead('CURSO','Leads do Curso','Planilha operacional da Lista VIP. Atualize etapa, perfil curto e próximo passo sem criar uma ficha duplicada.',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`
     <div class="admin-stats compact-stats">${stat('new','NOVOS','var(--blue-l)')}${stat('contacted','CONTATADOS','var(--amber-l)')}${stat('group','NO GRUPO','var(--green-l)')}${stat('closed','FECHADOS','var(--t2)')}</div>
     <div class="ops-toolbar rv" role="search"><label class="search-box"><span class="sr-only">Buscar lead</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="leadSearch" value="${esc(COURSE_LEAD_VIEW.search)}" placeholder="Buscar nome, e-mail, WhatsApp ou nota" onkeydown="if(event.key==='Enter')courseLeadFilterChange()"></label><select class="filter-sel" id="leadStatus" aria-label="Filtrar etapa"><option value="all" ${COURSE_LEAD_VIEW.status==='all'?'selected':''}>Todos os estágios</option>${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${COURSE_LEAD_VIEW.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select><button class="mini-btn ops-apply" onclick="courseLeadFilterChange()">Aplicar</button></div>
     <div id="courseLeadRegion">${buildCourseLeadCards(courseLeadFiltered())}</div>`;
@@ -4551,9 +4559,9 @@ function buildCourseLeadCards(leads){
   const total=leads.length, pages=Math.max(1,Math.ceil(total/COURSE_LEAD_VIEW.limit));
   if(COURSE_LEAD_VIEW.page>=pages) COURSE_LEAD_VIEW.page=pages-1;
   const start=COURSE_LEAD_VIEW.page*COURSE_LEAD_VIEW.limit, items=leads.slice(start,start+COURSE_LEAD_VIEW.limit), from=start+1, to=Math.min(total,start+items.length);
-  return `<div class="card ops-table-card rv"><div class="ops-table-meta"><span>Mostrando ${from}–${to} de ${total}</span><span>25 por página</span></div><div class="tbl-wrap"><table class="tbl ops-table lead-table" style="min-width:980px"><thead><tr><th>Lead</th><th>Contato</th><th>Estágio</th><th>Entrada</th><th>Notas / próximo passo</th><th>Salvar</th></tr></thead><tbody>${items.map(l=>{
+  return `<div class="card ops-table-card rv"><div class="ops-table-meta"><span>Mostrando ${from}–${to} de ${total}</span><span>25 por página</span></div><div class="tbl-wrap"><table class="tbl ops-table lead-table" style="min-width:1120px"><thead><tr><th>Lead</th><th>Contato</th><th>Perfil curto</th><th>Estágio</th><th>Entrada</th><th>Notas / próximo passo</th><th>Salvar</th></tr></thead><tbody>${items.map(l=>{
     const id=Number(l.id), name=esc(l.name||'—'), email=esc(l.email||''), whatsapp=esc(l.whatsapp||''), wa=String(l.whatsapp||'').replace(/\D/g,''), date=l.created_at?new Date(l.created_at).toLocaleString('pt-BR'):'—';
-    return `<tr><td><div class="tbl-name">${name}</div><div class="ops-sub">ID #${id}</div></td><td><a class="ops-contact" href="mailto:${email}">${email}</a><a class="ops-contact" href="https://wa.me/${wa}" target="_blank" rel="noopener">${whatsapp}</a></td><td><select class="ops-stage" id="lead-status-${id}" aria-label="Estágio de ${name}">${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select></td><td class="ops-date">${date}</td><td><input class="ops-note" id="lead-note-${id}" value="${esc(l.notes||'')}" maxlength="1000" placeholder="Ex.: chamar amanhã no WhatsApp"></td><td><button class="mini-btn ops-save" onclick="courseLeadSetStatus(${id},document.getElementById('lead-status-${id}').value)">Salvar</button></td></tr>`;
+    return `<tr><td><div class="tbl-name">${name}</div><div class="ops-sub">ID #${id}</div></td><td><a class="ops-contact" href="mailto:${email}">${email}</a><a class="ops-contact" href="https://wa.me/${wa}" target="_blank" rel="noopener">${whatsapp}</a></td><td><select class="ops-stage" id="lead-interest-${id}" aria-label="Interesse de ${name}">${[['undecided','A completar'],['course','Curso'],['ea','EA'],['both','Curso + EA']].map(x=>`<option value="${x[0]}" ${l.interest===x[0]?'selected':''}>${x[1]}</option>`).join('')}</select><select class="ops-stage" id="lead-level-${id}" aria-label="Nível de ${name}" style="margin-top:7px">${[['not_informed','Nível a completar'],['beginner','Iniciante'],['intermediate','Intermediário'],['advanced','Avançado']].map(x=>`<option value="${x[0]}" ${l.experience_level===x[0]?'selected':''}>${x[1]}</option>`).join('')}</select></td><td><select class="ops-stage" id="lead-status-${id}" aria-label="Estágio de ${name}">${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select></td><td class="ops-date">${date}</td><td><input class="ops-note" id="lead-note-${id}" value="${esc(l.notes||'')}" maxlength="1000" placeholder="Ex.: chamar amanhã no WhatsApp"></td><td><button class="mini-btn ops-save" onclick="courseLeadSetStatus(${id},document.getElementById('lead-status-${id}').value)">Salvar</button></td></tr>`;
   }).join('')}</tbody></table></div><div class="ops-pagination"><span>Página ${COURSE_LEAD_VIEW.page+1} de ${pages}</span><div><button class="mini-btn" ${COURSE_LEAD_VIEW.page===0?'disabled':''} onclick="courseLeadPage(${COURSE_LEAD_VIEW.page-1},${total})">Anterior</button><button class="mini-btn" ${COURSE_LEAD_VIEW.page>=pages-1?'disabled':''} onclick="courseLeadPage(${COURSE_LEAD_VIEW.page+1},${total})">Próxima</button></div></div></div>`;
 }
 
