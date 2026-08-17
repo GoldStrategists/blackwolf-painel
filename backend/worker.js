@@ -99,6 +99,11 @@
  */
 
 const PBKDF2_ITER = 100000;
+// Proteção curta em memória para chamadas contínuas do EA. Diferente de login
+// e captação, ping/config/trades acontecem o dia inteiro por cliente; gravar
+// cada chamada no KV esgota a franquia diária e pode indisponibilizar o painel.
+// O limitador distribuído em KV continua nas rotas de autenticação e e-mail.
+const EA_BURST_BUCKETS = new Map();
 // O Worker só atende páginas oficiais no navegador. O EA não envia Origin,
 // portanto continua funcionando sem receber permissões CORS desnecessárias.
 const ALLOWED_CORS_ORIGINS = new Set([
@@ -173,8 +178,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v46' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v46' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v47' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v47' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -573,6 +578,24 @@ async function rateLimited(env, key, limit, windowSec) {
     await env.SESSIONS.put(k, String(cur + 1), { expirationTtl: windowSec });
     return false;
   } catch (e) { return false; }
+}
+function eaBurstLimited(key, limit, windowSec) {
+  const now = Date.now();
+  const current = EA_BURST_BUCKETS.get(key);
+  if (!current || current.resetAt <= now) {
+    EA_BURST_BUCKETS.set(key, { count: 1, resetAt: now + (windowSec * 1000) });
+    return false;
+  }
+  if (current.count >= limit) return true;
+  current.count += 1;
+  // Limpa chaves vencidas ocasionalmente para que uma instância longa não
+  // acumule memória com licenças antigas.
+  if (EA_BURST_BUCKETS.size > 2000) {
+    for (const [bucketKey, bucket] of EA_BURST_BUCKETS) {
+      if (bucket.resetAt <= now) EA_BURST_BUCKETS.delete(bucketKey);
+    }
+  }
+  return false;
 }
 function clientIp(request) {
   return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
@@ -2489,7 +2512,7 @@ async function handleEaConfig(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
-  if (await rateLimited(env, 'ea_config:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
+  if (eaBurstLimited('ea_config:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, role, ea_config, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active: false }, 404);
   // v23: verifica status E EXPIRAÇÃO (licença vencida parava? nunca — agora sim)
@@ -2581,7 +2604,7 @@ function cfgHash(obj){
 async function handleEaPing(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ ok:false, error: 'missing_license' }, 401);
-  if (await rateLimited(env, 'ea_ping:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
+  if (eaBurstLimited('ea_ping:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ ok:false, active:false, error:'license_not_found' }, 404);
   const lp = licenseState(row);
@@ -2601,7 +2624,7 @@ async function handleEaTrades(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
-  if (await rateLimited(env, 'ea_trades:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
+  if (eaBurstLimited('ea_trades:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
   // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
