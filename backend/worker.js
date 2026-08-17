@@ -172,8 +172,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v43' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v43' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v44' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v44' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
