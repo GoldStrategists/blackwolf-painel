@@ -17,6 +17,9 @@ No Cloudflare Worker, configurar apenas pelo painel de Secrets/Variables:
 - `EMAIL_FROM`: `Black Wolf <no-reply@blackwolfea.com>` depois de verificar o domínio na Resend.
 - `LEADS_NOTIFICATION_EMAIL` (opcional): caixa interna para receber cada novo lead. Sem essa variável, o primeiro administrador do painel recebe o aviso.
 - `EMAIL_REPLY_TO` (opcional): endereço de suporte de e-mails que aceitam resposta.
+- `EA_CONTINUATION_CHECKOUT_URL` (opcional): checkout oficial do plano EA para
+  alunos que quiserem continuar após a cortesia. Sem essa variável, o Worker
+  usa o checkout público atual do plano Lone Wolf.
 
 O e-mail da Lista VIP e a confirmação de bônus são enviados com `no-reply@blackwolfea.com`; ambos exibem WhatsApp e `contact@goldstrategists.com` para suporte. Nunca envie token, senha ou chave da Resend por WhatsApp.
 
@@ -27,11 +30,19 @@ O webhook do checkout marcado com `blackwolf_product=course_manual` grava uma ú
 Fluxo comercial recomendado:
 
 1. Compra confirmada → registra elegibilidade e envia confirmação transacional.
-2. Onboarding concluído → time confere os requisitos e ativa uma licença de cortesia de 30 dias.
-3. Fim da cortesia → a licença expira. Não há débito automático.
-4. Se a pessoa quiser continuar → abre um checkout separado do EA, com valor, moeda, recorrência e cancelamento claramente mostrados pela Stripe.
+2. Onboarding concluído → time confere os requisitos e ativa uma licença de cortesia de 30 dias no banco principal do EA, com `is_courtesy=1` e `license_expires_at` definido.
+3. Um Cron Trigger diário do Cloudflare envia avisos 5 e 2 dias antes do fim. No vencimento, a licença é marcada como expirada e é enviado o e-mail de encerramento.
+4. Todos os avisos oferecem o checkout separado do EA. Não há débito automático, assinatura criada por bônus ou cobrança futura autorizada pelo curso.
 
-Não criar licença automaticamente enquanto não houver uma regra aprovada para casos de cliente que já possua assinatura do EA, mais de uma compra ou dados divergentes. Isso evita sobrepor licença paga e gerar cobrança indevida.
+Não criar licença automaticamente no momento da compra do curso. O onboarding continua sendo a etapa que separa dados divergentes, clientes que já possuem o EA e casos de mais de uma compra, evitando sobrepor licença paga ou gerar cobrança indevida.
+
+## Cron da cortesia
+
+No Cloudflare, em **Workers & Pages → blackwolf-api → Triggers → Cron Triggers**, criar:
+
+- `17 13 * * *` (uma vez por dia, 13:17 UTC).
+
+O Worker v43 executa a rotina de forma idempotente: um mesmo aviso não é enviado duas vezes para a mesma validade de licença. Mesmo se o Cron ficar desligado, as rotas do EA continuam bloqueando uma licença expirada; o Cron é necessário para os e-mails e para refletir o status no painel sem o robô precisar chamar a API.
 
 ## Antes de tráfego pago
 

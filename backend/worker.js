@@ -92,6 +92,9 @@
  *                               sem ela, o primeiro admin do painel recebe)
  *    EMAIL_REPLY_TO     → e-mail de resposta para mensagens que não são no-reply
  *    PANEL_URL          → "https://painel.blackwolfea.com"
+ *    EA_CONTINUATION_CHECKOUT_URL → checkout opcional para seguir no EA após
+ *                                   a cortesia. Sem esta variável, usa o link
+ *                                   público do plano Lone Wolf.
  *    STRIPE_WEBHOOK_SECRET → whsec_... (gerado no Stripe)
  */
 
@@ -169,8 +172,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v42' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v42' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v43' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v43' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -178,6 +181,12 @@ export default {
       try { logEvent({ evt: 'server_error', detail: String(err && err.message || err), stack: String(err && err.stack || '').slice(0, 500) }); } catch (e) {}
       return json({ error: 'server_error' }, 500);
     }
+  },
+
+  // Configure um Cron Trigger diário no Cloudflare para este Worker. A rotina
+  // é idempotente: se o Cloudflare repetir uma execução, não reenvia e-mail.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runCourtesyLifecycle(env));
   },
 };
 
@@ -278,6 +287,118 @@ async function handleAdminCourseBonuses(request, env, json) {
     'SELECT email, stripe_customer, checkout_session_id, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 1000'
   ).all();
   return json({ bonuses: rows.results || [] });
+}
+
+/* ───────── CORTESIA DO CURSO: EXPIRAÇÃO E CONTINUIDADE ─────────
+   A licença de cortesia é criada depois do onboarding, no banco principal do
+   EA, com users.is_courtesy=1 e users.license_expires_at em 30 dias. Esta
+   rotina NÃO cria cobrança, não toca em assinantes pagos e não muda preço.
+   Ela apenas avisa o aluno e, quando a data chega, marca a licença como expirada.
+*/
+const DEFAULT_EA_CONTINUATION_CHECKOUT_URL = 'https://buy.stripe.com/14AaEZd5i3Wp4NDfbdcs800';
+
+function continuationCheckoutUrl(env) {
+  const candidate = String(env.EA_CONTINUATION_CHECKOUT_URL || '').trim();
+  // Só permite HTTPS. Evita que uma configuração acidental gere botão inseguro.
+  return /^https:\/\//i.test(candidate) ? candidate : DEFAULT_EA_CONTINUATION_CHECKOUT_URL;
+}
+
+async function ensureCourtesyLifecycleLog(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS courtesy_lifecycle_email_log (
+      email TEXT NOT NULL,
+      license_expires_at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      PRIMARY KEY (email, license_expires_at, kind)
+    )`
+  ).run();
+}
+
+async function courtesyEmailAlreadySent(env, email, expiresAt, kind) {
+  const row = await env.DB.prepare(
+    'SELECT 1 FROM courtesy_lifecycle_email_log WHERE email=? AND license_expires_at=? AND kind=? LIMIT 1'
+  ).bind(email, expiresAt, kind).first();
+  return !!row;
+}
+
+async function markCourtesyEmailSent(env, email, expiresAt, kind) {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO courtesy_lifecycle_email_log (email, license_expires_at, kind, sent_at) VALUES (?,?,?,?)'
+  ).bind(email, expiresAt, kind, new Date().toISOString()).run();
+}
+
+async function runCourtesyLifecycle(env) {
+  // Se a Resend não estiver pronta, não registramos os avisos como enviados: a
+  // próxima execução diária tenta de novo, sem prejudicar a expiração da licença.
+  if (!env.DB) return { ok: false, error: 'database_not_configured' };
+  const now = Date.now();
+  const upperBound = new Date(now + 6 * 86400000).toISOString();
+  let rows;
+  try {
+    await ensureCourtesyLifecycleLog(env);
+    rows = await env.DB.prepare(
+      `SELECT email, name, display_name, plan, license_expires_at, license_status
+       FROM users
+       WHERE is_courtesy=1
+         AND license_expires_at IS NOT NULL
+         AND license_status IN ('active', 'trial')
+         AND license_expires_at <= ?`
+    ).bind(upperBound).all();
+  } catch (e) {
+    logEvent({ evt: 'courtesy_lifecycle_query_fail', detail: String(e && e.message || e) });
+    return { ok: false, error: 'courtesy_lifecycle_query_failed' };
+  }
+
+  const checkoutUrl = continuationCheckoutUrl(env);
+  const result = { ok: true, checked: 0, expired: 0, emails: { sent: 0, failed: 0, skipped: 0 } };
+  for (const user of (rows.results || [])) {
+    result.checked++;
+    const expiresAt = String(user.license_expires_at);
+    const expiresEpoch = toEpoch(expiresAt);
+    if (!expiresEpoch) continue;
+    const hoursLeft = (expiresEpoch * 1000 - now) / 3600000;
+    let kind = null;
+    let subject = null;
+    let html = null;
+
+    // A data de expiração também é verificada nas rotas do robô; esta atualização
+    // deixa o estado inequívoco no painel mesmo que o cliente não abra o EA.
+    if (hoursLeft <= 0) {
+      await env.DB.prepare(
+        "UPDATE users SET license_status='expired' WHERE email=? AND is_courtesy=1 AND license_status IN ('active','trial') AND license_expires_at=?"
+      ).bind(user.email, expiresAt).run();
+      result.expired++;
+      kind = 'expired';
+      subject = 'Sua cortesia Black Wolf EA terminou';
+      html = courtesyExpiredEmailHtml(user.display_name || user.name, checkoutUrl);
+    } else if (hoursLeft > 36 && hoursLeft <= 60) {
+      kind = 'reminder_2d';
+      subject = 'Faltam 2 dias para o fim da sua cortesia Black Wolf EA';
+      html = courtesyReminderEmailHtml(user.display_name || user.name, 2, checkoutUrl);
+    } else if (hoursLeft > 108 && hoursLeft <= 132) {
+      kind = 'reminder_5d';
+      subject = 'Faltam 5 dias para o fim da sua cortesia Black Wolf EA';
+      html = courtesyReminderEmailHtml(user.display_name || user.name, 5, checkoutUrl);
+    } else {
+      continue;
+    }
+
+    if (await courtesyEmailAlreadySent(env, user.email, expiresAt, kind)) {
+      result.emails.skipped++;
+      continue;
+    }
+    const sent = await sendMail(env, user.email, subject, html, { noReply: true });
+    if (sent.ok) {
+      await markCourtesyEmailSent(env, user.email, expiresAt, kind);
+      result.emails.sent++;
+    } else {
+      result.emails.failed++;
+      logEvent({ evt: 'courtesy_lifecycle_email_fail', kind, status: sent.status });
+    }
+  }
+  logEvent({ evt: 'courtesy_lifecycle_run', checked: result.checked, expired: result.expired, emails_sent: result.emails.sent, emails_failed: result.emails.failed });
+  return result;
 }
 
 /* ───────────────── CRIPTOGRAFIA ───────────────── */
@@ -940,6 +1061,33 @@ function courseBonusEligibleEmailHtml(name) {
     ${ctaButton('https://curso.blackwolfea.com/', 'Ver o curso &rarr;')}
     <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Trading envolve risco. O EA &eacute; software de automa&ccedil;&atilde;o e n&atilde;o garante resultado.</p>`;
   return emailShell('Seu bônus de 1 mês do Black Wolf EA foi registrado.', inner);
+}
+
+// Cortesia do EA: aviso transacional de encerramento. Não promete resultado,
+// não inscreve o cliente em nova cobrança e só oferece o checkout separado.
+function courtesyReminderEmailHtml(name, days, checkoutUrl) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Olá <b style="color:#E8EAED;">${safeName}</b>,` : 'Olá,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua cortesia termina em ${days} dias</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} seu mês de cortesia do <b style="color:#E8EAED;">Black Wolf EA</b> está próximo do fim.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Se quiser continuar usando o EA depois desse período, você pode contratar o plano separado abaixo. A decisão é totalmente opcional.</p>
+    ${ctaButton(checkoutUrl, 'Conhecer o plano Black Wolf EA →')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">SEM RENOVAÇÃO AUTOMÁTICA</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">Se você não contratar, sua licença de cortesia termina na data prevista e nenhum valor será cobrado.</div></td></tr></table>
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Trading envolve risco. O Black Wolf EA é um software de automação e não garante resultado.</p>`;
+  return emailShell(`Faltam ${days} dias para o fim da sua cortesia Black Wolf EA.`, inner);
+}
+
+function courtesyExpiredEmailHtml(name, checkoutUrl) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Olá <b style="color:#E8EAED;">${safeName}</b>,` : 'Olá,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua cortesia foi concluída</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} o período de 1 mês de cortesia do <b style="color:#E8EAED;">Black Wolf EA</b> chegou ao fim e a licença foi desativada.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Caso queira continuar, você pode contratar o EA separadamente. Não houve e não haverá cobrança automática relacionada ao bônus.</p>
+    ${ctaButton(checkoutUrl, 'Contratar Black Wolf EA →')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Se precisar de ajuda, fale com o suporte pelos contatos abaixo.</p>`;
+  return emailShell('Sua cortesia Black Wolf EA terminou. A continuidade é opcional.', inner);
 }
 
 function courseLeadNotificationEmailHtml(name, email, whatsapp, createdAt) {
