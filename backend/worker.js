@@ -1,6 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v28 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v48 (Cloudflare Worker)
+ *  + v48: CORREÇÃO DE TELEMETRIA — normaliza formatos de payload do EA,
+ *         mantém o vínculo de contas pela fonte atômica (license_accounts),
+ *         separa contas vinculadas de contas online e preserva compatibilidade
+ *         com robôs que enviam campos em snake_case/camelCase.
  *  + v28: PAINEL ADMIN DE RESULTADOS. GET /api/admin/results (agregado + MRR +
  *         lista de clientes com P&L hoje/semana/mês/total) e ?email= (detalhe:
  *         curva, drawdown, % do dia). MRR real via monthly_amount guardado do
@@ -178,8 +182,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v47' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v47' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v48' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v48' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -545,6 +549,14 @@ function planAccountLimit(plan) {
   if (p.includes('alpha')) return 3;
   if (p.includes('pack'))  return 2;
   return 1;
+}
+// A coluna explícita do checkout é a regra principal. Para clientes antigos
+// que ainda não receberam account_limit, usa o nome do plano em vez de travar
+// silenciosamente uma conta extra em planos Pack/Alpha.
+function effectiveAccountLimit(row) {
+  if (row && row.account_limit === -1) return -1;
+  const n = Number(row && row.account_limit);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : planAccountLimit(row && row.plan);
 }
 
 /* ───────────────── LICENÇA: estado + expiração (v23) ─────────────────
@@ -1510,7 +1522,10 @@ async function handleAdminClients(request, env, json, url) {
             o.age, o.experience, o.goal, o.self_profile, o.family, o.source,
             o.country AS o_country, o.state, o.city, o.marketing_opt_in,
             (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email = u.email) AS last_seen,
-            (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email) AS acc_online
+            (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email
+              AND julianday(s.last_seen) >= julianday('now','-10 minutes')) AS acc_online,
+            (SELECT COUNT(*) FROM license_accounts la WHERE la.license_key = u.license_key) AS acc_bound,
+            (SELECT GROUP_CONCAT(la.account, '|') FROM license_accounts la WHERE la.license_key = u.license_key) AS bound_accounts
      FROM users u
      LEFT JOIN onboarding o ON o.email = u.email
      ${whereSql}
@@ -1530,9 +1545,14 @@ async function handleAdminClients(request, env, json, url) {
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
       is_courtesy: !!r.is_courtesy,
-      accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
-      mt5_accounts: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch(e){ return []; } })(),
-      account_limit: (r.account_limit != null ? r.account_limit : null),
+      // license_accounts é a fonte real da trava. O JSON em users é apenas
+      // espelho legado; só é usado como fallback até a próxima conexão do EA.
+      accounts_used: Number(r.acc_bound || 0) || accountsList(r.mt5_accounts, null).length,
+      mt5_accounts: (function(){
+        const canonical = String(r.bound_accounts || '').split('|').filter(Boolean).map(String);
+        return canonical.length ? canonical : accountsList(r.mt5_accounts, null);
+      })(),
+      account_limit: effectiveAccountLimit(r),
       last_seen: r.last_seen || null,
       accounts_reporting: r.acc_online || 0,
       onboarding: (r.age || r.o_country || r.marketing_opt_in) ? {
@@ -1591,13 +1611,16 @@ async function handleAdminResults(request, env, json, url) {
     const curve = (dayRows.results || []).map(r => { const p = +(+r.pnl || 0).toFixed(2); cum = +(cum + p).toFixed(2); if (cum > peak) peak = cum; if (peak - cum > maxDD) maxDD = peak - cum; return { day: String(r.d || '').replace(/\./g, '-'), pnl: p, cumulative: cum }; });
     const bal = await env.DB.prepare("SELECT COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE email = ? AND balance IS NOT NULL").bind(t).first();
     const balance = bal ? +(+bal.bal).toFixed(2) : 0;
-    const u = await env.DB.prepare('SELECT name, plan, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const u = await env.DB.prepare('SELECT name, plan, license_key, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const canonicalAccounts = u && u.license_key
+      ? await env.DB.prepare('SELECT account FROM license_accounts WHERE license_key = ? ORDER BY bound_at').bind(u.license_key).all() : { results: [] };
     const n = agg ? +agg.n : 0;
     const today = +(+(agg && agg.today || 0)).toFixed(2);
     const startDay = balance - today;
     return json({
       ok: true, email: t, name: (u && u.name) || t, plan: (u && u.plan) || null, status: (u && u.license_status) || null,
-      accounts: (function () { try { const a = u && u.mt5_accounts ? JSON.parse(u.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+      accounts: (canonicalAccounts.results || []).length
+        ? canonicalAccounts.results.map(r => String(r.account)) : accountsList(u && u.mt5_accounts, null),
       currency: 'USD', balance, today, todayPct: (startDay > 0) ? +(today / startDay * 100).toFixed(2) : null,
       week: +(+(agg && agg.week || 0)).toFixed(2), month: +(+(agg && agg.month || 0)).toFixed(2), total: +(+(agg && agg.total || 0)).toFixed(2),
       trades: n, wins: agg ? +agg.wins : 0, losses: agg ? +agg.losses : 0, winRate: n ? +((agg.wins / n) * 100).toFixed(2) : 0,
@@ -1618,6 +1641,7 @@ async function handleAdminResults(request, env, json, url) {
   const balByEmail = {}; (balRows.results || []).forEach(r => { balByEmail[String(r.email).toLowerCase()] = +r.bal; });
   const urows = await env.DB.prepare(
     `SELECT u.email, u.name, u.plan, u.license_status, u.monthly_amount, u.is_courtesy, u.mt5_accounts, u.role, u.created_at,
+            (SELECT GROUP_CONCAT(la.account, '|') FROM license_accounts la WHERE la.license_key=u.license_key) AS bound_accounts,
             (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email=u.email) AS last_seen
      FROM users u WHERE (u.role='client' OR u.license_key IS NOT NULL) ORDER BY u.created_at DESC`
   ).all();
@@ -1641,7 +1665,7 @@ async function handleAdminResults(request, env, json, url) {
       return {
         email: em, name: r.name || em, plan: r.plan || null, status: st, is_admin: r.role === 'admin',
         payment: pay, monthly_amount: amount, balance, today, week, month, total,
-        accounts: (function () { try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+        accounts: (function () { const a=String(r.bound_accounts||'').split('|').filter(Boolean); return a.length ? a : accountsList(r.mt5_accounts, null); })(),
         last_seen: r.last_seen || null
       };
     });
@@ -2413,7 +2437,8 @@ function intOrNull(v){ const n = parseInt(v,10); return Number.isFinite(n) ? n :
      pelo admin (limpando o campo). Isso impede revenda/multi-conta da mesma licença. */
 function getEaAccount(request, url, body){
   let a = url.searchParams.get('account') || request.headers.get('X-Account') ||
-          (body && body.account != null ? body.account : null);
+          (body && (body.account ?? body.account_login ?? body.accountLogin ?? body.account_number ?? body.accountNumber) != null
+            ? (body.account ?? body.account_login ?? body.accountLogin ?? body.account_number ?? body.accountNumber) : null);
   if (a == null) return null;
   const s = String(a).trim();
   // Aceita conta do MT5 (login numérico) E do NinjaTrader (Account.Name em texto,
@@ -2433,8 +2458,8 @@ async function bindOrCheckAccount(env, row, account){
   const acc = String(account);
   const lic = row.license_key;
   if(!lic) return { mismatch:false, bound: acc }; // sem licença amarrável (não deveria ocorrer nas rotas EA)
-  const limit = (row.account_limit === -1) ? 1000000
-              : ((row.account_limit && row.account_limit > 1) ? row.account_limit : 1);
+  const configuredLimit = effectiveAccountLimit(row);
+  const limit = configuredLimit === -1 ? 1000000 : configuredLimit;
   const now = new Date().toISOString();
   // INSERT atômico: entra se JÁ pertence (idempotente) OU se há vaga. ON CONFLICT
   // evita erro em corrida; a cláusula WHERE garante o teto sem ler-antes-de-escrever.
@@ -2625,7 +2650,7 @@ async function handleEaTrades(request, env, json, url) {
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
   if (eaBurstLimited('ea_trades:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
-  const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
+  const row = await env.DB.prepare('SELECT email, plan, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
   // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
   // trades é o CANAL DE DADOS, não a permissão de operar. Rejeitar perderia PARA
@@ -2654,7 +2679,12 @@ async function handleEaTrades(request, env, json, url) {
 
   // v23: monta TUDO como um único env.DB.batch (atômico: ou grava tudo, ou nada).
   // COALESCE preserva o último saldo bom se o heartbeat vier parcial/nulo.
-  const bal = num(body.balance), eq = num(body.equity), op = intOrNull(body.open_positions), ver = body.ea_version ?? null;
+  // Aceita o contrato atual e variações comuns de MT5/NT. Isso elimina perda
+  // silenciosa quando uma versão do EA troca camelCase por snake_case.
+  const bal = num(body.balance ?? body.account_balance ?? body.accountBalance),
+        eq = num(body.equity ?? body.account_equity ?? body.accountEquity),
+        op = intOrNull(body.open_positions ?? body.openPositions ?? body.positions_total ?? body.positionsTotal),
+        ver = body.ea_version ?? body.eaVersion ?? body.version ?? null;
   const stmts = [
     env.DB.prepare(
       `INSERT INTO ea_status (license_key, email, account, balance, equity, open_positions, ea_version, last_seen, last_error)
@@ -2687,7 +2717,14 @@ async function handleEaTrades(request, env, json, url) {
   const persisted = [];
   // v29: teto DURO no array cru ANTES de ordenar — uma licença válida não pode
   // mandar um array gigante e gastar CPU/memória do worker (o robô pagina de 500).
-  let tradesArr = Array.isArray(body.trades) ? body.trades.slice(0, 2000).filter(t => t && t.ticket != null) : [];
+  const rawTrades = Array.isArray(body.trades) ? body.trades
+    : Array.isArray(body.deals) ? body.deals
+    : Array.isArray(body.history) ? body.history
+    : Array.isArray(body.closed_trades) ? body.closed_trades
+    : Array.isArray(body.closedTrades) ? body.closedTrades
+    : (body.trade && typeof body.trade === 'object') ? [body.trade]
+    : (body.deal && typeof body.deal === 'object') ? [body.deal] : [];
+  let tradesArr = rawTrades.slice(0, 2000).filter(t => t && (t.ticket ?? t.deal ?? t.deal_ticket ?? t.dealTicket ?? t.id) != null);
   const totalTrades = tradesArr.length;
   // v27 (P0-B): NUNCA gravar trade sem CONTA. No SQLite, NULL é distinto no índice
   // UNIQUE, então trade sem conta furaria o dedup e DUPLICARIA a cada reenvio
@@ -2709,14 +2746,14 @@ async function handleEaTrades(request, env, json, url) {
   const capped = tradesArr.slice(0, 500); // teto por POST; o robô pagina backlog maior
   const remaining = Math.max(0, tradesArr.length - capped.length);
   for (const tr of capped) {
-    const ticket = String(tr.ticket);
+    const ticket = String(tr.ticket ?? tr.deal ?? tr.deal_ticket ?? tr.dealTicket ?? tr.id);
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO trades (license_key,email,account,ticket,symbol,type,lots,open_time,close_time,open_price,close_price,profit,commission,swap,created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(license, row.email, String(account), ticket, tr.symbol??null, tr.type??null, num(tr.lots),
-           tr.openTime??tr.open_time??null, tr.closeTime??tr.close_time??null,
-           num(tr.openPrice??tr.open_price), num(tr.closePrice??tr.close_price),
-           num(tr.profit), num(tr.commission), num(tr.swap), now));
+    ).bind(license, row.email, String(account), ticket, tr.symbol??tr.instrument??null, tr.type??tr.side??tr.direction??null, num(tr.lots??tr.volume),
+           tr.openTime??tr.open_time??tr.time_open??null, tr.closeTime??tr.close_time??tr.time_close??tr.time??null,
+           num(tr.openPrice??tr.open_price??tr.price_open), num(tr.closePrice??tr.close_price??tr.price_close??tr.price),
+           num(tr.profit??tr.pnl), num(tr.commission??tr.commission_value), num(tr.swap??tr.swap_value), now));
     persisted.push(ticket);
   }
   try {
@@ -2949,9 +2986,8 @@ async function handleMt5Account(request, env, json) {
   if (!/^\d{1,20}$/.test(accountRaw)) return json({ error:'invalid_account' }, 400);
   const account = accountRaw;
 
-  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
-  const limit = row && row.account_limit === -1 ? -1
-              : (row && row.account_limit && row.account_limit > 1 ? row.account_limit : 1);
+  const row = await env.DB.prepare('SELECT plan, account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
+  const limit = effectiveAccountLimit(row);
   const lic = row && row.license_key ? row.license_key : null;
   let list = [];
   try { list = row && row.mt5_accounts ? JSON.parse(row.mt5_accounts) : []; } catch(e){ list = []; }

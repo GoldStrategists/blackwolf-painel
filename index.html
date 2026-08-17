@@ -6221,7 +6221,7 @@ function clearNotifs(){
 (function(){
   'use strict';
 
-  /* 1) Tempo quase-real: busca trades/status do robô a cada 60s
+  /* 1) Tempo quase-real: busca trades/status do robô a cada 10s
         (só logado com conta real, em modo cliente e com a aba visível) */
   var meTick=0;
   function liveTick(){
@@ -6236,7 +6236,7 @@ function clearNotifs(){
       fetchMyData();
     }catch(e){}
   }
-  setInterval(liveTick,60000);
+  setInterval(liveTick,10000);
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') liveTick(); });
   setTimeout(liveTick,2000);
   // Black Wolf 2.0: sync de perfis globais de risco / saveGlobalProfiles REMOVIDOS
