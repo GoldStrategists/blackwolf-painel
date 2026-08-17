@@ -141,7 +141,7 @@ export default {
       if (path === '/api/onboarding' && request.method === 'POST')       return await handleOnboarding(request, env, json);
       if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
-      if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
+      if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json, url);
       if (path === '/api/course-leads' && request.method === 'POST')      return await handleCourseLeadCreate(request, env, json, ctx);
       if (path === '/api/admin/course-leads' && request.method === 'GET') return await handleAdminCourseLeads(request, env, json);
       if (path === '/api/admin/course-leads' && request.method === 'POST') return await handleAdminCourseLeadUpdate(request, env, json);
@@ -1367,30 +1367,56 @@ async function handleReset(request, env, json) {
    Requer sessão de administrador. Retorna apenas clientes reais
    (role='client'), excluindo as contas de demonstração. */
 const DEMO_ACCOUNTS = ['demo.admin@blackwolfea.com', 'demo.cliente@blackwolfea.com', 'ea-test@blackwolfea.com'];
-async function handleAdminClients(request, env, json) {
+async function handleAdminClients(request, env, json, url) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
 
-  // v24 (item 2 do Luiz): a visão geral inclui TODA licença ativa — inclusive as
-  // contas de admin que também são clientes (a do próprio Luiz). Antes filtrava só
-  // role='client' e a licença do admin não aparecia no "quartel general".
+  // Lista paginada no servidor: não baixa milhares de clientes no navegador só
+  // para o admin encontrar um nome. A visão geral continua recebendo a primeira
+  // página, enquanto a tela Clientes consulta cada página/filtro sob demanda.
+  const rawLimit = parseInt(url && url.searchParams.get('limit'), 10);
+  const limit = Math.max(10, Math.min(100, Number.isFinite(rawLimit) ? rawLimit : 100));
+  const rawOffset = parseInt(url && url.searchParams.get('offset'), 10);
+  const offset = Math.max(0, Math.min(100000, Number.isFinite(rawOffset) ? rawOffset : 0));
+  const search = String((url && url.searchParams.get('q')) || '').trim().toLowerCase().slice(0, 80);
+  const status = String((url && url.searchParams.get('status')) || '').trim().toLowerCase();
+  const sort = String((url && url.searchParams.get('sort')) || 'recent').trim().toLowerCase();
+  const where = ["(u.role = 'client' OR u.license_key IS NOT NULL)", 'LOWER(u.email) NOT IN (?,?,?)'];
+  const binds = [...DEMO_ACCOUNTS];
+  if (['active','trial','expired','revoked'].includes(status)) {
+    where.push("COALESCE(u.license_status, CASE WHEN u.license_key IS NOT NULL THEN 'active' ELSE 'expired' END)=?");
+    binds.push(status);
+  }
+  if (search) {
+    const like = '%' + search.replace(/[%_\\]/g, '\\$&') + '%';
+    where.push("(LOWER(COALESCE(u.name,'')) LIKE ? ESCAPE '\\' OR LOWER(u.email) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(u.country,'')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(u.plan,'')) LIKE ? ESCAPE '\\')");
+    binds.push(like, like, like, like);
+  }
+  const orderBy = sort === 'name' ? 'LOWER(COALESCE(u.name,u.email)) ASC, u.created_at DESC'
+    : sort === 'expires' ? 'CASE WHEN u.license_expires_at IS NULL THEN 1 ELSE 0 END, u.license_expires_at ASC, u.created_at DESC'
+    : 'u.created_at DESC';
+  const whereSql = 'WHERE ' + where.join(' AND ');
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM users u ${whereSql}`).bind(...binds).first();
+
+  // v24: a visão geral inclui toda licença ativa — inclusive contas de admin
+  // que também são clientes, mas nunca as contas de demonstração.
   const rows = await env.DB.prepare(
     `SELECT u.email, u.name, u.role, u.country, u.plan, u.created_at,
-            u.license_key, u.license_status, u.license_expires_at, u.mt5_accounts, u.account_limit,
+            u.license_key, u.license_status, u.license_expires_at, u.is_courtesy, u.mt5_accounts, u.account_limit,
             o.age, o.experience, o.goal, o.self_profile, o.family, o.source,
             o.country AS o_country, o.state, o.city, o.marketing_opt_in,
             (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email = u.email) AS last_seen,
             (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email) AS acc_online
      FROM users u
      LEFT JOIN onboarding o ON o.email = u.email
-     WHERE u.role = 'client' OR u.license_key IS NOT NULL
-     ORDER BY u.created_at DESC`
-  ).all();
+     ${whereSql}
+     ORDER BY ${orderBy}
+     LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all();
 
   const clients = (rows.results || [])
-    .filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()))
     .map(r => ({
       email: r.email,
       name: r.name,
@@ -1401,6 +1427,7 @@ async function handleAdminClients(request, env, json) {
       license_key: r.license_key || null,
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
+      is_courtesy: !!r.is_courtesy,
       accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
       mt5_accounts: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch(e){ return []; } })(),
       account_limit: (r.account_limit != null ? r.account_limit : null),
@@ -1413,7 +1440,7 @@ async function handleAdminClients(request, env, json) {
       } : null,
     }));
 
-  return json({ clients });
+  return json({ clients, total: Number((totalRow && totalRow.total) || 0), limit, offset });
 }
 
 /* ─────────────── ADMIN: RESULTADOS DOS CLIENTES (v28) ───────────────

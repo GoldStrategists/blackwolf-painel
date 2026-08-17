@@ -347,6 +347,39 @@ img{max-width:100%}
 .filter-sel{background:var(--s2);border:1px solid var(--bord);border-radius:10px;padding:11px 38px 11px 14px;color:var(--t1);font-size:.84rem;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23787F91' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;transition:border-color .2s}
 .filter-sel:focus{border-color:var(--blue)}
 
+/* LISTAS OPERACIONAIS — clientes e leads escalam em tabela paginada, mantendo
+   busca e ações visíveis sem transformar a página em uma sequência de cards. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ops-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.ops-toolbar .search-box{min-width:min(100%,280px);flex:1 1 320px}
+.ops-toolbar .filter-sel{min-height:44px}
+.ops-apply{min-height:44px;padding:0 17px;color:var(--t1)}
+.compact-stats{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:14px}
+.compact-stats .astat{min-height:94px;justify-content:center;padding:16px}
+.ops-stat-btn{appearance:none;text-align:left;cursor:pointer;width:100%;font:inherit}
+.ops-stat-btn:hover,.ops-stat-btn.selected{border-color:var(--blue);background:linear-gradient(145deg,var(--s2),var(--s1))}
+.ops-table-card{padding:14px 0 0;overflow:hidden}
+.ops-table-card .tbl-wrap{margin:0;padding:0 14px}
+.ops-table{min-width:900px}
+.ops-table th{padding-top:2px}
+.ops-table td{vertical-align:middle;white-space:normal}
+.ops-table tbody tr:hover{background:rgba(45,108,255,.045)}
+.ops-table-meta,.ops-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 20px 13px;font-family:var(--fm);font-size:.68rem;color:var(--t3);letter-spacing:.02em;flex-wrap:wrap}
+.ops-pagination{border-top:1px solid var(--bord);padding:12px 20px;margin-top:2px}
+.ops-pagination>div,.ops-actions{display:flex;gap:8px;align-items:center}
+.ops-pagination .mini-btn,.ops-actions .mini-btn,.ops-save{min-height:38px}
+.ops-pagination .mini-btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+.ops-sub{font-family:var(--fm);font-size:.67rem;color:var(--t3);margin-top:3px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-contact{display:block;width:max-content;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-l);font-family:var(--fm);font-size:.72rem;text-decoration:none;margin:3px 0}
+.ops-contact:hover{text-decoration:underline}
+.ops-date{font-family:var(--fm);font-size:.69rem;color:var(--t2);min-width:130px}
+.ops-stage{min-height:38px;min-width:125px;background:var(--s2);border:1px solid var(--bord);border-radius:8px;color:var(--t1);font:600 .72rem var(--fm);padding:0 9px}
+.ops-stage:focus,.ops-note:focus{outline:2px solid rgba(45,108,255,.45);outline-offset:1px;border-color:var(--blue)}
+.ops-note{width:100%;min-width:210px;background:var(--bg2);border:1px solid var(--bord);border-radius:8px;color:var(--t1);padding:9px 10px;font:400 .76rem var(--fh)}
+.ops-note::placeholder{color:var(--t4)}
+.ops-save{color:var(--blue-l);white-space:nowrap}
+@media(max-width:700px){.compact-stats{grid-template-columns:1fr 1fr}.compact-stats .astat:last-child:nth-child(3){grid-column:span 2}.ops-toolbar{align-items:stretch}.ops-toolbar .search-box{flex-basis:100%}.ops-toolbar .filter-sel,.ops-apply{flex:1}.ops-table-card{border-radius:14px}.ops-table-meta,.ops-pagination{padding-left:16px;padding-right:16px}.ops-table-card .tbl-wrap{padding:0 8px}.ops-table td{padding:12px 10px}.ops-pagination .mini-btn,.ops-actions .mini-btn,.ops-save{min-height:44px}}
+
 /* ════════ CHART ════════ */
 .chart-box{position:relative;width:100%}
 .chart-box canvas{display:block;width:100%!important}
@@ -1105,7 +1138,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
         <div class="nav-item" data-page="admin-comms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span data-i18n="nav_admin_comms">Comunicados</span></div>
         <div class="nav-item" data-page="admin-maint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z"/></svg><span data-i18n="nav_admin_maint">Manutenção</span></div>
         <div class="nav-item" data-page="admin-clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="nav_admin_clients">Clientes</span><span class="badge" id="clientCountBadge">5</span></div>
-        <div class="nav-item" data-page="admin-leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_leads">Perfis & Leads</span></div>
+        <div class="nav-item" data-page="admin-leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_leads">Leads do Curso</span><span class="badge" id="leadCountBadge" style="display:none">0</span></div>
         <div class="nav-item" data-page="admin-licenses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="nav_admin_licenses">Licenças</span></div>
         <div class="nav-item" data-page="admin-accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span data-i18n="nav_admin_accounts">Contas MT5</span></div>
         <div class="side-sec" data-i18n="nav_section_system">SISTEMA</div>
@@ -1989,7 +2022,7 @@ function mapBackendClient(u){
   const seenD = u.last_seen?parseEaDate(u.last_seen):null;
   const online = !!(seenD && (Date.now()-seenD.getTime())<10*60000);
   return {
-    name: esc(u.name || u.email), email: esc(u.email), plan: esc(u.plan || '—'), status: status,
+    name: esc(u.name || u.email), email: esc(u.email), plan: esc(u.plan || '—'), status: status, isCourtesy: !!u.is_courtesy,
     isAdmin: !!u.is_admin, online: online, accReporting: (u.accounts_reporting||0),
     mt5Accounts: Array.isArray(u.mt5_accounts)?u.mt5_accounts.map(String):[],
     rawEmail: String(u.email||''),
@@ -2010,7 +2043,7 @@ async function fetchRealClients(){
     const d = await r.json();
     if(d && Array.isArray(d.clients)){
       DATA.admin.clients = d.clients.map(mapBackendClient);
-      DATA.admin.totalClients = DATA.admin.clients.length;
+      DATA.admin.totalClients = Number.isFinite(Number(d.total)) ? Number(d.total) : DATA.admin.clients.length;
       DATA.admin.activeLicenses = DATA.admin.clients.filter(c=>c.status==='active').length;
       DATA.admin.totalAccounts = DATA.admin.clients.reduce((s,c)=>s+(c.accUsed||0),0);
       DATA.admin.onlineRobots = DATA.admin.clients.filter(c=>c.online).length;
@@ -4267,6 +4300,74 @@ function clientSetFilter(key,val){
 }
 function clientSearchChange(){clientFilterChange();}
 
+/* v44: lista operacional paginada. Os cards completos acima continuam como
+   referência visual histórica, mas a tela Clientes usa esta tabela compacta;
+   assim centenas de alunos não viram uma coluna infinita no painel. */
+let CLIENT_LIST={items:null,total:0,page:0,limit:25,loading:false,search:'',status:'all',sort:'recent'};
+function clientListQuery(){
+  return `limit=${CLIENT_LIST.limit}&offset=${CLIENT_LIST.page*CLIENT_LIST.limit}&q=${encodeURIComponent(CLIENT_LIST.search)}&status=${encodeURIComponent(CLIENT_LIST.status==='all'?'':CLIENT_LIST.status)}&sort=${encodeURIComponent(CLIENT_LIST.sort)}`;
+}
+async function loadAdminClientList(force){
+  if(CLIENT_LIST.loading || (!force && CLIENT_LIST.items!==null)) return;
+  CLIENT_LIST.loading=true;
+  try{
+    const r=await apiFetch('/api/admin/clients?'+clientListQuery());
+    if(!r.ok) throw new Error('clients_unavailable');
+    const d=await r.json();
+    CLIENT_LIST.items=Array.isArray(d.clients)?d.clients.map(mapBackendClient):[];
+    CLIENT_LIST.total=Number(d.total)||0;
+    DATA.admin.totalClients=CLIENT_LIST.total;
+    const b=document.getElementById('clientCountBadge'); if(b)b.textContent=CLIENT_LIST.total;
+  }catch(e){ CLIENT_LIST.items=[]; CLIENT_LIST.total=0; toast('Não foi possível carregar os clientes agora.','error'); }
+  CLIENT_LIST.loading=false;
+  if(CURRENT_PAGE==='admin-clients') renderPage('admin-clients');
+}
+function clientListApplyFilters(){
+  const search=document.getElementById('clientListSearch');
+  const status=document.getElementById('clientListStatus');
+  const sort=document.getElementById('clientListSort');
+  CLIENT_LIST.search=search?String(search.value||'').trim():CLIENT_LIST.search;
+  CLIENT_LIST.status=status?status.value:CLIENT_LIST.status;
+  CLIENT_LIST.sort=sort?sort.value:CLIENT_LIST.sort;
+  CLIENT_LIST.page=0; CLIENT_LIST.items=null; renderPage('admin-clients');
+}
+function clientListPage(next){
+  const pages=Math.max(1,Math.ceil(CLIENT_LIST.total/CLIENT_LIST.limit));
+  CLIENT_LIST.page=Math.max(0,Math.min(pages-1,next)); CLIENT_LIST.items=null; renderPage('admin-clients');
+}
+function clientListStatusCount(status){ return (CLIENT_LIST.items||[]).filter(c=>c.status===status).length; }
+function renderAdminClients(){
+  if(CLIENT_LIST.items===null){
+    setTimeout(()=>loadAdminClientList(false),0);
+    return pageHead('GESTÃO','Clientes','Carregando a base de alunos...',`<button class="refresh-btn" onclick="CLIENT_LIST.items=null;loadAdminClientList(true)">Atualizar</button>`)+`<div class="card rv"><div class="empty"><div class="empty-t">Carregando clientes...</div></div></div>`;
+  }
+  const rows=CLIENT_LIST.items||[], total=CLIENT_LIST.total;
+  const active=clientListStatusCount('active')+clientListStatusCount('trial');
+  const expiring=rows.filter(c=>c.status==='expired'||c.status==='revoked').length;
+  return pageHead('GESTÃO','Clientes',`${total} aluno${total===1?'':'s'} na base. Busca e paginação mantêm esta lista leve.`,`<button class="refresh-btn" onclick="CLIENT_LIST.items=null;loadAdminClientList(true)">Atualizar</button>`)+`
+    <div class="admin-stats compact-stats">
+      <div class="astat rv"><div class="astat-label">BASE TOTAL</div><div class="astat-val blue" data-count="${total}">0</div></div>
+      <div class="astat rv"><div class="astat-label">NESTA PÁGINA · ATIVOS</div><div class="astat-val pos" data-count="${active}">0</div></div>
+      <div class="astat rv"><div class="astat-label">NESTA PÁGINA · INATIVOS</div><div class="astat-val red" data-count="${expiring}">0</div></div>
+    </div>
+    <div class="ops-toolbar rv" role="search">
+      <label class="search-box"><span class="sr-only">Buscar aluno</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="clientListSearch" value="${esc(CLIENT_LIST.search)}" placeholder="Buscar nome, e-mail, país ou plano" onkeydown="if(event.key==='Enter')clientListApplyFilters()"></label>
+      <select class="filter-sel" id="clientListStatus" aria-label="Filtrar status"><option value="all" ${CLIENT_LIST.status==='all'?'selected':''}>Status: todos</option><option value="active" ${CLIENT_LIST.status==='active'?'selected':''}>Ativos</option><option value="trial" ${CLIENT_LIST.status==='trial'?'selected':''}>Cortesia / teste</option><option value="expired" ${CLIENT_LIST.status==='expired'?'selected':''}>Expirados</option><option value="revoked" ${CLIENT_LIST.status==='revoked'?'selected':''}>Revogados</option></select>
+      <select class="filter-sel" id="clientListSort" aria-label="Ordenar clientes"><option value="recent" ${CLIENT_LIST.sort==='recent'?'selected':''}>Mais recentes</option><option value="name" ${CLIENT_LIST.sort==='name'?'selected':''}>Nome A–Z</option><option value="expires" ${CLIENT_LIST.sort==='expires'?'selected':''}>Próximos a expirar</option></select>
+      <button class="mini-btn ops-apply" onclick="clientListApplyFilters()">Aplicar</button>
+    </div>
+    <div id="clientListRegion">${buildClientListTable(rows,total)}</div>`;
+}
+function buildClientListTable(rows,total){
+  if(!rows.length) return `<div class="card rv"><div class="empty"><div class="empty-t">Nenhum cliente encontrado</div><div class="empty-d">Ajuste a busca ou os filtros.</div></div></div>`;
+  const start=CLIENT_LIST.page*CLIENT_LIST.limit+1, end=Math.min(total,start+rows.length-1), pages=Math.max(1,Math.ceil(total/CLIENT_LIST.limit));
+  return `<div class="card ops-table-card rv"><div class="ops-table-meta"><span>Mostrando ${start}–${end} de ${total}</span><span>25 por página</span></div><div class="tbl-wrap"><table class="tbl ops-table" style="min-width:900px"><thead><tr><th>Aluno</th><th>Plano</th><th>Acesso</th><th>Contas</th><th>Último sinal</th><th>Expira</th><th>Ações</th></tr></thead><tbody>${rows.map(c=>{
+    const email=jsAttr(c.rawEmail||c.email), access=c.isCourtesy?'<span class="pill trial">Cortesia</span>':statusPill(c.status);
+    const robot=c.online?'<span class="pill active">Online</span>':'<span style="color:var(--t3);font-size:.75rem">'+esc(c.seen||'—')+'</span>';
+    return `<tr><td><div class="tbl-name">${c.name}</div><div class="ops-sub">${c.email}${c.country&&c.country!=='—'?' · '+c.country:''}</div></td><td>${c.plan}</td><td>${access}</td><td class="mono">${c.accUsed||0}/${c.accLimit||1}</td><td>${robot}</td><td class="mono">${fmtExpires(c.expires)}</td><td><div class="ops-actions"><button class="mini-btn" onclick="openAdminClient('${email}')">Abrir</button><button class="mini-btn" onclick="contactClient('${email}')">E-mail</button></div></td></tr>`;
+  }).join('')}</tbody></table></div><div class="ops-pagination"><span>Página ${CLIENT_LIST.page+1} de ${pages}</span><div><button class="mini-btn" ${CLIENT_LIST.page===0?'disabled':''} onclick="clientListPage(${CLIENT_LIST.page-1})">Anterior</button><button class="mini-btn" ${CLIENT_LIST.page>=pages-1?'disabled':''} onclick="clientListPage(${CLIENT_LIST.page+1})">Próxima</button></div></div></div>`;
+}
+
 /* ─────── ADMIN: LEADS / PROFILES (NEW lead-profiling feature) ─────── */
 let LEAD_FILTER='all';
 function renderAdminLeads(){
@@ -4325,6 +4426,7 @@ function leadFactor(name,val,lvl){
    continuam em dados de onboarding; esta tela passa a priorizar os leads que
    ainda precisam de atendimento comercial. */
 let COURSE_LEADS=null, COURSE_LEADS_LOADING=false;
+let COURSE_LEAD_VIEW={search:'',status:'all',page:0,limit:25};
 async function loadCourseLeads(force){
   if(COURSE_LEADS_LOADING || (COURSE_LEADS!==null && !force)) return;
   COURSE_LEADS_LOADING=true;
@@ -4332,37 +4434,58 @@ async function loadCourseLeads(force){
     const r=await apiFetch('/api/admin/course-leads');
     if(!r.ok) throw new Error('course_leads_unavailable');
     const d=await r.json(); COURSE_LEADS=Array.isArray(d.leads)?d.leads:[];
+    const badge=document.getElementById('leadCountBadge'); if(badge){badge.textContent=COURSE_LEADS.length;badge.style.display=COURSE_LEADS.length?'inline-flex':'none';}
   }catch(e){ COURSE_LEADS=[]; toast('Não foi possível carregar os leads agora.','error'); }
   COURSE_LEADS_LOADING=false;
   if(CURRENT_PAGE==='admin-leads') renderPage('admin-leads');
 }
 async function courseLeadSetStatus(id,status){
   const lead=(COURSE_LEADS||[]).find(x=>Number(x.id)===Number(id)); if(!lead) return;
+  const note=document.getElementById('lead-note-'+id);
+  const notes=note?String(note.value||'').trim().slice(0,1000):String(lead.notes||'');
   try{
-    const r=await apiFetch('/api/admin/course-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(id),status:status,notes:lead.notes||''})});
+    const r=await apiFetch('/api/admin/course-leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:Number(id),status:status,notes:notes})});
     if(!r.ok) throw new Error('update_failed');
-    lead.status=status; lead.updated_at=new Date().toISOString(); renderPage('admin-leads'); toast('Lead atualizado.','success');
+    lead.status=status; lead.notes=notes; lead.updated_at=new Date().toISOString(); renderPage('admin-leads'); toast('Lead atualizado.','success');
   }catch(e){ toast('Não foi possível atualizar este lead.','error'); }
 }
 function courseLeadStatusLabel(status){ return ({new:'Novo',contacted:'Contatado',group:'No grupo',closed:'Fechado'})[status]||'Novo'; }
+function courseLeadFilterChange(){
+  const q=document.getElementById('leadSearch'); const st=document.getElementById('leadStatus');
+  COURSE_LEAD_VIEW.search=q?String(q.value||'').trim().toLowerCase():COURSE_LEAD_VIEW.search;
+  COURSE_LEAD_VIEW.status=st?st.value:COURSE_LEAD_VIEW.status; COURSE_LEAD_VIEW.page=0; renderPage('admin-leads');
+}
+function courseLeadQuickFilter(status){ COURSE_LEAD_VIEW.status=status; COURSE_LEAD_VIEW.page=0; renderPage('admin-leads'); }
+function courseLeadPage(next,total){ const pages=Math.max(1,Math.ceil(total/COURSE_LEAD_VIEW.limit)); COURSE_LEAD_VIEW.page=Math.max(0,Math.min(pages-1,next)); renderPage('admin-leads'); }
+function courseLeadFiltered(){
+  const q=COURSE_LEAD_VIEW.search, st=COURSE_LEAD_VIEW.status;
+  return (COURSE_LEADS||[]).filter(l=>{
+    if(st!=='all'&&l.status!==st)return false;
+    if(!q)return true;
+    return [l.name,l.email,l.whatsapp,l.notes].some(v=>String(v||'').toLowerCase().includes(q));
+  });
+}
 function renderAdminLeads(){
   if(COURSE_LEADS===null){
     setTimeout(()=>loadCourseLeads(false),0);
     return pageHead('CURSO','Leads do Curso','Carregando os contatos da Lista VIP...',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`<div class="card rv"><div class="empty"><div class="empty-t">Carregando leads...</div></div></div>`;
   }
   const leads=COURSE_LEADS, counts={new:0,contacted:0,group:0,closed:0}; leads.forEach(l=>counts[l.status]=(counts[l.status]||0)+1);
-  const stat=(key,label,color)=>`<div class="astat rv"><div class="astat-ico" style="background:rgba(45,108,255,.13);color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg></div><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${counts[key]}">0</div></div>`;
-  return pageHead('CURSO','Leads do Curso','Contatos da Lista VIP. Atualize o estágio depois de chamar cada pessoa.',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`
-    <div class="admin-stats">${stat('new','NOVOS','var(--blue-l)')}${stat('contacted','CONTATADOS','var(--amber-l)')}${stat('group','NO GRUPO','var(--green-l)')}${stat('closed','FECHADOS','var(--t2)')}</div>
-    <div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">Cada contato chega aqui e também gera um aviso por e-mail. Use <b>Novo → Contatado → No grupo → Fechado</b> para manter o funil organizado.</div></div>
-    ${buildCourseLeadCards(leads)}`;
+  const stat=(key,label,color)=>`<button class="astat rv ops-stat-btn ${COURSE_LEAD_VIEW.status===key?'selected':''}" onclick="courseLeadQuickFilter('${key}')"><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${counts[key]}">0</div></button>`;
+  return pageHead('CURSO','Leads do Curso','Planilha operacional da Lista VIP. Busque, atualize o estágio e registre o próximo passo.',`<button class="refresh-btn" onclick="loadCourseLeads(true)">Atualizar</button>`)+`
+    <div class="admin-stats compact-stats">${stat('new','NOVOS','var(--blue-l)')}${stat('contacted','CONTATADOS','var(--amber-l)')}${stat('group','NO GRUPO','var(--green-l)')}${stat('closed','FECHADOS','var(--t2)')}</div>
+    <div class="ops-toolbar rv" role="search"><label class="search-box"><span class="sr-only">Buscar lead</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="leadSearch" value="${esc(COURSE_LEAD_VIEW.search)}" placeholder="Buscar nome, e-mail, WhatsApp ou nota" onkeydown="if(event.key==='Enter')courseLeadFilterChange()"></label><select class="filter-sel" id="leadStatus" aria-label="Filtrar etapa"><option value="all" ${COURSE_LEAD_VIEW.status==='all'?'selected':''}>Todos os estágios</option>${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${COURSE_LEAD_VIEW.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select><button class="mini-btn ops-apply" onclick="courseLeadFilterChange()">Aplicar</button></div>
+    <div id="courseLeadRegion">${buildCourseLeadCards(courseLeadFiltered())}</div>`;
 }
 function buildCourseLeadCards(leads){
   if(!leads.length) return `<div class="card rv"><div class="empty"><div class="empty-t">Nenhum lead ainda</div><div class="empty-d">Quando alguém preencher a Lista VIP do curso, o contato aparecerá aqui.</div></div></div>`;
-  return leads.map(l=>{
+  const total=leads.length, pages=Math.max(1,Math.ceil(total/COURSE_LEAD_VIEW.limit));
+  if(COURSE_LEAD_VIEW.page>=pages) COURSE_LEAD_VIEW.page=pages-1;
+  const start=COURSE_LEAD_VIEW.page*COURSE_LEAD_VIEW.limit, items=leads.slice(start,start+COURSE_LEAD_VIEW.limit), from=start+1, to=Math.min(total,start+items.length);
+  return `<div class="card ops-table-card rv"><div class="ops-table-meta"><span>Mostrando ${from}–${to} de ${total}</span><span>25 por página</span></div><div class="tbl-wrap"><table class="tbl ops-table lead-table" style="min-width:980px"><thead><tr><th>Lead</th><th>Contato</th><th>Estágio</th><th>Entrada</th><th>Notas / próximo passo</th><th>Salvar</th></tr></thead><tbody>${items.map(l=>{
     const id=Number(l.id), name=esc(l.name||'—'), email=esc(l.email||''), whatsapp=esc(l.whatsapp||''), wa=String(l.whatsapp||'').replace(/\D/g,''), date=l.created_at?new Date(l.created_at).toLocaleString('pt-BR'):'—';
-    return `<div class="card rv" style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><div class="cc-avatar">${esc((l.name||'?').slice(0,2).toUpperCase())}</div><div><div style="font-family:var(--fh);font-weight:700;font-size:1.06rem">${name}</div><div style="font-size:.76rem;color:var(--t3);margin-top:3px">Entrou em ${date}</div></div></div><select aria-label="Estágio do lead" onchange="courseLeadSetStatus(${id},this.value)" style="min-height:35px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:600 .72rem var(--fm)">${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select></div><div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><a class="mini-btn" href="mailto:${email}">E-mail: ${email}</a><a class="mini-btn" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp: ${whatsapp}</a></div></div>`;
-  }).join('');
+    return `<tr><td><div class="tbl-name">${name}</div><div class="ops-sub">ID #${id}</div></td><td><a class="ops-contact" href="mailto:${email}">${email}</a><a class="ops-contact" href="https://wa.me/${wa}" target="_blank" rel="noopener">${whatsapp}</a></td><td><select class="ops-stage" id="lead-status-${id}" aria-label="Estágio de ${name}">${['new','contacted','group','closed'].map(s=>`<option value="${s}" ${l.status===s?'selected':''}>${courseLeadStatusLabel(s)}</option>`).join('')}</select></td><td class="ops-date">${date}</td><td><input class="ops-note" id="lead-note-${id}" value="${esc(l.notes||'')}" maxlength="1000" placeholder="Ex.: chamar amanhã no WhatsApp"></td><td><button class="mini-btn ops-save" onclick="courseLeadSetStatus(${id},document.getElementById('lead-status-${id}').value)">Salvar</button></td></tr>`;
+  }).join('')}</tbody></table></div><div class="ops-pagination"><span>Página ${COURSE_LEAD_VIEW.page+1} de ${pages}</span><div><button class="mini-btn" ${COURSE_LEAD_VIEW.page===0?'disabled':''} onclick="courseLeadPage(${COURSE_LEAD_VIEW.page-1},${total})">Anterior</button><button class="mini-btn" ${COURSE_LEAD_VIEW.page>=pages-1?'disabled':''} onclick="courseLeadPage(${COURSE_LEAD_VIEW.page+1},${total})">Próxima</button></div></div></div>`;
 }
 
 /* ─────── ADMIN: LICENSES ─────── */
