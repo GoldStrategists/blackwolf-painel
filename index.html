@@ -378,7 +378,14 @@ img{max-width:100%}
 .ops-note{width:100%;min-width:210px;background:var(--bg2);border:1px solid var(--bord);border-radius:8px;color:var(--t1);padding:9px 10px;font:400 .76rem var(--fh)}
 .ops-note::placeholder{color:var(--t4)}
 .ops-save{color:var(--blue-l);white-space:nowrap}
+.relationship-stats{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:14px}
+.relationship-stats .astat{min-height:88px;justify-content:center;padding:14px}
+.relationship-tags{display:flex;gap:5px;flex-wrap:wrap;min-width:160px}
+.relationship-tags .pill{font-size:.58rem;padding:4px 8px}
+.relationship-note{font-size:.75rem;color:var(--t2);line-height:1.45;min-width:160px;max-width:280px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 @media(max-width:700px){.compact-stats{grid-template-columns:1fr 1fr}.compact-stats .astat:last-child:nth-child(3){grid-column:span 2}.ops-toolbar{align-items:stretch}.ops-toolbar .search-box{flex-basis:100%}.ops-toolbar .filter-sel,.ops-apply{flex:1}.ops-table-card{border-radius:14px}.ops-table-meta,.ops-pagination{padding-left:16px;padding-right:16px}.ops-table-card .tbl-wrap{padding:0 8px}.ops-table td{padding:12px 10px}.ops-pagination .mini-btn,.ops-actions .mini-btn,.ops-save{min-height:44px}}
+@media(max-width:900px){.relationship-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.relationship-stats{grid-template-columns:1fr 1fr}.relationship-stats .astat:last-child:nth-child(5){grid-column:span 2}}
 
 /* ════════ CHART ════════ */
 .chart-box{position:relative;width:100%}
@@ -1138,6 +1145,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
         <div class="nav-item" data-page="admin-comms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span data-i18n="nav_admin_comms">Comunicados</span></div>
         <div class="nav-item" data-page="admin-maint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z"/></svg><span data-i18n="nav_admin_maint">Manutenção</span></div>
         <div class="nav-item" data-page="admin-clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="nav_admin_clients">Clientes</span><span class="badge" id="clientCountBadge">5</span></div>
+        <div class="nav-item" data-page="admin-relationship"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="16" r="3"/><path d="M10.5 10.5l3 3"/><path d="M5.4 18.6a4 4 0 0 1 5.2-5.2M13.4 10.6a4 4 0 0 1 5.2-5.2"/></svg><span data-i18n="nav_admin_relationship">Base & Relacionamento</span></div>
         <div class="nav-item" data-page="admin-leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_leads">Leads do Curso</span><span class="badge" id="leadCountBadge" style="display:none">0</span></div>
         <div class="nav-item" data-page="admin-licenses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="nav_admin_licenses">Licenças</span></div>
         <div class="nav-item" data-page="admin-accounts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span data-i18n="nav_admin_accounts">Contas MT5</span></div>
@@ -1236,7 +1244,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Dashboard",nav_results:"Meus Resultados",nav_history:"Histórico de Trades",nav_reports:"Relatórios",
     nav_strategies:"Estratégias",nav_config:"Configurar Robô",nav_section_account:"CONTA",nav_license:"Licença & Contas",
     nav_downloads:"Downloads",nav_setup:"Instalação",nav_faq:"FAQ / Suporte",nav_legal:"Termos Legais",
-    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_leads:"Leads do Curso",
+    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_relationship:"Base & Relacionamento",nav_admin_leads:"Leads do Curso",
     nav_admin_licenses:"Licenças",nav_admin_accounts:"Contas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versões do EA",nav_admin_payments:"Pagamentos",
     sidefoot_title:"Precisa de ajuda?",sidefoot_desc:"Fale com nosso suporte via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Atualizar",
@@ -1255,7 +1263,7 @@ const I18N = {
     nav_section_main:"MAIN",nav_dashboard:"Dashboard",nav_results:"My Results",nav_history:"Trade History",nav_reports:"Reports",
     nav_strategies:"Strategies",nav_config:"Configure Robot",nav_section_account:"ACCOUNT",nav_license:"License & Accounts",
     nav_downloads:"Downloads",nav_setup:"Installation",nav_faq:"FAQ / Support",nav_legal:"Legal Terms",
-    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_leads:"Course Leads",
+    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_relationship:"Relationship Base",nav_admin_leads:"Course Leads",
     nav_admin_licenses:"Licenses",nav_admin_accounts:"MT5 Accounts",nav_section_system:"SYSTEM",nav_admin_files:"EA Versions",nav_admin_payments:"Payments",
     sidefoot_title:"Need help?",sidefoot_desc:"Talk to our support via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancel",modal_confirm:"Confirm",refresh:"Refresh",
@@ -1274,7 +1282,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Panel",nav_results:"Mis Resultados",nav_history:"Historial de Trades",nav_reports:"Informes",
     nav_strategies:"Estrategias",nav_config:"Configurar Robot",nav_section_account:"CUENTA",nav_license:"Licencia & Cuentas",
     nav_downloads:"Descargas",nav_setup:"Instalación",nav_faq:"FAQ / Soporte",nav_legal:"Términos Legales",
-    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_leads:"Leads del Curso",
+    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_relationship:"Base de Relaciones",nav_admin_leads:"Leads del Curso",
     nav_admin_licenses:"Licencias",nav_admin_accounts:"Cuentas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versiones del EA",nav_admin_payments:"Pagos",
     sidefoot_title:"¿Necesitas ayuda?",sidefoot_desc:"Habla con nuestro soporte por WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Actualizar",
@@ -2084,7 +2092,7 @@ function renderPage(page){
   const map={
     dashboard:renderDashboard, results:renderResults, history:renderHistory, strategies:renderStrategies, reports:renderReports,
     license:renderLicense, downloads:renderDownloads, setup:renderSetup, faq:renderFaq, legal:renderLegalPage, settings:renderSettings,
-    'admin-overview':renderAdminOverview,'admin-results':renderAdminResults,'admin-comms':renderAdminComms,'admin-maint':renderAdminMaint,'admin-clients':renderAdminClients,'admin-leads':renderAdminLeads,
+    'admin-overview':renderAdminOverview,'admin-results':renderAdminResults,'admin-comms':renderAdminComms,'admin-maint':renderAdminMaint,'admin-clients':renderAdminClients,'admin-relationship':renderAdminRelationship,'admin-leads':renderAdminLeads,
     'admin-licenses':renderAdminLicenses,'admin-accounts':renderAdminAccounts,'admin-files':renderAdminFiles,'admin-payments':renderAdminPayments,
   };
   const fn=map[page]||renderDashboard;
@@ -4420,6 +4428,67 @@ function buildLeadCards(){
 function leadFactor(name,val,lvl){
   const c=lvl==='aggr'?'var(--red-l)':lvl==='mod'?'var(--amber-l)':lvl==='cons'?'var(--green-l)':'var(--blue-l)';
   return `<div class="factor"><div class="factor-top"><span class="factor-name">${name}</span></div><div class="factor-val" style="color:${c}">${val}</div></div>`;
+}
+
+/* ─────── ADMIN: BASE & RELACIONAMENTO ───────
+   Uma pessoa aparece uma vez, com etiquetas que mostram exatamente qual é a
+   relação dela com a operação. A origem continua separada nos bancos certos. */
+let RELATION_BASE=null, RELATION_LOADING=false;
+let RELATION_VIEW={segment:'all',search:'',page:0,limit:25};
+async function loadRelationshipBase(force){
+  if(RELATION_LOADING || (RELATION_BASE!==null && !force)) return;
+  RELATION_LOADING=true;
+  try{
+    const r=await apiFetch('/api/admin/relationship-base');
+    if(!r.ok) throw new Error('relationship_unavailable');
+    const d=await r.json(); RELATION_BASE={contacts:Array.isArray(d.contacts)?d.contacts:[],counts:d.counts||{}};
+  }catch(e){ RELATION_BASE={contacts:[],counts:{}}; toast('Não foi possível carregar a base de relacionamento.','error'); }
+  RELATION_LOADING=false;
+  if(CURRENT_PAGE==='admin-relationship') renderPage('admin-relationship');
+}
+function relationshipFilter(segment){ RELATION_VIEW.segment=segment; RELATION_VIEW.page=0; renderPage('admin-relationship'); }
+function relationshipApplySearch(){ const inp=document.getElementById('relationshipSearch'); RELATION_VIEW.search=inp?String(inp.value||'').trim().toLowerCase():''; RELATION_VIEW.page=0; renderPage('admin-relationship'); }
+function relationshipContacts(){
+  const q=RELATION_VIEW.search, s=RELATION_VIEW.segment;
+  return (RELATION_BASE&&RELATION_BASE.contacts||[]).filter(c=>{
+    if(s!=='all'&&c.segment!==s)return false;
+    return !q || [c.name,c.email,c.whatsapp,c.notes,c.ea_plan].some(v=>String(v||'').toLowerCase().includes(q));
+  });
+}
+function relationshipPage(next,total){ const pages=Math.max(1,Math.ceil(total/RELATION_VIEW.limit)); RELATION_VIEW.page=Math.max(0,Math.min(pages-1,next)); renderPage('admin-relationship'); }
+function relationshipLabel(segment){ return ({vip:'Lista VIP',course_only:'Só curso',ea_only:'Só robô',course_and_ea:'Curso + robô'})[segment]||'Base'; }
+function relationshipTags(c){
+  const tags=[];
+  if(c.vip) tags.push('<span class="pill available">Lista VIP</span>');
+  if(c.course_status) tags.push('<span class="pill current">Aluno do curso</span>');
+  if(c.ea_status) tags.push(`<span class="pill ${c.ea_status==='active'?'active':c.ea_status==='expired'?'expired':'revoked'}">${c.ea_courtesy?'EA · cortesia':'Cliente do EA'}</span>`);
+  if(c.lead_stage==='group') tags.push('<span class="pill cons">No grupo</span>');
+  return tags.join('');
+}
+function renderAdminRelationship(){
+  if(RELATION_BASE===null){
+    setTimeout(()=>loadRelationshipBase(false),0);
+    return pageHead('OPERAÇÃO','Base & Relacionamento','Carregando as relações entre curso, EA e Lista VIP...',`<button class="refresh-btn" onclick="loadRelationshipBase(true)">Atualizar</button>`)+`<div class="card rv"><div class="empty"><div class="empty-t">Montando a base...</div></div></div>`;
+  }
+  const counts=RELATION_BASE.counts||{}, all=(RELATION_BASE.contacts||[]).length;
+  const stat=(key,label,color)=>`<button class="astat rv ops-stat-btn ${RELATION_VIEW.segment===key?'selected':''}" onclick="relationshipFilter('${key}')"><div class="astat-label">${label}</div><div class="astat-val" style="color:${color}" data-count="${key==='all'?all:(counts[key]||0)}">0</div></button>`;
+  const list=relationshipContacts();
+  return pageHead('OPERAÇÃO','Base & Relacionamento','Cada pessoa aparece uma vez. As etiquetas mostram se ela é lead, aluno do curso, cliente do robô ou os dois.',`<button class="refresh-btn" onclick="loadRelationshipBase(true)">Atualizar</button>`)+`
+    <div class="admin-stats relationship-stats">${stat('all','TODOS','var(--blue-l)')}${stat('vip','SÓ LISTA VIP','var(--amber-l)')}${stat('course_only','SÓ CURSO','var(--purple)')}${stat('ea_only','SÓ ROBÔ','var(--green-l)')}${stat('course_and_ea','CURSO + ROBÔ','var(--cyan)')}</div>
+    <div class="banner info rv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div class="banner-tx">Use esta tela para decidir quem precisa de atendimento, onboarding ou acompanhamento. A <b>Lista VIP</b> continua separada na tela Leads do Curso, onde você atualiza notas e etapas.</div></div>
+    <div class="ops-toolbar rv" role="search"><label class="search-box"><span class="sr-only">Buscar pessoa na base</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="relationshipSearch" value="${esc(RELATION_VIEW.search)}" placeholder="Buscar nome, e-mail, WhatsApp ou plano" onkeydown="if(event.key==='Enter')relationshipApplySearch()"></label><button class="mini-btn ops-apply" onclick="relationshipApplySearch()">Buscar</button></div>
+    ${buildRelationshipTable(list)}`;
+}
+function buildRelationshipTable(list){
+  if(!list.length) return `<div class="card rv"><div class="empty"><div class="empty-t">Nenhuma pessoa neste filtro</div><div class="empty-d">Troque o segmento ou a busca para ver outra parte da base.</div></div></div>`;
+  const total=list.length,pages=Math.max(1,Math.ceil(total/RELATION_VIEW.limit)); if(RELATION_VIEW.page>=pages)RELATION_VIEW.page=pages-1;
+  const start=RELATION_VIEW.page*RELATION_VIEW.limit,items=list.slice(start,start+RELATION_VIEW.limit),from=start+1,to=Math.min(total,start+items.length);
+  return `<div class="card ops-table-card rv"><div class="ops-table-meta"><span>Mostrando ${from}–${to} de ${total}</span><span>Base unificada</span></div><div class="tbl-wrap"><table class="tbl ops-table relationship-table" style="min-width:980px"><thead><tr><th>Pessoa</th><th>Relação</th><th>Contato</th><th>EA</th><th>Próximo passo</th><th></th></tr></thead><tbody>${items.map(c=>{
+    const email=esc(c.email), wa=String(c.whatsapp||'').replace(/\D/g,''), rawEmail=jsAttr(c.email);
+    const ea=c.ea_status?`${c.ea_plan||'—'} · ${c.ea_status==='active'?'ativo':c.ea_status}`:'—';
+    const note=esc(c.notes||'Sem nota registrada');
+    return `<tr><td><div class="tbl-name">${esc(c.name||c.email)}</div><div class="ops-sub">${relationshipLabel(c.segment)} · ${email}</div></td><td><div class="relationship-tags">${relationshipTags(c)}</div></td><td>${c.whatsapp?`<a class="ops-contact" href="https://wa.me/${wa}" target="_blank" rel="noopener">${esc(c.whatsapp)}</a>`:`<a class="ops-contact" href="mailto:${email}">${email}</a>`}</td><td><div style="font-size:.78rem;color:var(--t2)">${esc(ea)}</div>${c.ea_expires_at?`<div class="ops-sub">Expira ${fmtExpires(c.ea_expires_at)}</div>`:''}</td><td><div class="relationship-note">${note}</div></td><td><div class="ops-actions">${c.vip?'<button class="mini-btn" onclick="goPage(\'admin-leads\')">Lead</button>':''}${c.ea_status?`<button class="mini-btn" onclick="openAdminClient('${rawEmail}')">Aluno</button>`:''}</div></td></tr>`;
+  }).join('')}</tbody></table></div><div class="ops-pagination"><span>Página ${RELATION_VIEW.page+1} de ${pages}</span><div><button class="mini-btn" ${RELATION_VIEW.page===0?'disabled':''} onclick="relationshipPage(${RELATION_VIEW.page-1},${total})">Anterior</button><button class="mini-btn" ${RELATION_VIEW.page>=pages-1?'disabled':''} onclick="relationshipPage(${RELATION_VIEW.page+1},${total})">Próxima</button></div></div></div>`;
 }
 
 /* v42: funil real da Lista VIP do Curso Manual. Os perfis dos clientes

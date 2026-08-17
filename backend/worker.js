@@ -146,6 +146,7 @@ export default {
       if (path === '/api/admin/course-leads' && request.method === 'GET') return await handleAdminCourseLeads(request, env, json);
       if (path === '/api/admin/course-leads' && request.method === 'POST') return await handleAdminCourseLeadUpdate(request, env, json);
       if (path === '/api/admin/course-bonuses' && request.method === 'GET') return await handleAdminCourseBonuses(request, env, json);
+      if (path === '/api/admin/relationship-base' && request.method === 'GET') return await handleAdminRelationshipBase(request, env, json);
       if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
       if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/admin/broadcast' && request.method === 'POST')   return await handleAdminBroadcast(request, env, json);
@@ -172,8 +173,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v44' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v44' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v45' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v45' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -287,6 +288,59 @@ async function handleAdminCourseBonuses(request, env, json) {
     'SELECT email, stripe_customer, checkout_session_id, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 1000'
   ).all();
   return json({ bonuses: rows.results || [] });
+}
+
+// Base de relacionamento: une somente para leitura os três bancos que já
+// existem. Não duplica dados e não permite que uma lista comercial altere a
+// licença do EA. A chave de união é o e-mail normalizado.
+async function handleAdminRelationshipBase(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB || !env.BONUS_DB) return json({ error: 'relationship_base_not_configured' }, 503);
+  const [leadRows, bonusRows, eaRows] = await Promise.all([
+    env.LEADS_DB.prepare('SELECT name, email, whatsapp, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 2000').all(),
+    env.BONUS_DB.prepare('SELECT email, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 2000').all(),
+    env.DB.prepare(
+      `SELECT email, name, plan, license_status, license_key, license_expires_at, is_courtesy, created_at
+       FROM users
+       WHERE (role='client' OR license_key IS NOT NULL)
+       ORDER BY created_at DESC LIMIT 2000`
+    ).all(),
+  ]);
+  const byEmail = new Map();
+  const get = (raw) => {
+    const email = normalizeCourseEmail(raw);
+    if (!email) return null;
+    if (!byEmail.has(email)) byEmail.set(email, { email, lead: null, course: null, ea: null });
+    return byEmail.get(email);
+  };
+  for (const row of (leadRows.results || [])) { const x = get(row.email); if (x) x.lead = row; }
+  for (const row of (bonusRows.results || [])) { const x = get(row.email); if (x) x.course = row; }
+  for (const row of (eaRows.results || [])) { const x = get(row.email); if (x) x.ea = row; }
+  const contacts = [...byEmail.values()].map(x => {
+    const hasCourse = !!x.course;
+    const hasEa = !!(x.ea && x.ea.license_key);
+    const segment = hasCourse && hasEa ? 'course_and_ea'
+      : hasCourse ? 'course_only'
+      : hasEa ? 'ea_only'
+      : 'vip';
+    const name = (x.ea && x.ea.name) || (x.lead && x.lead.name) || x.email;
+    return {
+      email: x.email, name, segment,
+      vip: !!x.lead, lead_stage: x.lead ? x.lead.status : null,
+      whatsapp: x.lead ? x.lead.whatsapp : null,
+      notes: x.lead ? x.lead.notes : null,
+      course_status: x.course ? x.course.status : null,
+      course_at: x.course ? x.course.eligible_at : null,
+      ea_status: x.ea ? (x.ea.license_status || null) : null,
+      ea_plan: x.ea ? (x.ea.plan || null) : null,
+      ea_courtesy: !!(x.ea && x.ea.is_courtesy),
+      ea_expires_at: x.ea ? (x.ea.license_expires_at || null) : null,
+      created_at: (x.course && x.course.eligible_at) || (x.ea && x.ea.created_at) || (x.lead && x.lead.created_at) || null,
+    };
+  }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const counts = { vip: 0, course_only: 0, ea_only: 0, course_and_ea: 0 };
+  contacts.forEach(c => { counts[c.segment] = (counts[c.segment] || 0) + 1; });
+  return json({ contacts, counts });
 }
 
 /* ───────── CORTESIA DO CURSO: EXPIRAÇÃO E CONTINUIDADE ─────────
