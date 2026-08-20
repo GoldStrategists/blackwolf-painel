@@ -968,12 +968,14 @@ async function handleStripeWebhook(request, env, json, ctx) {
     if (!email) return json({ error: 'no_email' }, 400);
     if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
     const cleanEmail = email.trim().toLowerCase();
-    const created = await registerCourseBonus(env, obj, cleanEmail, stripeCustomer);
-    if (created && env.RESEND_API_KEY && env.EMAIL_FROM) {
-      const send = sendMail(env, cleanEmail, 'Seu bônus Black Wolf EA está reservado', courseBonusEligibleEmailHtml(name), { noReply: true });
-      if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
+    await registerCourseBonus(env, obj, cleanEmail, stripeCustomer);
+    const courtesy = await provisionCourseCourtesy(env, cleanEmail, name, stripeCustomer);
+    if (courtesy.created && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      // O acesso do curso é enviado pelo Worker do portal; este e-mail é
+      // exclusivamente do EA e contém a licença da cortesia, sem débito futuro.
+      await sendWelcomeEmail(env, cleanEmail, name, 'Lone Wolf — cortesia de 30 dias', courtesy.password, courtesy.license);
     }
-    return json({ ok: true, action: 'course_bonus_eligible' });
+    return json({ ok: true, action: courtesy.created ? 'course_ea_courtesy_created' : courtesy.action });
   }
 
   // v37: Identifica o plano EXATAMENTE pelo que o cliente comprou no Stripe (produto/
@@ -1055,7 +1057,8 @@ async function handleStripeWebhook(request, env, json, ctx) {
 }
 
 async function isCourseManualCheckout(env, obj) {
-  const marker = (m) => String(m && m.blackwolf_product || '').trim().toLowerCase() === 'course_manual';
+  const marker = (m) => String(m && m.blackwolf_product || '').trim().toLowerCase() === 'course_manual'
+    || String(m && m.product || '').trim().toLowerCase() === 'curso';
   if (marker(obj && obj.metadata)) return true;
   if (!obj || !obj.id || !env.STRIPE_SECRET_KEY) return false;
   try {
@@ -1085,6 +1088,39 @@ async function registerCourseBonus(env, obj, email, stripeCustomer) {
     return true;
   }
   return false;
+}
+
+// A compra do Curso Manual inclui UMA licença Lone Wolf por 30 dias. A criação
+// é idempotente pelo e-mail: reentrega de webhook não cria outra chave, não
+// estende o prazo e nunca mexe numa licença paga já existente.
+async function provisionCourseCourtesy(env, email, name, stripeCustomer) {
+  const existing = await env.DB.prepare(
+    'SELECT email, license_key, is_courtesy FROM users WHERE email=?'
+  ).bind(email).first();
+  if (existing) {
+    if (existing.is_courtesy && existing.license_key) return { created: false, action: 'course_ea_courtesy_already_active' };
+    // A pessoa já é cliente pagante ou administrador: o bônus não pode
+    // rebaixar/trocar a licença existente. Mantém rastreável para a operação.
+    return { created: false, action: 'course_ea_existing_account_preserved' };
+  }
+
+  const password = generatePassword();
+  const license = generateLicenseKey();
+  const salt = randomHex(16);
+  const hash = await pbkdf2(password, salt);
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO users
+      (email,password_hash,salt,name,role,lang,plan,license_key,license_status,license_expires_at,account_limit,monthly_amount,is_courtesy,stripe_customer,created_at)
+     VALUES (?,?,?,?, 'client','pt','Lone Wolf',?,'active',?,1,0,1,?,?)`
+  ).bind(email, hash, salt, capStr(name, 80) || 'Cliente', license, expiresAt, stripeCustomer || null, now).run();
+
+  await env.BONUS_DB.prepare(
+    "UPDATE course_ea_bonus SET status='redeemed', redeemed_at=?, redeemed_by='automatic_purchase' WHERE email=? AND status='eligible'"
+  ).bind(now, email).run();
+  logEvent({ evt: 'course_ea_courtesy_created', email, expires_at: expiresAt });
+  return { created: true, action: 'course_ea_courtesy_created', password, license };
 }
 
 async function verifyStripeSignature(payload, sigHeader, secret) {
