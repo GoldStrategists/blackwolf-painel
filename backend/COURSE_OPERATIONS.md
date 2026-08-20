@@ -25,16 +25,16 @@ O e-mail da Lista VIP e a confirmação de bônus são enviados com `no-reply@bl
 
 ## Bônus de 1 mês do EA
 
-O webhook do checkout marcado com `blackwolf_product=course_manual` grava uma única elegibilidade no D1 `BONUS_DB`. Ele não cria assinatura do EA, não autoriza cobrança futura e não mistura o curso com a base de licenças do robô.
+O webhook do checkout marcado como curso (`blackwolf_product=course_manual` ou `product=curso`) grava uma única elegibilidade no D1 `BONUS_DB` e cria a licença de cortesia no banco principal do EA. Ele não cria assinatura, não autoriza cobrança futura e não altera uma licença paga já existente.
 
 Fluxo comercial recomendado:
 
-1. Compra confirmada → registra elegibilidade e envia confirmação transacional.
-2. Onboarding concluído → time confere os requisitos e ativa uma licença de cortesia de 30 dias no banco principal do EA, com `is_courtesy=1` e `license_expires_at` definido.
+1. Compra confirmada → libera o curso, registra a elegibilidade e cria automaticamente uma licença Lone Wolf de cortesia por 30 dias (`is_courtesy=1` e `license_expires_at`).
+2. O cliente recebe o e-mail do EA com painel, senha temporária e chave de licença; no primeiro login, o onboarding é obrigatório.
 3. Um Cron Trigger diário do Cloudflare envia avisos 5 e 2 dias antes do fim. No vencimento, a licença é marcada como expirada e é enviado o e-mail de encerramento.
 4. Todos os avisos oferecem o checkout separado do EA. Não há débito automático, assinatura criada por bônus ou cobrança futura autorizada pelo curso.
 
-Não criar licença automaticamente no momento da compra do curso. O onboarding continua sendo a etapa que separa dados divergentes, clientes que já possuem o EA e casos de mais de uma compra, evitando sobrepor licença paga ou gerar cobrança indevida.
+A criação é idempotente: reentregas do webhook não geram outra chave nem estendem o prazo. Se já existir uma conta paga para o mesmo e-mail, ela é preservada e não sofre alteração.
 
 ## Cron da cortesia
 
