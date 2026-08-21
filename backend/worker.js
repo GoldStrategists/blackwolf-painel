@@ -964,7 +964,7 @@ async function handleStripeWebhook(request, env, json, ctx) {
   // O Curso Manual é pagamento único e NÃO pode cair no fluxo de criação de
   // licença/assinatura do EA. Só um identificador explícito na Stripe o marca
   // como curso; valores monetários nunca são usados como critério.
-  if (isCheckout && await isCourseManualCheckout(env, obj)) {
+  if (isCheckout && await isCourtesyEligibleCheckout(env, obj)) {
     if (!email) return json({ error: 'no_email' }, 400);
     if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
     const cleanEmail = email.trim().toLowerCase();
@@ -1056,9 +1056,9 @@ async function handleStripeWebhook(request, env, json, ctx) {
   return json({ ok: true, action: 'created', email, plan });
 }
 
-async function isCourseManualCheckout(env, obj) {
-  const marker = (m) => String(m && m.blackwolf_product || '').trim().toLowerCase() === 'course_manual'
-    || String(m && m.product || '').trim().toLowerCase() === 'curso';
+async function isCourtesyEligibleCheckout(env, obj) {
+  const marker = (m) => ['course_manual', 'primeira_conta'].includes(String(m && m.blackwolf_product || '').trim().toLowerCase())
+    || ['curso', 'primeira_conta'].includes(String(m && m.product || '').trim().toLowerCase());
   if (marker(obj && obj.metadata)) return true;
   if (!obj || !obj.id || !env.STRIPE_SECRET_KEY) return false;
   try {
@@ -2037,6 +2037,7 @@ async function stripePost(env, path, params) {
     return { ok: r.ok, status: r.status, body };
   } catch (e) { return { ok: false, status: 0, body: null }; }
 }
+
 // GET /api/portal — cria uma sessão do Portal de Cobrança da Stripe JÁ AUTENTICADA
 // para o cliente logado (usa o stripe_customer dele; se faltar, acha pelo e-mail).
 // Assim o aluno troca de plano/cartão/cancela SEM logar na Stripe.
