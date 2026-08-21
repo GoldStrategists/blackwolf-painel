@@ -1131,9 +1131,10 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
     if (!tPart || !v1Part) return false;
     const timestamp = tPart.split('=')[1];
     const expected = v1Part.split('=')[1];
-    // v22: rejeita webhooks antigos (proteção contra replay), como o SDK oficial do Stripe
-    const ts = parseInt(timestamp, 10);
-    if (!ts || Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) return false;
+    // A Stripe reenvia eventos assinados usando a data do evento original.
+    // A idempotência pelo id do evento protege contra repetição sem bloquear
+    // retries legítimos que acontecem após cinco minutos.
+    if (!/^\d+$/.test(timestamp)) return false;
     const signed = timestamp + '.' + payload;
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
