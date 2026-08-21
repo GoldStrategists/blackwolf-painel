@@ -1060,6 +1060,7 @@ async function isCourtesyEligibleCheckout(env, obj) {
   const marker = (m) => ['course_manual', 'primeira_conta'].includes(String(m && m.blackwolf_product || '').trim().toLowerCase())
     || ['curso', 'primeira_conta'].includes(String(m && m.product || '').trim().toLowerCase());
   if (marker(obj && obj.metadata)) return true;
+  if (!!env.PRIMEIRA_CONTA_PAYMENT_LINK_ID && obj && obj.payment_link === env.PRIMEIRA_CONTA_PAYMENT_LINK_ID) return true;
   if (!obj || !obj.id || !env.STRIPE_SECRET_KEY) return false;
   try {
     const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
