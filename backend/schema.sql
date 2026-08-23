@@ -197,6 +197,25 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_event   ON payments (event_id);
 CREATE INDEX        IF NOT EXISTS idx_payments_created ON payments (created_at);
 
+-- ─────────────── COMPROVANTES DE SAQUE (metadados; arquivo privado no R2) ───────────────
+CREATE TABLE IF NOT EXISTS withdrawal_submissions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  email           TEXT NOT NULL,
+  account         TEXT,
+  amount          REAL NOT NULL,
+  currency        TEXT NOT NULL DEFAULT 'USD',
+  withdrawal_date TEXT NOT NULL,
+  reference       TEXT,
+  file_key        TEXT NOT NULL UNIQUE,
+  file_name       TEXT NOT NULL,
+  content_type    TEXT NOT NULL,
+  file_size       INTEGER NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'submitted',
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_withdrawals_email_created ON withdrawal_submissions (email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_withdrawals_created       ON withdrawal_submissions (created_at DESC);
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- FIM. Depois de rodar, confira com:
 --   SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;

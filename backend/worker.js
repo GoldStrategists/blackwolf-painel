@@ -167,6 +167,10 @@ export default {
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/admin/payments' && request.method === 'GET')      return await handleAdminPayments(request, env, json);
+      if (path === '/api/withdrawals' && request.method === 'GET')         return await handleWithdrawalsList(request, env, json);
+      if (path === '/api/withdrawals' && request.method === 'POST')        return await handleWithdrawalUpload(request, env, json);
+      if (path === '/api/withdrawals/file' && request.method === 'GET')    return await handleWithdrawalFile(request, env, json, url);
+      if (path === '/api/admin/withdrawals' && request.method === 'GET')   return await handleAdminWithdrawals(request, env, json, url);
       if (path === '/api/admin/email-test' && request.method === 'POST')   return await handleAdminEmailTest(request, env, json);
       if (path === '/api/admin/stripe-sync' && request.method === 'POST')  return await handleAdminStripeSync(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
@@ -182,8 +186,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v48' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v48' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v49' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v49' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -2979,6 +2983,114 @@ async function handleAdminMt5(request, env, json) {
     .bind(JSON.stringify(list), list[0] || null, target).run();
   logEvent({ evt: 'admin_mt5', actor: me, target, op, account });
   return json({ ok: true, email: target, mt5_accounts: list });
+}
+
+/* ───────────────── COMPROVANTES DE SAQUE (v49) ─────────────────
+   D1 recebe só metadados. O arquivo fica privado no R2 e nunca recebe URL
+   pública: download passa por esta API, que checa o dono ou o administrador. */
+const WITHDRAWAL_MAX_BYTES = 10 * 1024 * 1024;
+const WITHDRAWAL_ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+async function ensureWithdrawalTable(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS withdrawal_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, account TEXT,
+    amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', withdrawal_date TEXT NOT NULL,
+    reference TEXT, file_key TEXT NOT NULL UNIQUE, file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL, file_size INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'submitted', created_at TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_withdrawals_email_created ON withdrawal_submissions (email, created_at DESC)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_withdrawals_created ON withdrawal_submissions (created_at DESC)').run();
+}
+function withdrawalFileType(bytes) {
+  const b = new Uint8Array(bytes.slice(0, 16));
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d) return 'application/pdf';
+  return null;
+}
+function withdrawalFilename(value, contentType) {
+  const base = String(value || 'comprovante').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'comprovante';
+  const ext = contentType === 'application/pdf' ? '.pdf' : contentType === 'image/png' ? '.png' : contentType === 'image/webp' ? '.webp' : '.jpg';
+  return /\.(pdf|png|webp|jpe?g)$/i.test(base) ? base : base + ext;
+}
+function withdrawalRow(row) {
+  return { id: row.id, account: row.account || null, amount: Number(row.amount), currency: row.currency || 'USD', withdrawal_date: row.withdrawal_date, reference: row.reference || null, file_name: row.file_name, content_type: row.content_type, file_size: Number(row.file_size), status: row.status, created_at: row.created_at };
+}
+async function handleWithdrawalsList(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  await ensureWithdrawalTable(env);
+  const rows = await env.DB.prepare(`SELECT id, account, amount, currency, withdrawal_date, reference, file_name, content_type, file_size, status, created_at
+    FROM withdrawal_submissions WHERE email = ? ORDER BY withdrawal_date DESC, id DESC LIMIT 200`).bind(email).all();
+  return json({ ok: true, withdrawals: (rows.results || []).map(withdrawalRow) });
+}
+async function handleWithdrawalUpload(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  if (!env.WITHDRAWAL_FILES) return json({ error: 'withdrawal_storage_not_configured' }, 503);
+  if (await rateLimited(env, 'withdrawal_upload:' + email, 10, 86400)) return json({ error: 'upload_limit_reached' }, 429);
+  let form; try { form = await request.formData(); } catch (e) { return json({ error: 'invalid_form' }, 400); }
+  const file = form.get('proof');
+  if (!file || typeof file.arrayBuffer !== 'function') return json({ error: 'proof_required' }, 400);
+  if (!Number.isFinite(file.size) || file.size < 1 || file.size > WITHDRAWAL_MAX_BYTES) return json({ error: 'invalid_file_size' }, 400);
+  const raw = await file.arrayBuffer();
+  const contentType = withdrawalFileType(raw);
+  if (!contentType || !WITHDRAWAL_ALLOWED_TYPES.has(contentType)) return json({ error: 'invalid_file_type' }, 400);
+  const amount = Number(String(form.get('amount') || '').replace(',', '.'));
+  const withdrawalDate = String(form.get('withdrawal_date') || '').trim();
+  const currency = String(form.get('currency') || 'USD').trim().toUpperCase();
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !/^\d{4}-\d{2}-\d{2}$/.test(withdrawalDate) || !['USD', 'BRL'].includes(currency)) return json({ error: 'invalid_withdrawal_data' }, 400);
+  const account = capStr(String(form.get('account') || '').trim(), 80) || null;
+  const reference = capStr(String(form.get('reference') || '').trim(), 160) || null;
+  const filename = withdrawalFilename(file.name, contentType);
+  const key = 'withdrawals/' + randomHex(24);
+  const now = new Date().toISOString();
+  await ensureWithdrawalTable(env);
+  await env.WITHDRAWAL_FILES.put(key, raw, { httpMetadata: { contentType, contentDisposition: 'attachment; filename="' + filename.replace(/["\\\\]/g, '_') + '"' }, customMetadata: { kind: 'withdrawal-proof', created_at: now } });
+  try {
+    const result = await env.DB.prepare(`INSERT INTO withdrawal_submissions (email,account,amount,currency,withdrawal_date,reference,file_key,file_name,content_type,file_size,status,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(email, account, amount, currency, withdrawalDate, reference, key, filename, contentType, file.size, 'submitted', now).run();
+    logEvent({ evt: 'withdrawal_proof_uploaded', id: result.meta && result.meta.last_row_id ? result.meta.last_row_id : null, by: 'user' });
+  } catch (e) {
+    try { await env.WITHDRAWAL_FILES.delete(key); } catch (ignore) {}
+    throw e;
+  }
+  return json({ ok: true });
+}
+async function handleWithdrawalFile(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const id = Math.max(0, Math.floor(Number(url.searchParams.get('id')) || 0));
+  if (!id || !env.WITHDRAWAL_FILES) return json({ error: 'not_found' }, 404);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  const row = await env.DB.prepare('SELECT * FROM withdrawal_submissions WHERE id = ?').bind(id).first();
+  if (!row || (row.email !== email && (!me || me.role !== 'admin'))) return json({ error: 'not_found' }, 404);
+  const object = await env.WITHDRAWAL_FILES.get(row.file_key);
+  if (!object) return json({ error: 'file_unavailable' }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Content-Type', row.content_type || 'application/octet-stream');
+  headers.set('Content-Disposition', 'attachment; filename="' + String(row.file_name || 'comprovante').replace(/["\\\\]/g, '_') + '"');
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  for (const [name, value] of Object.entries(corsHeaders(request))) headers.set(name, value);
+  return new Response(object.body, { headers });
+}
+async function handleAdminWithdrawals(request, env, json, url) {
+  const email = await requireAdmin(request, env, json);
+  if (!email) return json({ error: 'forbidden' }, 403);
+  await ensureWithdrawalTable(env);
+  const limit = Math.max(10, Math.min(100, Number(url.searchParams.get('limit')) || 50));
+  const offset = Math.max(0, Math.min(100000, Number(url.searchParams.get('offset')) || 0));
+  const q = String(url.searchParams.get('q') || '').trim().toLowerCase().slice(0, 80);
+  const where = q ? 'WHERE lower(w.email) LIKE ? OR lower(COALESCE(u.name,\'\')) LIKE ? OR lower(COALESCE(w.reference,\'\')) LIKE ? OR lower(COALESCE(w.account,\'\')) LIKE ?' : '';
+  const binds = q ? ['%' + q + '%', '%' + q + '%', '%' + q + '%', '%' + q + '%'] : [];
+  const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM withdrawal_submissions w LEFT JOIN users u ON u.email=w.email ' + where).bind(...binds).first();
+  const rows = await env.DB.prepare(`SELECT w.*, u.name, u.display_name FROM withdrawal_submissions w LEFT JOIN users u ON u.email=w.email ${where}
+    ORDER BY w.withdrawal_date DESC, w.id DESC LIMIT ? OFFSET ?`).bind(...binds, limit, offset).all();
+  return json({ ok: true, total: Number((count && count.total) || 0), withdrawals: (rows.results || []).map(r => ({ ...withdrawalRow(r), email: r.email, name: r.display_name || r.name || r.email })) });
 }
 
 /* O PAINEL do aluno busca os trades + status do robô (sessão autenticada).

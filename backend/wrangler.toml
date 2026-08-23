@@ -20,3 +20,10 @@ database_id = "5d019011-8dfa-464b-a6d2-5116b946a104"
 binding = "BONUS_DB"
 database_name = "blackwolf-course-bonus"
 database_id = "7ce5731b-acf1-4b41-be20-ed6c5a74d2a2"
+
+# Comprovantes de saque ficam fora do D1. O banco guarda somente o registro
+# e os metadados; o arquivo fica privado no R2 e só é entregue via Worker
+# após validar a sessão do dono ou de um administrador.
+[[r2_buckets]]
+binding = "WITHDRAWAL_FILES"
+bucket_name = "blackwolf-withdrawal-proofs"
