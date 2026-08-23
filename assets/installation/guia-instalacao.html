@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guia de Instalação — Black Wolf</title>
+<style>
+  @page { size: A4; margin: 11mm; }
+  * { box-sizing: border-box; }
+  body { margin:0; color:#eaf0ff; background:#06080d; font: 10.5pt/1.5 Arial, Helvetica, sans-serif; }
+  .cover { min-height:274mm; display:flex; flex-direction:column; justify-content:flex-end; padding:16mm; background:linear-gradient(90deg,rgba(2,5,10,.98) 0%,rgba(2,5,10,.84) 42%,rgba(2,5,10,.15) 100%),url('setup-guide-cover-v1.png') center/cover no-repeat; page-break-after:always; }
+  .eyebrow { color:#79a4ff; font-size:8pt; font-weight:bold; letter-spacing:.16em; }
+  h1 { font-size:33pt; line-height:1.04; margin:8mm 0 5mm; max-width:390px; }
+  .cover p { font-size:13pt; max-width:385px; color:#bdc9dd; margin:0; }
+  .cover small { color:#70809b; margin-top:14mm; }
+  .page { background:#0d1016; border:1px solid #1e293b; border-radius:4mm; padding:11mm; margin:0 0 8mm; break-inside:avoid; }
+  h2 { font-size:18pt; margin:0 0 3mm; } h3 { font-size:12pt; margin:0 0 2mm; }
+  p { color:#bdc9dd; margin:0 0 5mm; }
+  .notice { background:#101a2c; border-left:3px solid #2d6cff; padding:4mm; border-radius:2mm; color:#dbe6ff; margin:5mm 0; }
+  .steps { display:grid; grid-template-columns:repeat(4,1fr); gap:3mm; margin:5mm 0 7mm; }
+  .step { border:1px solid #25314a; background:#111722; padding:3mm; border-radius:2mm; min-height:31mm; }
+  .num { color:#79a4ff; font-weight:bold; font-size:14pt; } .step b { display:block; font-size:9pt; margin-top:2mm; }
+  .shot { margin:7mm 0 0; break-inside:avoid; }
+  .shot img { display:block; width:100%; max-height:157mm; object-fit:contain; background:#05070b; border:1px solid #25314a; border-radius:3mm; }
+  .caption { margin:2.5mm 0 0; color:#bdc9dd; } .caption b { color:#fff; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:5mm; } .two .shot { margin:0; }
+  ul { margin:3mm 0 0; padding-left:5mm; color:#bdc9dd; } li { margin:1.6mm 0; }
+  .footer { color:#78869e; font-size:8pt; margin-top:7mm; }
+</style>
+</head>
+<body>
+  <section class="cover">
+    <div class="eyebrow">BLACK WOLF / SUPORTE</div>
+    <h1>Guia visual de instalação</h1>
+    <p>Um passo a passo objetivo para colocar o arquivo do robô no MetaTrader 5 e concluir a configuração inicial.</p>
+    <small>Material de apoio técnico. Operação automatizada envolve risco e não há garantia de resultado.</small>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">ANTES DE COMEÇAR</div>
+    <h2>O fluxo completo</h2>
+    <p>Baixe o arquivo disponibilizado no painel, siga as telas abaixo e só então configure a sua licença nos parâmetros do robô.</p>
+    <div class="steps"><div class="step"><div class="num">01</div><b>Baixar o arquivo</b></div><div class="step"><div class="num">02</div><b>Abrir a pasta de dados</b></div><div class="step"><div class="num">03</div><b>Colar em Experts / Advisors</b></div><div class="step"><div class="num">04</div><b>Atualizar o Navegador</b></div></div>
+    <div class="notice"><b>Segurança:</b> não envie sua chave de licença, senha, código de recuperação ou imagem completa da sua conta a ninguém.</div>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">PASSO 1</div><h2>Abra a pasta de dados</h2>
+    <p>No MetaTrader 5, clique em <b>File</b> e depois em <b>Open Data Folder</b>.</p>
+    <figure class="shot"><img src="01-open-data-folder.jpg"><figcaption class="caption">Caminho: <b>File → Open Data Folder</b>.</figcaption></figure>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">PASSO 2</div><h2>Localize MQL5 e Advisors</h2>
+    <p>Na pasta aberta, entre em <b>MQL5</b>, depois em <b>Experts</b> e, quando existir, em <b>Advisors</b>. Coloque ali o arquivo que você baixou no painel.</p>
+    <div class="two"><figure class="shot"><img src="02-open-mql5.jpg"><figcaption class="caption">Abra a pasta <b>MQL5</b>.</figcaption></figure><figure class="shot"><img src="03-open-advisors.jpg"><figcaption class="caption">Siga até <b>Experts → Advisors</b>.</figcaption></figure></div>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">PASSO 3</div><h2>Atualize o Navegador</h2>
+    <p>Volte ao MetaTrader. No Navegador, clique com o botão direito em <b>Expert Advisors</b> e selecione <b>Atualizar</b>. O robô deve aparecer na lista.</p>
+    <figure class="shot"><img src="04-refresh-navigator.jpg"><figcaption class="caption">Atualizar faz o MetaTrader reconhecer o arquivo recém-adicionado.</figcaption></figure>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">PASSO 4</div><h2>Adicione ao gráfico</h2>
+    <p>Abra o gráfico indicado no seu material de onboarding e arraste o robô disponível no Navegador para dentro dele. Na janela de propriedades, habilite o trading algorítmico se o terminal solicitar.</p>
+    <figure class="shot"><img src="05-attach-ea.jpg"><figcaption class="caption">O robô precisa estar anexado ao gráfico para que os parâmetros possam ser configurados.</figcaption></figure>
+  </section>
+
+  <section class="page">
+    <div class="eyebrow">PASSO 5</div><h2>Configure os parâmetros</h2>
+    <p>Na aba <b>Parâmetros de entrada / Inputs</b>, insira a sua licença e revise os parâmetros disponíveis. Use limites de risco coerentes com a sua situação e com as regras do ambiente onde opera.</p>
+    <figure class="shot"><img src="06-inputs.jpg"><figcaption class="caption">A tela de Inputs é onde a licença e as configurações do robô são definidas.</figcaption></figure>
+    <div class="notice"><b>Lembrete:</b> meta diária e perda máxima diária configuradas como 0 podem significar que o limite está desligado. Confira o material técnico da versão que você recebeu.</div>
+    <ul><li>Verifique se o botão <b>Algo Trading</b> está ativo.</li><li>Confirme que o status do robô aparece como conectado.</li><li>Em caso de erro, abra o guia do painel e envie apenas a mensagem de erro ao suporte — nunca a licença.</li></ul>
+    <div class="footer">Black Wolf — guia de instalação v1 · Material educacional e técnico. Resultados passados não garantem resultados futuros.</div>
+  </section>
+</body>
+</html>
