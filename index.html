@@ -1739,7 +1739,7 @@ const DEMO_DATA = {
       sessions:{sydney:false,tokyo:true,london:true,newyork:true},
       timezone:"GMT+0", newsPause:true,
     },
-    eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"2026.08.23",size:"165 KB"},
+    eaFile:{name:"BlackWolf_AI.ex5",version:"2026.08.23",size:"165 KB"},
     webRequestUrl:"https://blackwolf-api.contact-1f3.workers.dev", mt5Folder:"\\MQL5\\Experts\\Advisors",
   },
   admin:{
@@ -1781,7 +1781,7 @@ function buildEmptyData(){
         sessions:{sydney:false,tokyo:true,london:true,newyork:true},
         timezone:"GMT+0", newsPause:true,
       },
-      eaFile:{name:"BLACK_WOLF_CLIENTE.ex5",version:"2026.08.23",size:"165 KB"},
+      eaFile:{name:"BlackWolf_AI.ex5",version:"2026.08.23",size:"165 KB"},
       webRequestUrl:"https://blackwolf-api.contact-1f3.workers.dev", mt5Folder:"\\MQL5\\Experts\\Advisors",
     },
     admin:{
@@ -3650,7 +3650,7 @@ function renderAdminMaint(){
 
   <div class="card rv" style="margin-top:12px">
     <div class="card-head"><div class="card-title">${LANG==='pt'?'Robô do aluno (arquivo)':LANG==='en'?'Student robot (file)':'Robot del alumno'}</div>${rm?`<span class="pill current">v${esc(rm.version||'—')}</span>`:''}</div>
-    ${rm?`<div style="font-size:.84rem;color:var(--t2);margin-bottom:12px">${LANG==='pt'?'Atual':LANG==='en'?'Current':'Actual'}: <b>${esc(rm.filename||'BLACK_WOLF_CLIENTE.ex5')}</b> · v${esc(rm.version||'—')} · ${fmtKB(rm.size)} · ${LANG==='pt'?'atualizado em':LANG==='en'?'updated':'actualizado'} ${fmtDateTime(rm.updatedAt)}${rm.mandatory?` · <span style="color:var(--amber-l)">${LANG==='pt'?'atualização obrigatória':'mandatory update'}</span>`:''}</div>`:`<div class="banner info rv" style="margin:0 0 12px"><div class="banner-tx">${LANG==='pt'?'Nenhum robô enviado pelo site ainda — o download usa o arquivo padrão. Envie um abaixo para passar a servir pelo site.':LANG==='en'?'No robot uploaded yet — download uses the default file.':'Aún no se subió un robot.'}</div></div>`}
+    ${rm?`<div style="font-size:.84rem;color:var(--t2);margin-bottom:12px">${LANG==='pt'?'Atual':LANG==='en'?'Current':'Actual'}: <b>${esc(rm.filename||'BlackWolf_AI.ex5')}</b> · v${esc(rm.version||'—')} · ${fmtKB(rm.size)} · ${LANG==='pt'?'atualizado em':LANG==='en'?'updated':'actualizado'} ${fmtDateTime(rm.updatedAt)}${rm.mandatory?` · <span style="color:var(--amber-l)">${LANG==='pt'?'atualização obrigatória':'mandatory update'}</span>`:''}</div>`:`<div class="banner info rv" style="margin:0 0 12px"><div class="banner-tx">${LANG==='pt'?'Nenhum robô enviado pelo site ainda — o download usa o arquivo padrão. Envie um abaixo para passar a servir pelo site.':LANG==='en'?'No robot uploaded yet — download uses the default file.':'Aún no se subió un robot.'}</div></div>`}
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
       <div class="set-field"><label>${LANG==='pt'?'Arquivo .ex5':'.ex5 file'}</label><input type="file" accept=".ex5" class="set-input" id="robotFile" style="padding:8px"></div>
       <div class="set-field"><label>${LANG==='pt'?'Versão':'Version'}</label><input type="text" class="set-input" id="robotVer" placeholder="1.02" value="${rm?esc(rm.version||''):''}"></div>
@@ -3753,14 +3753,14 @@ async function downloadRobot(kind){
   kind = (kind==='nt') ? 'nt' : 'mt5';
   if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) download simulado':'(demo) download','info'); return; }
   const isNt = kind==='nt';
-  const fname = isNt ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const fname = isNt ? 'BlackWolf_NinjaTrader.zip' : 'BlackWolf_AI.ex5';
   try{
     const r=await apiFetch('/api/robot/download'+(isNt?'?type=nt':''));
     if(r.ok){ const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); }
     else if(r.status===403){ toast(LANG==='pt'?'Sua licença está inativa.':'Your license is inactive.','error'); }
     else if(isNt){ toast(LANG==='pt'?'Robô do NinjaTrader ainda não está disponível.':LANG==='en'?'The NinjaTrader robot is not available yet.':'El robot de NinjaTrader aún no está disponible.','error'); }
-    else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } // fallback: arquivo estático (só MT5)
-  }catch(e){ if(isNt){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } else { window.location.href='/BLACK_WOLF_CLIENTE.ex5'; } }
+    else { window.location.href='/BlackWolf_AI.ex5'; } // fallback: arquivo estático (só MT5)
+  }catch(e){ if(isNt){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } else { window.location.href='/BlackWolf_AI.ex5'; } }
 }
 // abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
 // cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
@@ -4715,7 +4715,7 @@ function renderAdminFiles(){
   const cur = rm
     ? `<div class="strat-item"><div class="strat-top">
         <div style="width:48px;height:48px;border-radius:12px;background:rgba(45,108,255,.1);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🐺</div>
-        <div class="strat-body"><div class="strat-name">${esc(rm.filename||'BLACK_WOLF_CLIENTE.ex5')} <span class="pill current">v${esc(rm.version||'—')}</span>${rm.mandatory?' <span class="pill overdue">'+(LANG==='pt'?'obrigatória':LANG==='en'?'mandatory':'obligatoria')+'</span>':''}</div>
+        <div class="strat-body"><div class="strat-name">${esc(rm.filename||'BlackWolf_AI.ex5')} <span class="pill current">v${esc(rm.version||'—')}</span>${rm.mandatory?' <span class="pill overdue">'+(LANG==='pt'?'obrigatória':LANG==='en'?'mandatory':'obligatoria')+'</span>':''}</div>
         <div class="strat-desc">${LANG==='pt'?'Versão sendo servida agora aos clientes no download.':LANG==='en'?'Version currently served to clients on download.':'Versión servida ahora a los clientes.'}</div>
         <div class="strat-info"><span class="strat-info-item">${fmtKB(rm.size)}</span><span class="strat-info-item">${LANG==='pt'?'atualizado':LANG==='en'?'updated':'actualizado'}: <b>${fmtDateTime(rm.updatedAt)}</b></span></div></div>
       </div></div>`

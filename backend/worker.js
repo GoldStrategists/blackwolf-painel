@@ -2296,7 +2296,7 @@ async function handleRobotUpload(request, env, json) {
   const kind = (b.type === 'nt') ? 'nt' : 'mt5';                      // v40: dois robôs (MT5 e NinjaTrader)
   const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
   const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
-  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BlackWolf_AI.ex5';
   const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
   if (!b64) return json({ error: 'no_file' }, 400);
   if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
@@ -2329,7 +2329,7 @@ async function handleRobotDownload(request, env, json, url) {
   const kind = (url.searchParams.get('type') === 'nt') ? 'nt' : 'mt5';
   const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
   const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
-  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BlackWolf_AI.ex5';
   const b64 = await env.SESSIONS.get(kvFile);
   if (!b64) return json({ error: 'no_robot', hint: 'Nenhum robô enviado ainda.' }, 404);
   let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get(kvMeta) || '{}'); } catch (e) {}
