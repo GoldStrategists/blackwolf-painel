@@ -2688,7 +2688,8 @@ function renderLicense(){
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Acesso pago até':LANG==='en'?'Paid access until':'Acceso pago hasta'}</div><div class="val">${paidUntil}</div></div>
       </div>
       <button class="btn-primary" id="portalBtn" style="width:100%;justify-content:center;margin-top:18px" onclick="openBillingPortal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>${LANG==='pt'?'Gerenciar assinatura (mudar de plano)':LANG==='en'?'Manage subscription (change plan)':'Gestionar suscripción (cambiar plan)'}</button>
-      <p style="font-size:.78rem;color:var(--t3);margin:8px 0 0;text-align:center">${LANG==='pt'?'Faça upgrade/downgrade, troque o cartão, veja faturas ou cancele — sem precisar de senha.':LANG==='en'?'Upgrade/downgrade, change your card, view invoices or cancel — no password needed.':'Sube/baja de plan, cambia la tarjeta, ve facturas o cancela — sin contraseña.'}</p>
+      <p style="font-size:.78rem;color:var(--t3);margin:8px 0 0;text-align:center">${LANG==='pt'?'Faça upgrade/downgrade, troque o cartão ou veja faturas — sem precisar de senha.':LANG==='en'?'Upgrade/downgrade, change your card or view invoices — no password needed.':'Sube/baja de plan, cambia la tarjeta o ve facturas — sin contraseña.'}</p>
+      <button class="btn-ghost" id="cancelSubBtn" style="width:100%;justify-content:center;margin-top:10px;color:var(--red-l);border-color:rgba(255,59,71,.28)" onclick="openCancelFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>${LANG==='pt'?'Cancelar assinatura':LANG==='en'?'Cancel subscription':'Cancelar suscripción'}</button>
     </div>
 
     <div class="card rv">
@@ -3688,6 +3689,64 @@ async function openBillingPortal(btn){
     else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
   }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
   if(btn){ btn.disabled=false; btn.innerHTML=old; }
+}
+// Fluxo de cancelamento com retenção: fácil de achar, mas com 1 tela de confirmação + ofertas
+function openCancelFlow(){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o cancelamento':LANG==='en'?'(demo) would open cancellation':'(demo) abriría la cancelación','info'); return; }
+  const wa='https://wa.me/12292961795?text='+encodeURIComponent(LANG==='pt'?'Olá! Quero falar sobre a minha assinatura Black Wolf antes de decidir.':LANG==='en'?'Hi! I want to talk about my Black Wolf subscription before deciding.':'¡Hola! Quiero hablar sobre mi suscripción Black Wolf antes de decidir.');
+  const T=LANG==='pt'?{
+    title:'Cancelar assinatura',
+    intro:'Que pena que você pensou em sair. Antes de confirmar, veja o que acontece:',
+    li1:'O robô <b>para de operar</b> no fim do período que você já pagou.',
+    li2:'A licença é desativada — mas <b>seus dados e histórico continuam salvos</b> aqui no painel.',
+    li3:'<b>Sem multa.</b> Você mantém o acesso até o fim do período já pago.',
+    offer:'Antes de ir, uma destas talvez resolva:',
+    bTalk:'Falar com o time — a gente resolve',
+    bPlan:'Pagar menos (mudar de plano)',
+    keep:'Manter minha assinatura',
+    go:'Continuar cancelamento →'
+  }:LANG==='en'?{
+    title:'Cancel subscription',
+    intro:'Sorry to see you thinking about leaving. Before you confirm, here is what happens:',
+    li1:'The robot <b>stops trading</b> at the end of the period you already paid for.',
+    li2:'Your license is deactivated — but <b>your data and history stay saved</b> here in the panel.',
+    li3:'<b>No penalty.</b> You keep access until the end of the paid period.',
+    offer:'Before you go, one of these might help:',
+    bTalk:'Talk to the team — we’ll sort it out',
+    bPlan:'Pay less (change plan)',
+    keep:'Keep my subscription',
+    go:'Continue cancelling →'
+  }:{
+    title:'Cancelar suscripción',
+    intro:'Lamentamos que pienses en irte. Antes de confirmar, esto es lo que pasa:',
+    li1:'El robot <b>deja de operar</b> al final del período que ya pagaste.',
+    li2:'Tu licencia se desactiva — pero <b>tus datos e historial siguen guardados</b> en el panel.',
+    li3:'<b>Sin multa.</b> Mantienes el acceso hasta el final del período pagado.',
+    offer:'Antes de irte, una de estas quizá te ayude:',
+    bTalk:'Hablar con el equipo — lo resolvemos',
+    bPlan:'Pagar menos (cambiar de plan)',
+    keep:'Mantener mi suscripción',
+    go:'Continuar cancelación →'
+  };
+  const liStyle='position:relative;padding-left:26px;color:var(--t2);font-size:.86rem;line-height:1.45';
+  const dot='<svg viewBox="0 0 24 24" fill="none" stroke="var(--blue-l)" stroke-width="2.5" style="width:15px;height:15px;position:absolute;left:0;top:2px"><polyline points="20 6 9 17 4 12"/></svg>';
+  showCustomModal(T.title,`
+    <p style="color:var(--t2);font-size:.9rem;line-height:1.55;margin:-6px 0 14px">${T.intro}</p>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:11px;margin:0 0 18px;padding:0">
+      <li style="${liStyle}">${dot}${T.li1}</li>
+      <li style="${liStyle}">${dot}${T.li2}</li>
+      <li style="${liStyle}">${dot}${T.li3}</li>
+    </ul>
+    <p style="color:var(--t3);font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin:0 0 10px">${T.offer}</p>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <button class="btn-primary" style="width:100%;justify-content:center;background:linear-gradient(135deg,#22c55e,#16a34a)" onclick="closeCustomModal();window.open('${wa}','_blank')"><svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path d="M17.6 6.32A8.78 8.78 0 0 0 12 4a8.74 8.74 0 0 0-7.6 13.1L4 21l4-1.04A8.74 8.74 0 0 0 21 12a8.7 8.7 0 0 0-3.4-5.68z"/></svg>${T.bTalk}</button>
+      <button class="btn-ghost" style="width:100%;justify-content:center" onclick="closeCustomModal();openBillingPortal()">${T.bPlan}</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--bord2)">
+      <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeCustomModal()">${T.keep}</button>
+      <button style="flex:0 0 auto;background:none;border:none;color:var(--red-l);font-family:var(--fh);font-weight:600;font-size:.82rem;cursor:pointer;padding:0 8px" onclick="closeCustomModal();openBillingPortal()">${T.go}</button>
+    </div>
+  `);
 }
 // banner de manutenção pro CLIENTE (topo do dashboard)
 async function fetchMaintenancePublic(){
