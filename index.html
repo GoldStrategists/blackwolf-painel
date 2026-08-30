@@ -3091,6 +3091,14 @@ function renderSettings(){
       <button class="btn-primary" style="margin-top:6px" onclick="settingsChangePass()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>${x.changePass}</button>
     </div>
 
+    <!-- ASSINATURA -->
+    ${VIEW_MODE!=='admin'?`<div class="card rv">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>${LANG==='pt'?'Assinatura':LANG==='en'?'Subscription':'Suscripción'}</div></div>
+      <p style="color:var(--t3);font-size:.86rem;margin:0 0 14px">${LANG==='pt'?'Gerencie seu plano, forma de pagamento e faturas — ou cancele quando quiser, sem precisar de senha.':LANG==='en'?'Manage your plan, payment method and invoices — or cancel anytime, no password needed.':'Gestiona tu plan, método de pago y facturas — o cancela cuando quieras.'}</p>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="openBillingPortal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>${LANG==='pt'?'Gerenciar assinatura':LANG==='en'?'Manage subscription':'Gestionar suscripción'}</button>
+      <button class="btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--red-l);border-color:rgba(255,59,71,.28)" onclick="openCancelFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>${LANG==='pt'?'Cancelar assinatura':LANG==='en'?'Cancel subscription':'Cancelar suscripción'}</button>
+    </div>`:''}
+
     <!-- PROFILE SURVEY (atualizar questionário) -->
     <div class="card rv">
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div></div>
