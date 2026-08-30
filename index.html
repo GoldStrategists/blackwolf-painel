@@ -752,6 +752,12 @@ select.survey-finput{cursor:pointer;background-image:url("data:image/svg+xml,%3C
 
 /* ════════ SETTINGS PAGE ════════ */
 .set-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+details.card.coll{cursor:default}
+details.card.coll>summary{cursor:pointer;list-style:none;margin-bottom:0}
+details.card.coll>summary::-webkit-details-marker{display:none}
+details.card.coll[open]>summary{margin-bottom:18px}
+.coll-chev{width:18px;height:18px;color:var(--t3);transition:transform .25s;margin-left:auto;flex-shrink:0}
+details.card.coll[open] .coll-chev{transform:rotate(180deg)}
 .set-grid .card:first-child{grid-column:1 / -1}
 @media(max-width:780px){.set-grid{grid-template-columns:1fr}}
 .set-photo-row{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
@@ -1973,7 +1979,8 @@ function mapRealTrades(raw, endBalance, accBalances){
       day:close?fmtD(close):'', symbol:t.symbol||'XAUUSD',
       dir:(String(t.type||'').toLowerCase()==='sell')?'sell':'buy',
       lots:+(+t.lots||0), entry, exit, sl:0, tp:0, pips:0,
-      commission:+(+t.commission||0), swap:+(+t.swap||0),
+      commission:(t.commission==null||t.commission==='')?null:+t.commission, swap:(t.swap==null||t.swap==='')?null:+t.swap,
+      hasOpen:!!parseEaDate(t.open_time),
       pnl, balance:0, strat:stratGenericName(0,1), dur, win: pnl>0,
       _sort: close?close.getTime():0
     };
@@ -2473,13 +2480,6 @@ function renderHistory(){
       <option value="win">${LANG==='pt'?'Vitórias':LANG==='en'?'Wins':'Ganancias'}</option>
       <option value="loss">${LANG==='pt'?'Perdas':LANG==='en'?'Losses':'Pérdidas'}</option>
     </select>
-    <select class="filter-sel" id="histStrat" onchange="histFilterChange()">
-      <option value="all">${LANG==='pt'?'Estratégia: Todas':LANG==='en'?'Strategy: All':'Estrategia: Todas'}</option>
-      ${(function(){ // v24: opções derivadas dos trades reais (antes usava nomes demo → filtro nunca casava)
-        const src=(SESSION&&SESSION.isDemo)?STRATS:[...new Set((ALL_TRADES||[]).map(function(t){return t.strat;}).filter(Boolean))];
-        return src.map(s=>`<option value="${esc(s)}"${HIST_FILTER.strat===s?' selected':''}>${esc(s)}</option>`).join('');
-      })()}
-    </select>
   </div>
   <div class="card rv" style="padding-top:14px">
     <div id="histTableWrap"></div>
@@ -2491,8 +2491,7 @@ function getFilteredTrades(){
     if(HIST_FILTER.dir!=='all'&&tr.dir!==HIST_FILTER.dir)return false;
     if(HIST_FILTER.result==='win'&&!tr.win)return false;
     if(HIST_FILTER.result==='loss'&&tr.win)return false;
-    if(HIST_FILTER.strat!=='all'&&tr.strat!==HIST_FILTER.strat)return false;
-    if(HIST_FILTER.search){ const q=HIST_FILTER.search.toLowerCase(); if(!(''+tr.id).includes(q)&&!tr.symbol.toLowerCase().includes(q)&&!tr.strat.toLowerCase().includes(q))return false; }
+    if(HIST_FILTER.search){ const q=HIST_FILTER.search.toLowerCase(); if(!(''+tr.id).includes(q)&&!tr.symbol.toLowerCase().includes(q))return false; }
     return true;
   });
 }
@@ -2504,10 +2503,10 @@ function buildHistTable(){
   trades.forEach(tr=>{ groups[tr.day]=groups[tr.day]||[]; groups[tr.day].push(tr); });
   // v27 multi-conta: coluna "Conta" só aparece p/ clientes com 2+ contas
   const multiAcc=Array.from(new Set((ALL_TRADES||[]).map(t=>t.account).filter(Boolean))).length>1;
-  const nCols=multiAcc?9:8;
-  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?820:720}px"><thead><tr>
+  const nCols=multiAcc?8:7;
+  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?760:660}px"><thead><tr>
     <th>Ticket</th>${multiAcc?`<th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>`:''}<th>${LANG==='pt'?'Abertura':LANG==='en'?'Open':'Apertura'}</th><th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
-    <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>Pips</th><th>P&L</th><th></th>
+    <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>P&L</th><th></th>
   </tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dayTrades=groups[day];
@@ -2522,7 +2521,6 @@ function buildHistTable(){
         <td class="tbl-name">${esc(tr.symbol)}</td>
         <td><span class="pill ${tr.dir}">${tr.dir.toUpperCase()}</span></td>
         <td class="mono">${tr.lots.toFixed(2)}</td>
-        <td class="${tr.pips>=0?'pos':'neg'}">${tr.pips>=0?'+':''}${tr.pips}</td>
         <td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td>
         <td><svg class="exp-arrow" id="arr-${tr.id}" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:15px;height:15px;transition:transform .3s"><polyline points="6 9 12 15 18 9"/></svg></td>
       </tr>
@@ -2530,12 +2528,9 @@ function buildHistTable(){
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Fechamento':LANG==='en'?'Close':'Cierre'}</div><div class="v">${tr.closeT.slice(11,16)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Entrada':LANG==='en'?'Entry':'Entrada'}</div><div class="v">${tr.entry}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saída':LANG==='en'?'Exit':'Salida'}</div><div class="v">${tr.exit}</div></div>
-        <div class="expand-cell"><div class="l">Stop Loss</div><div class="v">${tr.sl}</div></div>
-        <div class="expand-cell"><div class="l">Take Profit</div><div class="v">${tr.tp}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.dur} min</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Estratégia':LANG==='en'?'Strategy':'Estrategia'}</div><div class="v" style="font-size:.72rem">${esc(tr.strat)}</div></div>
+        <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission==null?'—':tr.commission.toFixed(2)}</div></div>
+        <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap==null?'—':tr.swap.toFixed(2)}</div></div>
+        <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.hasOpen?tr.dur+' min':'—'}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saldo após':LANG==='en'?'Balance after':'Saldo después'}</div><div class="v">${fmtMoneyPlain(tr.balance)}</div></div>
       </div></div></td></tr>`;
     });
@@ -2547,7 +2542,6 @@ function histFilterChange(){
   HIST_FILTER.search=document.getElementById('histSearch').value;
   HIST_FILTER.dir=document.getElementById('histDir').value;
   HIST_FILTER.result=document.getElementById('histResult').value;
-  HIST_FILTER.strat=document.getElementById('histStrat').value;
   document.getElementById('histTableWrap').innerHTML=buildHistTable();
 }
 function toggleTradeRow(id){
@@ -2556,9 +2550,9 @@ function toggleTradeRow(id){
 }
 function exportCSV(){
   const trades=getFilteredTrades();
-  const headers=['Ticket','Account','Open','Close','Symbol','Direction','Lots','Entry','Exit','SL','TP','Pips','Commission','Swap','PnL','Balance','Strategy','Duration'];
+  const headers=['Ticket','Account','Open','Close','Symbol','Direction','Lots','Entry','Exit','Commission','Swap','PnL','Balance','Duration'];
   let csv=headers.join(',')+'\n';
-  trades.forEach(t=>{ csv+=[t.id,t.account||'',t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,t.sl,t.tp,t.pips,t.commission,t.swap,t.pnl,t.balance,t.strat,t.dur].join(',')+'\n'; });
+  trades.forEach(t=>{ csv+=[t.id,t.account||'',t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,(t.commission==null?'':t.commission),(t.swap==null?'':t.swap),t.pnl,t.balance,(t.hasOpen?t.dur:'')].join(',')+'\n'; });
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='blackwolf-trades.csv'; a.click();
   toast(LANG==='pt'?'CSV exportado':LANG==='en'?'CSV exported':'CSV exportado','success');
@@ -2813,7 +2807,8 @@ function renderLicense(){
         <div class="meta-row"><div class="lbl">${LANG==='pt'?'Acesso pago até':LANG==='en'?'Paid access until':'Acceso pago hasta'}</div><div class="val">${paidUntil}</div></div>
       </div>
       <button class="btn-primary" id="portalBtn" style="width:100%;justify-content:center;margin-top:18px" onclick="openBillingPortal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>${LANG==='pt'?'Gerenciar assinatura (mudar de plano)':LANG==='en'?'Manage subscription (change plan)':'Gestionar suscripción (cambiar plan)'}</button>
-      <p style="font-size:.78rem;color:var(--t3);margin:8px 0 0;text-align:center">${LANG==='pt'?'Faça upgrade/downgrade, troque o cartão, veja faturas ou cancele — sem precisar de senha.':LANG==='en'?'Upgrade/downgrade, change your card, view invoices or cancel — no password needed.':'Sube/baja de plan, cambia la tarjeta, ve facturas o cancela — sin contraseña.'}</p>
+      <p style="font-size:.78rem;color:var(--t3);margin:8px 0 0;text-align:center">${LANG==='pt'?'Faça upgrade/downgrade, troque o cartão ou veja faturas — sem precisar de senha.':LANG==='en'?'Upgrade/downgrade, change your card or view invoices — no password needed.':'Sube/baja de plan, cambia la tarjeta o ve facturas — sin contraseña.'}</p>
+      <button class="btn-ghost" id="cancelSubBtn" style="width:100%;justify-content:center;margin-top:10px;color:var(--red-l);border-color:rgba(255,59,71,.28)" onclick="openCancelFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>${LANG==='pt'?'Cancelar assinatura':LANG==='en'?'Cancel subscription':'Cancelar suscripción'}</button>
     </div>
 
     <div class="card rv">
@@ -3329,8 +3324,8 @@ function renderSettings(){
     </div>
 
     <!-- OPTIONAL ADDITIONAL INFO -->
-    <div class="card rv" style="grid-column:1 / -1">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>${x.extra}</div><span class="card-desc">${x.extraHint}</span></div>
+    <details class="card rv coll" style="grid-column:1 / -1">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>${x.extra}</div><span class="card-desc">${x.extraHint}</span><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <div class="set-extra-grid">
         <div class="set-field" style="margin-bottom:0">
           <label>${x.country} <span style="color:var(--t4);font-weight:400">${x.optional}</span></label>
@@ -3346,7 +3341,7 @@ function renderSettings(){
         </div>
       </div>
       <button class="btn-primary" style="margin-top:18px" onclick="settingsSaveProfile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${x.save}</button>
-    </div>
+    </details>
 
     <!-- SECURITY -->
     <div class="card rv">
@@ -3371,16 +3366,24 @@ function renderSettings(){
       <button class="btn-primary" style="margin-top:6px" onclick="settingsChangePass()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>${x.changePass}</button>
     </div>
 
+    <!-- ASSINATURA -->
+    ${VIEW_MODE!=='admin'?`<div class="card rv">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>${LANG==='pt'?'Assinatura':LANG==='en'?'Subscription':'Suscripción'}</div></div>
+      <p style="color:var(--t3);font-size:.86rem;margin:0 0 14px">${LANG==='pt'?'Gerencie seu plano, forma de pagamento e faturas — ou cancele quando quiser, sem precisar de senha.':LANG==='en'?'Manage your plan, payment method and invoices — or cancel anytime, no password needed.':'Gestiona tu plan, método de pago y facturas — o cancela cuando quieras.'}</p>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="openBillingPortal(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>${LANG==='pt'?'Gerenciar assinatura':LANG==='en'?'Manage subscription':'Gestionar suscripción'}</button>
+      <button class="btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--red-l);border-color:rgba(255,59,71,.28)" onclick="openCancelFlow()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>${LANG==='pt'?'Cancelar assinatura':LANG==='en'?'Cancel subscription':'Cancelar suscripción'}</button>
+    </div>`:''}
+
     <!-- PROFILE SURVEY (atualizar questionário) -->
-    <div class="card rv">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div></div>
+    <details class="card rv coll">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <p style="color:var(--t3);font-size:.86rem;margin:0 0 14px">${LANG==='pt'?'As respostas do questionário que você preencheu ao entrar. Pode atualizar quando quiser — usamos para personalizar seu painel e o suporte.':LANG==='en'?'The answers from the survey you filled in on first login. Update them anytime — we use them to personalize your panel and support.':'Las respuestas del cuestionario que completaste al entrar. Puedes actualizarlas cuando quieras.'}</p>
       <button class="btn-ghost" onclick="surveyStartEdit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>${LANG==='pt'?'Atualizar perfil':LANG==='en'?'Update profile':'Actualizar perfil'}</button>
-    </div>
+    </details>
 
     <!-- ACTIVITY -->
-    <div class="card rv" style="grid-column:1 / -1">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${x.activity}</div></div>
+    <details class="card rv coll" style="grid-column:1 / -1">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${x.activity}</div><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <div class="activity-rows">
         <div class="activity-row">
           <div class="activity-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></div>
@@ -3392,7 +3395,7 @@ function renderSettings(){
           <div class="activity-body"><div class="al">${x.lastAccess}</div><div class="ad">${getPrevLogin()}</div></div>
         </div>
       </div>
-    </div>
+    </details>
   </div>
 
   <div class="banner info rv" style="margin-top:4px">
@@ -3652,6 +3655,7 @@ function renderAdminClientView(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
         <div style="font-family:var(--fh);font-weight:700;font-size:1.2rem">${esc(C.name||C.email)}</div>
+        ${C.reg_name&&C.reg_name!==C.name?`<div style="font-size:.72rem;color:var(--t3);margin-top:1px">${LANG==='pt'?'Nome de cadastro':LANG==='en'?'Registered name':'Nombre de registro'}: ${esc(C.reg_name)}</div>`:''}
         <div class="mono" style="font-size:.78rem;color:var(--t3);margin-top:2px">${esc(C.email)}</div>
         <div class="mono" style="font-size:.78rem;color:var(--t2);margin-top:4px">${LANG==='pt'?'Conta(s)':LANG==='en'?'Account(s)':'Cuenta(s)'}: ${esc(acc)}</div>
       </div>
@@ -3964,6 +3968,79 @@ async function openBillingPortal(btn){
     else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
   }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
   if(btn){ btn.disabled=false; btn.innerHTML=old; }
+}
+// abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
+// cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
+async function openBillingPortal(btn){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o portal de assinatura':'(demo) would open the billing portal','info'); return; }
+  const old = btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Abrindo…':LANG==='en'?'Opening…':'Abriendo…'; }
+  try{
+    const r=await apiFetch('/api/portal',{method:'POST'});
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(r.ok && d.url){ window.location.href=d.url; return; } // redireciona pro portal
+    if(d.error==='no_customer'){ toast(LANG==='pt'?'Não achamos sua assinatura na Stripe. Fale com o suporte que a gente resolve.':LANG==='en'?'We could not find your Stripe subscription. Contact support.':'No encontramos tu suscripción en Stripe. Contacta al soporte.','error'); }
+    else if(d.error==='portal_error'){ toast(LANG==='pt'?'O portal de assinatura ainda não está configurado. Avise o suporte.':LANG==='en'?'The billing portal is not configured yet. Contact support.':'El portal aún no está configurado. Avisa al soporte.','error'); }
+    else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
+  }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
+  if(btn){ btn.disabled=false; btn.innerHTML=old; }
+}
+// Fluxo de cancelamento com retenção: fácil de achar, mas com 1 tela de confirmação + ofertas
+function openCancelFlow(){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o cancelamento':LANG==='en'?'(demo) would open cancellation':'(demo) abriría la cancelación','info'); return; }
+  const wa='https://wa.me/12292961795?text='+encodeURIComponent(LANG==='pt'?'Olá! Quero falar sobre a minha assinatura Black Wolf antes de decidir.':LANG==='en'?'Hi! I want to talk about my Black Wolf subscription before deciding.':'¡Hola! Quiero hablar sobre mi suscripción Black Wolf antes de decidir.');
+  const T=LANG==='pt'?{
+    title:'Cancelar assinatura',
+    intro:'Que pena que você pensou em sair. Antes de confirmar, veja o que acontece:',
+    li1:'O robô <b>para de operar</b> no fim do período que você já pagou.',
+    li2:'A licença é desativada — mas <b>seus dados e histórico continuam salvos</b> aqui no painel.',
+    li3:'<b>Sem multa.</b> Você mantém o acesso até o fim do período já pago.',
+    offer:'Antes de ir, uma destas talvez resolva:',
+    bTalk:'Falar com o time — a gente resolve',
+    bPlan:'Pagar menos (mudar de plano)',
+    keep:'Manter minha assinatura',
+    go:'Continuar cancelamento →'
+  }:LANG==='en'?{
+    title:'Cancel subscription',
+    intro:'Sorry to see you thinking about leaving. Before you confirm, here is what happens:',
+    li1:'The robot <b>stops trading</b> at the end of the period you already paid for.',
+    li2:'Your license is deactivated — but <b>your data and history stay saved</b> here in the panel.',
+    li3:'<b>No penalty.</b> You keep access until the end of the paid period.',
+    offer:'Before you go, one of these might help:',
+    bTalk:'Talk to the team — we’ll sort it out',
+    bPlan:'Pay less (change plan)',
+    keep:'Keep my subscription',
+    go:'Continue cancelling →'
+  }:{
+    title:'Cancelar suscripción',
+    intro:'Lamentamos que pienses en irte. Antes de confirmar, esto es lo que pasa:',
+    li1:'El robot <b>deja de operar</b> al final del período que ya pagaste.',
+    li2:'Tu licencia se desactiva — pero <b>tus datos e historial siguen guardados</b> en el panel.',
+    li3:'<b>Sin multa.</b> Mantienes el acceso hasta el final del período pagado.',
+    offer:'Antes de irte, una de estas quizá te ayude:',
+    bTalk:'Hablar con el equipo — lo resolvemos',
+    bPlan:'Pagar menos (cambiar de plan)',
+    keep:'Mantener mi suscripción',
+    go:'Continuar cancelación →'
+  };
+  const liStyle='position:relative;padding-left:26px;color:var(--t2);font-size:.86rem;line-height:1.45';
+  const dot='<svg viewBox="0 0 24 24" fill="none" stroke="var(--blue-l)" stroke-width="2.5" style="width:15px;height:15px;position:absolute;left:0;top:2px"><polyline points="20 6 9 17 4 12"/></svg>';
+  showCustomModal(T.title,`
+    <p style="color:var(--t2);font-size:.9rem;line-height:1.55;margin:-6px 0 14px">${T.intro}</p>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:11px;margin:0 0 18px;padding:0">
+      <li style="${liStyle}">${dot}${T.li1}</li>
+      <li style="${liStyle}">${dot}${T.li2}</li>
+      <li style="${liStyle}">${dot}${T.li3}</li>
+    </ul>
+    <p style="color:var(--t3);font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin:0 0 10px">${T.offer}</p>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <button class="btn-primary" style="width:100%;justify-content:center;background:linear-gradient(135deg,#22c55e,#16a34a)" onclick="closeCustomModal();window.open('${wa}','_blank')"><svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path d="M17.6 6.32A8.78 8.78 0 0 0 12 4a8.74 8.74 0 0 0-7.6 13.1L4 21l4-1.04A8.74 8.74 0 0 0 21 12a8.7 8.7 0 0 0-3.4-5.68z"/></svg>${T.bTalk}</button>
+      <button class="btn-ghost" style="width:100%;justify-content:center" onclick="closeCustomModal();openBillingPortal()">${T.bPlan}</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--bord2)">
+      <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeCustomModal()">${T.keep}</button>
+      <button style="flex:0 0 auto;background:none;border:none;color:var(--red-l);font-family:var(--fh);font-weight:600;font-size:.82rem;cursor:pointer;padding:0 8px" onclick="closeCustomModal();openBillingPortal()">${T.go}</button>
+    </div>
+  `);
 }
 // banner de manutenção pro CLIENTE (topo do dashboard)
 async function fetchMaintenancePublic(){
@@ -4454,11 +4531,11 @@ function buildClientHistTable(trades){
   if(!trades.length)return `<div class="empty" style="padding:20px"><div class="empty-t">${LANG==='pt'?'Sem trades':LANG==='en'?'No trades':'Sin trades'}</div></div>`;
   const revTrades=trades.slice().reverse();
   const groups={}; revTrades.forEach(tr=>{groups[tr.day]=groups[tr.day]||[];groups[tr.day].push(tr);});
-  let html=`<div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl" style="min-width:580px"><thead><tr><th>Ticket</th><th>${LANG==='pt'?'Hora':LANG==='en'?'Time':'Hora'}</th><th>Dir</th><th>Lots</th><th>Pips</th><th>P&L</th><th>${LANG==='pt'?'Saldo':'Balance'}</th></tr></thead><tbody>`;
+  let html=`<div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl" style="min-width:520px"><thead><tr><th>Ticket</th><th>${LANG==='pt'?'Hora':LANG==='en'?'Time':'Hora'}</th><th>Dir</th><th>Lots</th><th>P&L</th><th>${LANG==='pt'?'Saldo':'Balance'}</th></tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dTrades=groups[day]; const dayPnl=dTrades.reduce((s,t)=>s+t.pnl,0);
-    html+=`<tr class="tbl-day-row"><td colspan="5">📅 ${day} · ${dTrades.length} trades</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
-    dTrades.forEach(tr=>{html+=`<tr><td class="mono" style="font-size:.72rem">#${tr.id}</td><td class="mono" style="font-size:.72rem">${tr.openT.slice(11,16)}</td><td><span class="pill ${tr.dir}" style="font-size:.58rem">${tr.dir.toUpperCase()}</span></td><td class="mono">${tr.lots}</td><td class="${tr.pips>=0?'pos':'neg'}">${tr.pips}</td><td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td><td class="mono" style="font-size:.72rem">${fmtMoneyPlain(tr.balance)}</td></tr>`;});
+    html+=`<tr class="tbl-day-row"><td colspan="4">📅 ${day} · ${dTrades.length} trades</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
+    dTrades.forEach(tr=>{html+=`<tr><td class="mono" style="font-size:.72rem">#${tr.id}</td><td class="mono" style="font-size:.72rem">${tr.openT.slice(11,16)}</td><td><span class="pill ${tr.dir}" style="font-size:.58rem">${tr.dir.toUpperCase()}</span></td><td class="mono">${tr.lots}</td><td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td><td class="mono" style="font-size:.72rem">${fmtMoneyPlain(tr.balance)}</td></tr>`;});
   });
   html+='</tbody></table></div>';
   return html;
