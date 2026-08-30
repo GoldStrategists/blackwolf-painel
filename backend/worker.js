@@ -1,6 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v28 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v48 (Cloudflare Worker)
+ *  + v48: CORREÇÃO DE TELEMETRIA — normaliza formatos de payload do EA,
+ *         mantém o vínculo de contas pela fonte atômica (license_accounts),
+ *         separa contas vinculadas de contas online e preserva compatibilidade
+ *         com robôs que enviam campos em snake_case/camelCase.
  *  + v28: PAINEL ADMIN DE RESULTADOS. GET /api/admin/results (agregado + MRR +
  *         lista de clientes com P&L hoje/semana/mês/total) e ?email= (detalhe:
  *         curva, drawdown, % do dia). MRR real via monthly_amount guardado do
@@ -88,25 +92,52 @@
  *  Secrets:
  *    RESEND_API_KEY     → chave da Resend
  *    EMAIL_FROM         → "Black Wolf <no-reply@blackwolfea.com>"
+ *    LEADS_NOTIFICATION_EMAIL → caixa interna que recebe novos leads (opcional;
+ *                               sem ela, o primeiro admin do painel recebe)
+ *    EMAIL_REPLY_TO     → e-mail de resposta para mensagens que não são no-reply
  *    PANEL_URL          → "https://painel.blackwolfea.com"
+ *    EA_CONTINUATION_CHECKOUT_URL → checkout opcional para seguir no EA após
+ *                                   a cortesia. Sem esta variável, usa o link
+ *                                   público do plano Lone Wolf.
  *    STRIPE_WEBHOOK_SECRET → whsec_... (gerado no Stripe)
  */
 
 const PBKDF2_ITER = 100000;
+// Proteção curta em memória para chamadas contínuas do EA. Diferente de login
+// e captação, ping/config/trades acontecem o dia inteiro por cliente; gravar
+// cada chamada no KV esgota a franquia diária e pode indisponibilizar o painel.
+// O limitador distribuído em KV continua nas rotas de autenticação e e-mail.
+const EA_BURST_BUCKETS = new Map();
+// O Worker só atende páginas oficiais no navegador. O EA não envia Origin,
+// portanto continua funcionando sem receber permissões CORS desnecessárias.
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://blackwolfea.com',
+  'https://www.blackwolfea.com',
+  'https://curso.blackwolfea.com',
+  'https://painel.blackwolfea.com',
+]);
+function corsHeaders(request) {
+  const origin = request.headers.get('Origin');
+  if (!origin || !ALLOWED_CORS_ORIGINS.has(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+}
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
-    const origin = request.headers.get('Origin') || '*';
-
-    const cors = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    };
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    const origin = request.headers.get('Origin');
+    const cors = corsHeaders(request);
+    if (request.method === 'OPTIONS') {
+      if (origin && !ALLOWED_CORS_ORIGINS.has(origin)) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: cors });
+    }
 
     const json = (obj, status = 200) =>
       new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...cors } });
@@ -119,7 +150,12 @@ export default {
       if (path === '/api/onboarding' && request.method === 'POST')       return await handleOnboarding(request, env, json);
       if (path === '/api/forgot-password' && request.method === 'POST')  return await handleForgot(request, env, json, ctx);
       if (path === '/api/reset-password' && request.method === 'POST')   return await handleReset(request, env, json);
-      if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json);
+      if (path === '/api/admin/clients' && request.method === 'GET')      return await handleAdminClients(request, env, json, url);
+      if (path === '/api/course-leads' && request.method === 'POST')      return await handleCourseLeadCreate(request, env, json, ctx);
+      if (path === '/api/admin/course-leads' && request.method === 'GET') return await handleAdminCourseLeads(request, env, json);
+      if (path === '/api/admin/course-leads' && request.method === 'POST') return await handleAdminCourseLeadUpdate(request, env, json);
+      if (path === '/api/admin/course-bonuses' && request.method === 'GET') return await handleAdminCourseBonuses(request, env, json);
+      if (path === '/api/admin/relationship-base' && request.method === 'GET') return await handleAdminRelationshipBase(request, env, json);
       if (path === '/api/admin/results' && request.method === 'GET')      return await handleAdminResults(request, env, json, url);
       if (path === '/api/diag' && request.method === 'GET')              return await handleDiag(request, env, json);
       if (path === '/api/admin/broadcast' && request.method === 'POST')   return await handleAdminBroadcast(request, env, json);
@@ -131,6 +167,10 @@ export default {
       if (path === '/api/robot/meta' && request.method === 'GET')          return await handleRobotMeta(request, env, json);
       if (path === '/api/robot/download' && request.method === 'GET')      return await handleRobotDownload(request, env, json, url);
       if (path === '/api/admin/payments' && request.method === 'GET')      return await handleAdminPayments(request, env, json);
+      if (path === '/api/withdrawals' && request.method === 'GET')         return await handleWithdrawalsList(request, env, json);
+      if (path === '/api/withdrawals' && request.method === 'POST')        return await handleWithdrawalUpload(request, env, json);
+      if (path === '/api/withdrawals/file' && request.method === 'GET')    return await handleWithdrawalFile(request, env, json, url);
+      if (path === '/api/admin/withdrawals' && request.method === 'GET')   return await handleAdminWithdrawals(request, env, json, url);
       if (path === '/api/admin/email-test' && request.method === 'POST')   return await handleAdminEmailTest(request, env, json);
       if (path === '/api/admin/stripe-sync' && request.method === 'POST')  return await handleAdminStripeSync(request, env, json);
       if (path === '/api/config' && request.method === 'POST')           return await handleSaveConfig(request, env, json);
@@ -146,8 +186,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v41' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v41' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v49' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v49' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -156,7 +196,302 @@ export default {
       return json({ error: 'server_error' }, 500);
     }
   },
+
+  // Configure um Cron Trigger diário no Cloudflare para este Worker. A rotina
+  // é idempotente: se o Cloudflare repetir uma execução, não reenvia e-mail.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runCourtesyLifecycle(env));
+  },
 };
+
+/* ───────────────── CURSO: LISTA VIP E BÔNUS ─────────────────
+   Dados de captação e controle de bônus ficam em D1s próprios, jamais no
+   banco operacional do EA. Os bindings LEADS_DB e BONUS_DB são obrigatórios
+   para estas rotas; enquanto não existirem, a captação permanece desativada. */
+function normalizeCourseEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) ? email : null;
+}
+function normalizeWhatsapp(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15 ? '+' + digits : null;
+}
+async function requireAdmin(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return null;
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  return me && me.role === 'admin' ? email : null;
+}
+async function handleCourseLeadCreate(request, env, json, ctx) {
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  let data;
+  try { data = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const name = String(data.name || '').trim().replace(/\s+/g, ' ');
+  const email = normalizeCourseEmail(data.email);
+  const whatsapp = normalizeWhatsapp(data.whatsapp);
+  // Estas perguntas são curtas de propósito. A ficha evolui depois, durante
+  // o onboarding, em vez de pedir dados técnicos de quem só quer conhecer.
+  const interests = new Set(['course', 'ea', 'both', 'undecided']);
+  const experienceLevels = new Set(['beginner', 'intermediate', 'advanced', 'not_informed']);
+  const interest = interests.has(String(data.interest || '')) ? String(data.interest) : 'undecided';
+  const experienceLevel = experienceLevels.has(String(data.experience_level || '')) ? String(data.experience_level) : 'not_informed';
+  // Compatibilidade: a primeira versão tinha um único aceite explícito que
+  // já citava e-mail e WhatsApp. Nunca presumimos consentimento quando ele
+  // não foi marcado no formulário.
+  const emailMarketingConsent = data.email_marketing_consent === true || data.whatsapp_consent === true;
+  if (name.length < 2 || name.length > 120 || !email || !whatsapp || data.whatsapp_consent !== true) {
+    return json({ error: 'invalid_lead' }, 400);
+  }
+  // Protege o D1 e a Resend contra spam sem bloquear uma pessoa real que
+  // corrigiu o formulário. A chave é limitada no KV e expira sozinha.
+  const ip = clientIp(request);
+  if (await rateLimited(env, 'course_lead_ip:' + ip, 5, 3600) ||
+      await rateLimited(env, 'course_lead_email:' + email, 3, 3600)) {
+    logEvent({ evt: 'course_lead_ratelimited', ip });
+    return json({ error: 'too_many_requests', message: 'Aguarde um pouco antes de tentar novamente.' }, 429);
+  }
+  const now = new Date().toISOString();
+  // Um reenvio do formulário atualiza os dados, mas não dispara uma segunda
+  // sequência de boas-vindas nem duplica o aviso para o time.
+  const existing = await env.LEADS_DB.prepare('SELECT id FROM course_leads WHERE email=? LIMIT 1').bind(email).first();
+  await env.LEADS_DB.prepare(
+    `INSERT INTO course_leads (name, email, whatsapp, whatsapp_consent, email_marketing_consent, consent_at, source, interest, experience_level, status, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?, 'course_vip', ?, ?, 'new', ?, ?)
+     ON CONFLICT(email) DO UPDATE SET name=excluded.name, whatsapp=excluded.whatsapp,
+       whatsapp_consent=1, email_marketing_consent=excluded.email_marketing_consent,
+       consent_at=excluded.consent_at,
+       interest=CASE WHEN excluded.interest='undecided' THEN course_leads.interest ELSE excluded.interest END,
+       experience_level=CASE WHEN excluded.experience_level='not_informed' THEN course_leads.experience_level ELSE excluded.experience_level END,
+       updated_at=excluded.updated_at`
+  ).bind(name, email, whatsapp, emailMarketingConsent ? 1 : 0, now, interest, experienceLevel, now, now).run();
+  if (!existing) {
+    const jobs = [];
+    const sent = { welcome: false, notification: false };
+    if (env.RESEND_API_KEY && env.EMAIL_FROM) {
+      jobs.push(sendMail(env, email, 'Você está na Lista VIP — Black Wolf', courseLeadWelcomeEmailHtml(name), { noReply: true }).then(r => { sent.welcome = r.ok; return r; }));
+    }
+    let notificationEmail = normalizeCourseEmail(env.LEADS_NOTIFICATION_EMAIL);
+    // Sem variável específica, o primeiro administrador do painel recebe o
+    // aviso. A variável continua sendo a forma preferida para apontar outra
+    // caixa de entrada sem mudar código.
+    if (!notificationEmail && env.DB) {
+      const admin = await env.DB.prepare("SELECT email FROM users WHERE role='admin' ORDER BY created_at ASC LIMIT 1").first();
+      notificationEmail = normalizeCourseEmail(admin && admin.email);
+    }
+    if (notificationEmail && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      jobs.push(sendMail(env, notificationEmail, 'Novo lead da Lista VIP — Black Wolf', courseLeadNotificationEmailHtml(name, email, whatsapp, now)).then(r => { sent.notification = r.ok; return r; }));
+    }
+    const send = Promise.all(jobs).then(() => {
+      logEvent({ evt: 'course_lead_created', email, welcome_sent: sent.welcome, notification_sent: sent.notification });
+    }).catch(err => logEvent({ evt: 'course_lead_email_fail', email, detail: String(err && err.message || err) }));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(send); else await send;
+  }
+  return json({ ok: true, duplicate: !!existing });
+}
+async function handleAdminCourseLeads(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  const rows = await env.LEADS_DB.prepare(
+    'SELECT id, name, email, whatsapp, whatsapp_consent, email_marketing_consent, source, interest, experience_level, status, notes, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 1000'
+  ).all();
+  return json({ leads: rows.results || [] });
+}
+async function handleAdminCourseLeadUpdate(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB) return json({ error: 'lead_capture_not_configured' }, 503);
+  let data; try { data = await request.json(); } catch (e) { return json({ error: 'invalid_json' }, 400); }
+  const id = Number(data.id);
+  const status = String(data.status || '');
+  const notes = String(data.notes || '').trim().slice(0, 1000);
+  const interests = new Set(['course', 'ea', 'both', 'undecided']);
+  const experienceLevels = new Set(['beginner', 'intermediate', 'advanced', 'not_informed']);
+  const interest = interests.has(String(data.interest || '')) ? String(data.interest) : 'undecided';
+  const experienceLevel = experienceLevels.has(String(data.experience_level || '')) ? String(data.experience_level) : 'not_informed';
+  if (!Number.isInteger(id) || id < 1 || !['new', 'contacted', 'group', 'closed'].includes(status)) return json({ error: 'invalid_update' }, 400);
+  await env.LEADS_DB.prepare('UPDATE course_leads SET status=?, notes=?, interest=?, experience_level=?, updated_at=? WHERE id=?')
+    .bind(status, notes, interest, experienceLevel, new Date().toISOString(), id).run();
+  return json({ ok: true });
+}
+async function handleAdminCourseBonuses(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
+  const rows = await env.BONUS_DB.prepare(
+    'SELECT email, stripe_customer, checkout_session_id, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 1000'
+  ).all();
+  return json({ bonuses: rows.results || [] });
+}
+
+// Base de relacionamento: une somente para leitura os três bancos que já
+// existem. Não duplica dados e não permite que uma lista comercial altere a
+// licença do EA. A chave de união é o e-mail normalizado.
+async function handleAdminRelationshipBase(request, env, json) {
+  if (!await requireAdmin(request, env, json)) return json({ error: 'forbidden' }, 403);
+  if (!env.LEADS_DB || !env.BONUS_DB) return json({ error: 'relationship_base_not_configured' }, 503);
+  const [leadRows, bonusRows, eaRows, onboardingRows] = await Promise.all([
+    env.LEADS_DB.prepare('SELECT name, email, whatsapp, status, notes, source, interest, experience_level, email_marketing_consent, created_at, updated_at FROM course_leads ORDER BY created_at DESC LIMIT 2000').all(),
+    env.BONUS_DB.prepare('SELECT email, status, eligible_at, redeemed_at FROM course_ea_bonus ORDER BY eligible_at DESC LIMIT 2000').all(),
+    env.DB.prepare(
+      `SELECT email, name, plan, license_status, license_key, license_expires_at, is_courtesy, created_at
+       FROM users
+       WHERE (role='client' OR license_key IS NOT NULL)
+       ORDER BY created_at DESC LIMIT 2000`
+    ).all(),
+    env.DB.prepare('SELECT email, experience, goal, source, marketing_opt_in, created_at FROM onboarding ORDER BY created_at DESC LIMIT 2000').all(),
+  ]);
+  const byEmail = new Map();
+  const get = (raw) => {
+    const email = normalizeCourseEmail(raw);
+    if (!email) return null;
+    if (!byEmail.has(email)) byEmail.set(email, { email, lead: null, course: null, ea: null, onboarding: null });
+    return byEmail.get(email);
+  };
+  for (const row of (leadRows.results || [])) { const x = get(row.email); if (x) x.lead = row; }
+  for (const row of (bonusRows.results || [])) { const x = get(row.email); if (x) x.course = row; }
+  for (const row of (eaRows.results || [])) { const x = get(row.email); if (x) x.ea = row; }
+  for (const row of (onboardingRows.results || [])) { const x = get(row.email); if (x) x.onboarding = row; }
+  const contacts = [...byEmail.values()].map(x => {
+    const hasCourse = !!x.course;
+    const hasEa = !!(x.ea && x.ea.license_key);
+    const segment = hasCourse && hasEa ? 'course_and_ea'
+      : hasCourse ? 'course_only'
+      : hasEa ? 'ea_only'
+      : 'vip';
+    const name = (x.ea && x.ea.name) || (x.lead && x.lead.name) || x.email;
+    return {
+      email: x.email, name, segment,
+      vip: !!x.lead, lead_stage: x.lead ? x.lead.status : null,
+      whatsapp: x.lead ? x.lead.whatsapp : null,
+      notes: x.lead ? x.lead.notes : null,
+      source: (x.lead && x.lead.source) || (x.onboarding && x.onboarding.source) || null,
+      interest: (x.lead && x.lead.interest) || null,
+      experience_level: (x.lead && x.lead.experience_level) || (x.onboarding && x.onboarding.experience) || null,
+      goal: x.onboarding ? x.onboarding.goal : null,
+      email_marketing_consent: !!(x.lead && x.lead.email_marketing_consent),
+      course_status: x.course ? x.course.status : null,
+      course_at: x.course ? x.course.eligible_at : null,
+      ea_status: x.ea ? (x.ea.license_status || null) : null,
+      ea_plan: x.ea ? (x.ea.plan || null) : null,
+      ea_courtesy: !!(x.ea && x.ea.is_courtesy),
+      ea_expires_at: x.ea ? (x.ea.license_expires_at || null) : null,
+      created_at: (x.course && x.course.eligible_at) || (x.ea && x.ea.created_at) || (x.lead && x.lead.created_at) || null,
+    };
+  }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const counts = { vip: 0, course_only: 0, ea_only: 0, course_and_ea: 0 };
+  contacts.forEach(c => { counts[c.segment] = (counts[c.segment] || 0) + 1; });
+  return json({ contacts, counts });
+}
+
+/* ───────── CORTESIA DO CURSO: EXPIRAÇÃO E CONTINUIDADE ─────────
+   A licença de cortesia é criada depois do onboarding, no banco principal do
+   EA, com users.is_courtesy=1 e users.license_expires_at em 30 dias. Esta
+   rotina NÃO cria cobrança, não toca em assinantes pagos e não muda preço.
+   Ela apenas avisa o aluno e, quando a data chega, marca a licença como expirada.
+*/
+const DEFAULT_EA_CONTINUATION_CHECKOUT_URL = 'https://buy.stripe.com/14AaEZd5i3Wp4NDfbdcs800';
+
+function continuationCheckoutUrl(env) {
+  const candidate = String(env.EA_CONTINUATION_CHECKOUT_URL || '').trim();
+  // Só permite HTTPS. Evita que uma configuração acidental gere botão inseguro.
+  return /^https:\/\//i.test(candidate) ? candidate : DEFAULT_EA_CONTINUATION_CHECKOUT_URL;
+}
+
+async function ensureCourtesyLifecycleLog(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS courtesy_lifecycle_email_log (
+      email TEXT NOT NULL,
+      license_expires_at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      PRIMARY KEY (email, license_expires_at, kind)
+    )`
+  ).run();
+}
+
+async function courtesyEmailAlreadySent(env, email, expiresAt, kind) {
+  const row = await env.DB.prepare(
+    'SELECT 1 FROM courtesy_lifecycle_email_log WHERE email=? AND license_expires_at=? AND kind=? LIMIT 1'
+  ).bind(email, expiresAt, kind).first();
+  return !!row;
+}
+
+async function markCourtesyEmailSent(env, email, expiresAt, kind) {
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO courtesy_lifecycle_email_log (email, license_expires_at, kind, sent_at) VALUES (?,?,?,?)'
+  ).bind(email, expiresAt, kind, new Date().toISOString()).run();
+}
+
+async function runCourtesyLifecycle(env) {
+  // Se a Resend não estiver pronta, não registramos os avisos como enviados: a
+  // próxima execução diária tenta de novo, sem prejudicar a expiração da licença.
+  if (!env.DB) return { ok: false, error: 'database_not_configured' };
+  const now = Date.now();
+  const upperBound = new Date(now + 6 * 86400000).toISOString();
+  let rows;
+  try {
+    await ensureCourtesyLifecycleLog(env);
+    rows = await env.DB.prepare(
+      `SELECT email, name, display_name, plan, license_expires_at, license_status
+       FROM users
+       WHERE is_courtesy=1
+         AND license_expires_at IS NOT NULL
+         AND license_status IN ('active', 'trial')
+         AND license_expires_at <= ?`
+    ).bind(upperBound).all();
+  } catch (e) {
+    logEvent({ evt: 'courtesy_lifecycle_query_fail', detail: String(e && e.message || e) });
+    return { ok: false, error: 'courtesy_lifecycle_query_failed' };
+  }
+
+  const checkoutUrl = continuationCheckoutUrl(env);
+  const result = { ok: true, checked: 0, expired: 0, emails: { sent: 0, failed: 0, skipped: 0 } };
+  for (const user of (rows.results || [])) {
+    result.checked++;
+    const expiresAt = String(user.license_expires_at);
+    const expiresEpoch = toEpoch(expiresAt);
+    if (!expiresEpoch) continue;
+    const hoursLeft = (expiresEpoch * 1000 - now) / 3600000;
+    let kind = null;
+    let subject = null;
+    let html = null;
+
+    // A data de expiração também é verificada nas rotas do robô; esta atualização
+    // deixa o estado inequívoco no painel mesmo que o cliente não abra o EA.
+    if (hoursLeft <= 0) {
+      await env.DB.prepare(
+        "UPDATE users SET license_status='expired' WHERE email=? AND is_courtesy=1 AND license_status IN ('active','trial') AND license_expires_at=?"
+      ).bind(user.email, expiresAt).run();
+      result.expired++;
+      kind = 'expired';
+      subject = 'Sua cortesia Black Wolf EA terminou';
+      html = courtesyExpiredEmailHtml(user.display_name || user.name, checkoutUrl);
+    } else if (hoursLeft > 36 && hoursLeft <= 60) {
+      kind = 'reminder_2d';
+      subject = 'Faltam 2 dias para o fim da sua cortesia Black Wolf EA';
+      html = courtesyReminderEmailHtml(user.display_name || user.name, 2, checkoutUrl);
+    } else if (hoursLeft > 108 && hoursLeft <= 132) {
+      kind = 'reminder_5d';
+      subject = 'Faltam 5 dias para o fim da sua cortesia Black Wolf EA';
+      html = courtesyReminderEmailHtml(user.display_name || user.name, 5, checkoutUrl);
+    } else {
+      continue;
+    }
+
+    if (await courtesyEmailAlreadySent(env, user.email, expiresAt, kind)) {
+      result.emails.skipped++;
+      continue;
+    }
+    const sent = await sendMail(env, user.email, subject, html, { noReply: true });
+    if (sent.ok) {
+      await markCourtesyEmailSent(env, user.email, expiresAt, kind);
+      result.emails.sent++;
+    } else {
+      result.emails.failed++;
+      logEvent({ evt: 'courtesy_lifecycle_email_fail', kind, status: sent.status });
+    }
+  }
+  logEvent({ evt: 'courtesy_lifecycle_run', checked: result.checked, expired: result.expired, emails_sent: result.emails.sent, emails_failed: result.emails.failed });
+  return result;
+}
 
 /* ───────────────── CRIPTOGRAFIA ───────────────── */
 function hexToBuf(hex) {
@@ -219,6 +554,14 @@ function planAccountLimit(plan) {
   if (p.includes('pack'))  return 2;
   return 1;
 }
+// A coluna explícita do checkout é a regra principal. Para clientes antigos
+// que ainda não receberam account_limit, usa o nome do plano em vez de travar
+// silenciosamente uma conta extra em planos Pack/Alpha.
+function effectiveAccountLimit(row) {
+  if (row && row.account_limit === -1) return -1;
+  const n = Number(row && row.account_limit);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : planAccountLimit(row && row.plan);
+}
 
 /* ───────────────── LICENÇA: estado + expiração (v23) ─────────────────
    Fonte única de verdade sobre "a licença pode operar agora?". Antes cada
@@ -251,6 +594,24 @@ async function rateLimited(env, key, limit, windowSec) {
     await env.SESSIONS.put(k, String(cur + 1), { expirationTtl: windowSec });
     return false;
   } catch (e) { return false; }
+}
+function eaBurstLimited(key, limit, windowSec) {
+  const now = Date.now();
+  const current = EA_BURST_BUCKETS.get(key);
+  if (!current || current.resetAt <= now) {
+    EA_BURST_BUCKETS.set(key, { count: 1, resetAt: now + (windowSec * 1000) });
+    return false;
+  }
+  if (current.count >= limit) return true;
+  current.count += 1;
+  // Limpa chaves vencidas ocasionalmente para que uma instância longa não
+  // acumule memória com licenças antigas.
+  if (EA_BURST_BUCKETS.size > 2000) {
+    for (const [bucketKey, bucket] of EA_BURST_BUCKETS) {
+      if (bucket.resetAt <= now) EA_BURST_BUCKETS.delete(bucketKey);
+    }
+  }
+  return false;
 }
 function clientIp(request) {
   return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
@@ -598,16 +959,33 @@ async function handleStripeWebhook(request, env, json, ctx) {
 
   const obj = event.data.object;
   const stripeCustomer = obj.customer || null;
+  const isCheckout = event.type === 'checkout.session.completed';
 
   // Pega email e nome do cliente
   let email = obj.customer_details?.email || obj.customer_email || null;
   let name  = obj.customer_details?.name  || 'Cliente' ;
 
+  // O Curso Manual é pagamento único e NÃO pode cair no fluxo de criação de
+  // licença/assinatura do EA. Só um identificador explícito na Stripe o marca
+  // como curso; valores monetários nunca são usados como critério.
+  if (isCheckout && await isCourtesyEligibleCheckout(env, obj)) {
+    if (!email) return json({ error: 'no_email' }, 400);
+    if (!env.BONUS_DB) return json({ error: 'bonus_not_configured' }, 503);
+    const cleanEmail = email.trim().toLowerCase();
+    await registerCourseBonus(env, obj, cleanEmail, stripeCustomer);
+    const courtesy = await provisionCourseCourtesy(env, cleanEmail, name, stripeCustomer);
+    if (courtesy.created && env.RESEND_API_KEY && env.EMAIL_FROM) {
+      // O acesso do curso é enviado pelo Worker do portal; este e-mail é
+      // exclusivamente do EA e contém a licença da cortesia, sem débito futuro.
+      await sendWelcomeEmail(env, cleanEmail, name, 'Lone Wolf — cortesia de 30 dias', courtesy.password, courtesy.license);
+    }
+    return json({ ok: true, action: courtesy.created ? 'course_ea_courtesy_created' : courtesy.action });
+  }
+
   // v37: Identifica o plano EXATAMENTE pelo que o cliente comprou no Stripe (produto/
   // preço), NUNCA pelo valor pago — promoção/cupom/sorteio não mudam o plano nem o
   // número de contas. Se o Stripe não informar o plano, marca p/ revisão (mínimo 1
   // conta) e alerta — sem chutar. (Setar metadata no produto do Stripe = 100% exato.)
-  const isCheckout = event.type === 'checkout.session.completed';
   const resolvedPlan = await resolvePlan(env, obj, isCheckout);
   let plan = resolvedPlan.plan;
   const planLimit = resolvedPlan.limit;
@@ -682,6 +1060,74 @@ async function handleStripeWebhook(request, env, json, ctx) {
   return json({ ok: true, action: 'created', email, plan });
 }
 
+async function isCourtesyEligibleCheckout(env, obj) {
+  const marker = (m) => ['course_manual', 'primeira_conta'].includes(String(m && m.blackwolf_product || '').trim().toLowerCase())
+    || ['curso', 'primeira_conta'].includes(String(m && m.product || '').trim().toLowerCase());
+  if (marker(obj && obj.metadata)) return true;
+  if (!!env.PRIMEIRA_CONTA_PAYMENT_LINK_ID && obj && obj.payment_link === env.PRIMEIRA_CONTA_PAYMENT_LINK_ID) return true;
+  if (!obj || !obj.id || !env.STRIPE_SECRET_KEY) return false;
+  try {
+    const li = await stripeGet(env, '/checkout/sessions/' + obj.id + '/line_items?limit=1&expand[]=data.price.product');
+    const item = li && li.ok && li.body && li.body.data && li.body.data[0];
+    const price = item && item.price;
+    return marker(price && price.metadata) || marker(price && price.product && price.product.metadata);
+  } catch (e) {
+    logEvent({ evt: 'course_marker_lookup_fail', detail: String(e && e.message || e) });
+    return false;
+  }
+}
+async function registerCourseBonus(env, obj, email, stripeCustomer) {
+  const now = new Date().toISOString();
+  const sessionId = String(obj.id || '');
+  if (!sessionId) throw new Error('course_checkout_without_session_id');
+  // As três chaves únicas no esquema impedem repetição por sessão, cliente ou
+  // e-mail. O primeiro pagamento confirmado é a única elegibilidade válida.
+  const existing = await env.BONUS_DB.prepare(
+    'SELECT checkout_session_id, email, stripe_customer FROM course_ea_bonus WHERE checkout_session_id=? OR email=? OR (stripe_customer IS NOT NULL AND stripe_customer=?) LIMIT 1'
+  ).bind(sessionId, email, stripeCustomer || '').first();
+  if (!existing) {
+    await env.BONUS_DB.prepare(
+      `INSERT INTO course_ea_bonus (checkout_session_id, email, stripe_customer, status, eligible_at)
+       VALUES (?, ?, ?, 'eligible', ?)`
+    ).bind(sessionId, email, stripeCustomer || null, now).run();
+    return true;
+  }
+  return false;
+}
+
+// A compra do Curso Manual inclui UMA licença Lone Wolf por 30 dias. A criação
+// é idempotente pelo e-mail: reentrega de webhook não cria outra chave, não
+// estende o prazo e nunca mexe numa licença paga já existente.
+async function provisionCourseCourtesy(env, email, name, stripeCustomer) {
+  const existing = await env.DB.prepare(
+    'SELECT email, license_key, is_courtesy FROM users WHERE email=?'
+  ).bind(email).first();
+  if (existing) {
+    if (existing.is_courtesy && existing.license_key) return { created: false, action: 'course_ea_courtesy_already_active' };
+    // A pessoa já é cliente pagante ou administrador: o bônus não pode
+    // rebaixar/trocar a licença existente. Mantém rastreável para a operação.
+    return { created: false, action: 'course_ea_existing_account_preserved' };
+  }
+
+  const password = generatePassword();
+  const license = generateLicenseKey();
+  const salt = randomHex(16);
+  const hash = await pbkdf2(password, salt);
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO users
+      (email,password_hash,salt,name,role,lang,plan,license_key,license_status,license_expires_at,account_limit,monthly_amount,is_courtesy,stripe_customer,created_at)
+     VALUES (?,?,?,?, 'client','pt','Lone Wolf',?,'active',?,1,0,1,?,?)`
+  ).bind(email, hash, salt, capStr(name, 80) || 'Cliente', license, expiresAt, stripeCustomer || null, now).run();
+
+  await env.BONUS_DB.prepare(
+    "UPDATE course_ea_bonus SET status='redeemed', redeemed_at=?, redeemed_by='automatic_purchase' WHERE email=? AND status='eligible'"
+  ).bind(now, email).run();
+  logEvent({ evt: 'course_ea_courtesy_created', email, expires_at: expiresAt });
+  return { created: true, action: 'course_ea_courtesy_created', password, license };
+}
+
 async function verifyStripeSignature(payload, sigHeader, secret) {
   try {
     const parts = sigHeader.split(',');
@@ -690,9 +1136,10 @@ async function verifyStripeSignature(payload, sigHeader, secret) {
     if (!tPart || !v1Part) return false;
     const timestamp = tPart.split('=')[1];
     const expected = v1Part.split('=')[1];
-    // v22: rejeita webhooks antigos (proteção contra replay), como o SDK oficial do Stripe
-    const ts = parseInt(timestamp, 10);
-    if (!ts || Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) return false;
+    // A Stripe reenvia eventos assinados usando a data do evento original.
+    // A idempotência pelo id do evento protege contra repetição sem bloquear
+    // retries legítimos que acontecem após cinco minutos.
+    if (!/^\d+$/.test(timestamp)) return false;
     const signed = timestamp + '.' + payload;
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -737,6 +1184,83 @@ function ctaButton(href, label) {
     <td align="center" bgcolor="#2D6CFF" style="border-radius:11px;background:#2D6CFF;background-image:linear-gradient(135deg,#2D6CFF,#1b46c2);">
       <a href="${href}" style="display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;letter-spacing:.02em;">${label}</a>
     </td></tr></table>`;
+}
+
+function emailHtml(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Lista VIP: comunicação de confirmação, sem promessas de desempenho e sem
+// induzir compra. A pessoa recebe a informação pela qual acabou de optar.
+function courseLeadWelcomeEmailHtml(name) {
+  const safeName = emailHtml(name);
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua entrada na Lista VIP foi confirmada &#9989;</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">Ol&aacute; <b style="color:#E8EAED;">${safeName}</b>, voc&ecirc; agora faz parte da Lista VIP do <b style="color:#E8EAED;">Curso Manual Black Wolf</b>.</p>
+    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#aeb4c0;">Quando houver novidades, condi&ccedil;&otilde;es de abertura ou informa&ccedil;&otilde;es importantes sobre a forma&ccedil;&atilde;o, voc&ecirc; receber&aacute; primeiro por este e-mail e, quando aplic&aacute;vel, pelo WhatsApp informado.</p>
+    ${ctaButton('https://curso.blackwolfea.com/#curso', 'Conhecer a forma&ccedil;&atilde;o &rarr;')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">CANAL OFICIAL BLACK WOLF</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">Este &eacute; um e-mail autom&aacute;tico. Para suporte, use os contatos abaixo.</div></td></tr></table>
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">O curso tem finalidade educacional. Trading envolve risco e este e-mail n&atilde;o &eacute; recomenda&ccedil;&atilde;o de investimento.</p>`;
+  return emailShell('Sua entrada na Lista VIP do Curso Manual Black Wolf foi confirmada.', inner);
+}
+
+// Compra do curso: e-mail transacional, separado da Lista VIP. Confirma a
+// elegibilidade sem assumir uma assinatura do EA ou autorizar cobrança futura.
+function courseBonusEligibleEmailHtml(name) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Ol&aacute; <b style="color:#E8EAED;">${safeName}</b>,` : 'Ol&aacute;,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Seu b&ocirc;nus est&aacute; reservado &#9989;</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} confirmamos sua compra do <b style="color:#E8EAED;">Curso Manual Black Wolf</b>.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Seu direito a <b style="color:#E8EAED;">1 m&ecirc;s de Black Wolf EA</b> foi registrado. A ativa&ccedil;&atilde;o acontece ap&oacute;s o onboarding e a confirma&ccedil;&atilde;o dos requisitos da conta.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">SEM COBRAN&Ccedil;A AUTOM&Aacute;TICA</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">O b&ocirc;nus n&atilde;o cria assinatura nem autoriza d&eacute;bito futuro. Ao fim da cortesia, a continuidade do EA &eacute; opcional e contratada separadamente.</div></td></tr></table>
+    ${ctaButton('https://curso.blackwolfea.com/', 'Ver o curso &rarr;')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Trading envolve risco. O EA &eacute; software de automa&ccedil;&atilde;o e n&atilde;o garante resultado.</p>`;
+  return emailShell('Seu bônus de 1 mês do Black Wolf EA foi registrado.', inner);
+}
+
+// Cortesia do EA: aviso transacional de encerramento. Não promete resultado,
+// não inscreve o cliente em nova cobrança e só oferece o checkout separado.
+function courtesyReminderEmailHtml(name, days, checkoutUrl) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Olá <b style="color:#E8EAED;">${safeName}</b>,` : 'Olá,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua cortesia termina em ${days} dias</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} seu mês de cortesia do <b style="color:#E8EAED;">Black Wolf EA</b> está próximo do fim.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Se quiser continuar usando o EA depois desse período, você pode contratar o plano separado abaixo. A decisão é totalmente opcional.</p>
+    ${ctaButton(checkoutUrl, 'Conhecer o plano Black Wolf EA →')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;border:1px solid #223253;border-radius:11px;background:#090f1c;"><tr><td style="padding:16px 18px;"><div style="font-size:10px;font-weight:700;letter-spacing:.16em;color:#7fa6ff;">SEM RENOVAÇÃO AUTOMÁTICA</div><div style="margin-top:7px;font-size:13px;line-height:1.55;color:#b6c2d7;">Se você não contratar, sua licença de cortesia termina na data prevista e nenhum valor será cobrado.</div></td></tr></table>
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Trading envolve risco. O Black Wolf EA é um software de automação e não garante resultado.</p>`;
+  return emailShell(`Faltam ${days} dias para o fim da sua cortesia Black Wolf EA.`, inner);
+}
+
+function courtesyExpiredEmailHtml(name, checkoutUrl) {
+  const safeName = emailHtml(name || '');
+  const greeting = safeName ? `Olá <b style="color:#E8EAED;">${safeName}</b>,` : 'Olá,';
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Sua cortesia foi concluída</h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#aeb4c0;">${greeting} o período de 1 mês de cortesia do <b style="color:#E8EAED;">Black Wolf EA</b> chegou ao fim e a licença foi desativada.</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Caso queira continuar, você pode contratar o EA separadamente. Não houve e não haverá cobrança automática relacionada ao bônus.</p>
+    ${ctaButton(checkoutUrl, 'Contratar Black Wolf EA →')}
+    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;line-height:1.55;">Se precisar de ajuda, fale com o suporte pelos contatos abaixo.</p>`;
+  return emailShell('Sua cortesia Black Wolf EA terminou. A continuidade é opcional.', inner);
+}
+
+function courseLeadNotificationEmailHtml(name, email, whatsapp, createdAt) {
+  const safeName = emailHtml(name);
+  const safeEmail = emailHtml(email);
+  const safeWhatsapp = emailHtml(whatsapp);
+  const wa = String(whatsapp || '').replace(/\D/g, '');
+  const inner = `
+    <h1 style="margin:0 0 8px;font-size:23px;color:#ffffff;font-weight:800;line-height:1.25;">Novo lead na Lista VIP</h1>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#aeb4c0;">Um novo contato pediu para receber informa&ccedil;&otilde;es do Curso Manual Black Wolf.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border:1px solid #252c3a;border-radius:10px;background:#090b10;">
+      <tr><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#7f8aa0;font-size:11px;">NOME</td><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#E8EAED;font-size:14px;font-weight:700;">${safeName}</td></tr>
+      <tr><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#7f8aa0;font-size:11px;">E-MAIL</td><td style="padding:14px 16px;border-bottom:1px solid #202633;color:#E8EAED;font-size:14px;"><a href="mailto:${safeEmail}" style="color:#9ab7ff;text-decoration:none;">${safeEmail}</a></td></tr>
+      <tr><td style="padding:14px 16px;color:#7f8aa0;font-size:11px;">WHATSAPP</td><td style="padding:14px 16px;color:#E8EAED;font-size:14px;"><a href="https://wa.me/${wa}" style="color:#9ab7ff;text-decoration:none;">${safeWhatsapp}</a></td></tr>
+    </table>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.55;">Cadastro em ${emailHtml(new Date(createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))}.</p>`;
+  return emailShell('Novo lead da Lista VIP do Curso Manual Black Wolf.', inner);
 }
 
 function welcomeEmailHtml(to, name, plan, password, license, panelUrl) {
@@ -819,13 +1343,15 @@ function subCanceledEmailHtml(name, panelUrl) {
 /* ===EMAIL_TEMPLATES_END=== */
 
 // Envio genérico via Resend. Retorna { ok, status, body } para diagnóstico.
-async function sendMail(env, to, subject, html) {
+async function sendMail(env, to, subject, html, options) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return { ok: false, status: 0, body: 'email_not_configured' };
   try {
+    const payload = { from: env.EMAIL_FROM, to: [to], subject, html };
+    if (env.EMAIL_REPLY_TO && !(options && options.noReply)) payload.reply_to = env.EMAIL_REPLY_TO;
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject, html }),
+      body: JSON.stringify(payload),
     });
     const body = await r.text().catch(() => '');
     return { ok: r.ok, status: r.status, body: String(body).slice(0, 600) };
@@ -997,30 +1523,59 @@ async function handleReset(request, env, json) {
    Requer sessão de administrador. Retorna apenas clientes reais
    (role='client'), excluindo as contas de demonstração. */
 const DEMO_ACCOUNTS = ['demo.admin@blackwolfea.com', 'demo.cliente@blackwolfea.com', 'ea-test@blackwolfea.com'];
-async function handleAdminClients(request, env, json) {
+async function handleAdminClients(request, env, json, url) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
 
-  // v24 (item 2 do Luiz): a visão geral inclui TODA licença ativa — inclusive as
-  // contas de admin que também são clientes (a do próprio Luiz). Antes filtrava só
-  // role='client' e a licença do admin não aparecia no "quartel general".
+  // Lista paginada no servidor: não baixa milhares de clientes no navegador só
+  // para o admin encontrar um nome. A visão geral continua recebendo a primeira
+  // página, enquanto a tela Clientes consulta cada página/filtro sob demanda.
+  const rawLimit = parseInt(url && url.searchParams.get('limit'), 10);
+  const limit = Math.max(10, Math.min(100, Number.isFinite(rawLimit) ? rawLimit : 100));
+  const rawOffset = parseInt(url && url.searchParams.get('offset'), 10);
+  const offset = Math.max(0, Math.min(100000, Number.isFinite(rawOffset) ? rawOffset : 0));
+  const search = String((url && url.searchParams.get('q')) || '').trim().toLowerCase().slice(0, 80);
+  const status = String((url && url.searchParams.get('status')) || '').trim().toLowerCase();
+  const sort = String((url && url.searchParams.get('sort')) || 'recent').trim().toLowerCase();
+  const where = ["(u.role = 'client' OR u.license_key IS NOT NULL)", 'LOWER(u.email) NOT IN (?,?,?)'];
+  const binds = [...DEMO_ACCOUNTS];
+  if (['active','trial','expired','revoked'].includes(status)) {
+    where.push("COALESCE(u.license_status, CASE WHEN u.license_key IS NOT NULL THEN 'active' ELSE 'expired' END)=?");
+    binds.push(status);
+  }
+  if (search) {
+    const like = '%' + search.replace(/[%_\\]/g, '\\$&') + '%';
+    where.push("(LOWER(COALESCE(u.name,'')) LIKE ? ESCAPE '\\' OR LOWER(u.email) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(u.country,'')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(u.plan,'')) LIKE ? ESCAPE '\\')");
+    binds.push(like, like, like, like);
+  }
+  const orderBy = sort === 'name' ? 'LOWER(COALESCE(u.name,u.email)) ASC, u.created_at DESC'
+    : sort === 'expires' ? 'CASE WHEN u.license_expires_at IS NULL THEN 1 ELSE 0 END, u.license_expires_at ASC, u.created_at DESC'
+    : 'u.created_at DESC';
+  const whereSql = 'WHERE ' + where.join(' AND ');
+  const totalRow = await env.DB.prepare(`SELECT COUNT(*) AS total FROM users u ${whereSql}`).bind(...binds).first();
+
+  // v24: a visão geral inclui toda licença ativa — inclusive contas de admin
+  // que também são clientes, mas nunca as contas de demonstração.
   const rows = await env.DB.prepare(
     `SELECT u.email, u.name, u.role, u.country, u.plan, u.created_at,
-            u.license_key, u.license_status, u.license_expires_at, u.mt5_accounts, u.account_limit,
+            u.license_key, u.license_status, u.license_expires_at, u.is_courtesy, u.mt5_accounts, u.account_limit,
             o.age, o.experience, o.goal, o.self_profile, o.family, o.source,
             o.country AS o_country, o.state, o.city, o.marketing_opt_in,
             (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email = u.email) AS last_seen,
-            (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email) AS acc_online
+            (SELECT COUNT(*) FROM ea_status_acc s WHERE s.email = u.email
+              AND julianday(s.last_seen) >= julianday('now','-10 minutes')) AS acc_online,
+            (SELECT COUNT(*) FROM license_accounts la WHERE la.license_key = u.license_key) AS acc_bound,
+            (SELECT GROUP_CONCAT(la.account, '|') FROM license_accounts la WHERE la.license_key = u.license_key) AS bound_accounts
      FROM users u
      LEFT JOIN onboarding o ON o.email = u.email
-     WHERE u.role = 'client' OR u.license_key IS NOT NULL
-     ORDER BY u.created_at DESC`
-  ).all();
+     ${whereSql}
+     ORDER BY ${orderBy}
+     LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all();
 
   const clients = (rows.results || [])
-    .filter(r => !DEMO_ACCOUNTS.includes(String(r.email).toLowerCase()))
     .map(r => ({
       email: r.email,
       name: r.name,
@@ -1031,9 +1586,15 @@ async function handleAdminClients(request, env, json) {
       license_key: r.license_key || null,
       license_status: r.license_status || (r.license_key ? 'active' : null),
       license_expires_at: r.license_expires_at || null,
-      accounts_used: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.length : 0; } catch(e){ return 0; } })(),
-      mt5_accounts: (function(){ try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch(e){ return []; } })(),
-      account_limit: (r.account_limit != null ? r.account_limit : null),
+      is_courtesy: !!r.is_courtesy,
+      // license_accounts é a fonte real da trava. O JSON em users é apenas
+      // espelho legado; só é usado como fallback até a próxima conexão do EA.
+      accounts_used: Number(r.acc_bound || 0) || accountsList(r.mt5_accounts, null).length,
+      mt5_accounts: (function(){
+        const canonical = String(r.bound_accounts || '').split('|').filter(Boolean).map(String);
+        return canonical.length ? canonical : accountsList(r.mt5_accounts, null);
+      })(),
+      account_limit: effectiveAccountLimit(r),
       last_seen: r.last_seen || null,
       accounts_reporting: r.acc_online || 0,
       onboarding: (r.age || r.o_country || r.marketing_opt_in) ? {
@@ -1043,7 +1604,7 @@ async function handleAdminClients(request, env, json) {
       } : null,
     }));
 
-  return json({ clients });
+  return json({ clients, total: Number((totalRow && totalRow.total) || 0), limit, offset });
 }
 
 /* ─────────────── ADMIN: RESULTADOS DOS CLIENTES (v28) ───────────────
@@ -1092,13 +1653,16 @@ async function handleAdminResults(request, env, json, url) {
     const curve = (dayRows.results || []).map(r => { const p = +(+r.pnl || 0).toFixed(2); cum = +(cum + p).toFixed(2); if (cum > peak) peak = cum; if (peak - cum > maxDD) maxDD = peak - cum; return { day: String(r.d || '').replace(/\./g, '-'), pnl: p, cumulative: cum }; });
     const bal = await env.DB.prepare("SELECT COALESCE(SUM(balance),0) AS bal FROM ea_status_acc WHERE email = ? AND balance IS NOT NULL").bind(t).first();
     const balance = bal ? +(+bal.bal).toFixed(2) : 0;
-    const u = await env.DB.prepare('SELECT name, plan, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const u = await env.DB.prepare('SELECT name, plan, license_key, license_status, mt5_accounts, monthly_amount, is_courtesy FROM users WHERE email = ?').bind(t).first();
+    const canonicalAccounts = u && u.license_key
+      ? await env.DB.prepare('SELECT account FROM license_accounts WHERE license_key = ? ORDER BY bound_at').bind(u.license_key).all() : { results: [] };
     const n = agg ? +agg.n : 0;
     const today = +(+(agg && agg.today || 0)).toFixed(2);
     const startDay = balance - today;
     return json({
       ok: true, email: t, name: (u && u.name) || t, plan: (u && u.plan) || null, status: (u && u.license_status) || null,
-      accounts: (function () { try { const a = u && u.mt5_accounts ? JSON.parse(u.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+      accounts: (canonicalAccounts.results || []).length
+        ? canonicalAccounts.results.map(r => String(r.account)) : accountsList(u && u.mt5_accounts, null),
       currency: 'USD', balance, today, todayPct: (startDay > 0) ? +(today / startDay * 100).toFixed(2) : null,
       week: +(+(agg && agg.week || 0)).toFixed(2), month: +(+(agg && agg.month || 0)).toFixed(2), total: +(+(agg && agg.total || 0)).toFixed(2),
       trades: n, wins: agg ? +agg.wins : 0, losses: agg ? +agg.losses : 0, winRate: n ? +((agg.wins / n) * 100).toFixed(2) : 0,
@@ -1119,6 +1683,7 @@ async function handleAdminResults(request, env, json, url) {
   const balByEmail = {}; (balRows.results || []).forEach(r => { balByEmail[String(r.email).toLowerCase()] = +r.bal; });
   const urows = await env.DB.prepare(
     `SELECT u.email, u.name, u.plan, u.license_status, u.monthly_amount, u.is_courtesy, u.mt5_accounts, u.role, u.created_at,
+            (SELECT GROUP_CONCAT(la.account, '|') FROM license_accounts la WHERE la.license_key=u.license_key) AS bound_accounts,
             (SELECT MAX(s.last_seen) FROM ea_status_acc s WHERE s.email=u.email) AS last_seen
      FROM users u WHERE (u.role='client' OR u.license_key IS NOT NULL) ORDER BY u.created_at DESC`
   ).all();
@@ -1142,7 +1707,7 @@ async function handleAdminResults(request, env, json, url) {
       return {
         email: em, name: r.name || em, plan: r.plan || null, status: st, is_admin: r.role === 'admin',
         payment: pay, monthly_amount: amount, balance, today, week, month, total,
-        accounts: (function () { try { const a = r.mt5_accounts ? JSON.parse(r.mt5_accounts) : []; return Array.isArray(a) ? a.map(String) : []; } catch (e) { return []; } })(),
+        accounts: (function () { const a=String(r.bound_accounts||'').split('|').filter(Boolean); return a.length ? a : accountsList(r.mt5_accounts, null); })(),
         last_seen: r.last_seen || null
       };
     });
@@ -1478,6 +2043,7 @@ async function stripePost(env, path, params) {
     return { ok: r.ok, status: r.status, body };
   } catch (e) { return { ok: false, status: 0, body: null }; }
 }
+
 // GET /api/portal — cria uma sessão do Portal de Cobrança da Stripe JÁ AUTENTICADA
 // para o cliente logado (usa o stripe_customer dele; se faltar, acha pelo e-mail).
 // Assim o aluno troca de plano/cartão/cancela SEM logar na Stripe.
@@ -1734,7 +2300,7 @@ async function handleRobotUpload(request, env, json) {
   const kind = (b.type === 'nt') ? 'nt' : 'mt5';                      // v40: dois robôs (MT5 e NinjaTrader)
   const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
   const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
-  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BlackWolf_AI.ex5';
   const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
   if (!b64) return json({ error: 'no_file' }, 400);
   if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
@@ -1767,7 +2333,7 @@ async function handleRobotDownload(request, env, json, url) {
   const kind = (url.searchParams.get('type') === 'nt') ? 'nt' : 'mt5';
   const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
   const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
-  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BLACK_WOLF_CLIENTE.ex5';
+  const defName = kind === 'nt' ? 'BlackWolf_NinjaTrader.zip' : 'BlackWolf_AI.ex5';
   const b64 = await env.SESSIONS.get(kvFile);
   if (!b64) return json({ error: 'no_robot', hint: 'Nenhum robô enviado ainda.' }, 404);
   let meta = {}; try { meta = JSON.parse(await env.SESSIONS.get(kvMeta) || '{}'); } catch (e) {}
@@ -1775,7 +2341,7 @@ async function handleRobotDownload(request, env, json, url) {
   return new Response(bytes, { status: 200, headers: {
     'Content-Type': 'application/octet-stream',
     'Content-Disposition': 'attachment; filename="' + (meta.filename || defName) + '"',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
+    ...corsHeaders(request),
     'Cache-Control': 'no-store'
   } });
 }
@@ -1914,7 +2480,8 @@ function intOrNull(v){ const n = parseInt(v,10); return Number.isFinite(n) ? n :
      pelo admin (limpando o campo). Isso impede revenda/multi-conta da mesma licença. */
 function getEaAccount(request, url, body){
   let a = url.searchParams.get('account') || request.headers.get('X-Account') ||
-          (body && body.account != null ? body.account : null);
+          (body && (body.account ?? body.account_login ?? body.accountLogin ?? body.account_number ?? body.accountNumber) != null
+            ? (body.account ?? body.account_login ?? body.accountLogin ?? body.account_number ?? body.accountNumber) : null);
   if (a == null) return null;
   const s = String(a).trim();
   // Aceita conta do MT5 (login numérico) E do NinjaTrader (Account.Name em texto,
@@ -1934,8 +2501,8 @@ async function bindOrCheckAccount(env, row, account){
   const acc = String(account);
   const lic = row.license_key;
   if(!lic) return { mismatch:false, bound: acc }; // sem licença amarrável (não deveria ocorrer nas rotas EA)
-  const limit = (row.account_limit === -1) ? 1000000
-              : ((row.account_limit && row.account_limit > 1) ? row.account_limit : 1);
+  const configuredLimit = effectiveAccountLimit(row);
+  const limit = configuredLimit === -1 ? 1000000 : configuredLimit;
   const now = new Date().toISOString();
   // INSERT atômico: entra se JÁ pertence (idempotente) OU se há vaga. ON CONFLICT
   // evita erro em corrida; a cláusula WHERE garante o teto sem ler-antes-de-escrever.
@@ -2013,6 +2580,7 @@ async function handleEaConfig(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
+  if (eaBurstLimited('ea_config:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, role, ea_config, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active: false }, 404);
   // v23: verifica status E EXPIRAÇÃO (licença vencida parava? nunca — agora sim)
@@ -2104,6 +2672,7 @@ function cfgHash(obj){
 async function handleEaPing(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ ok:false, error: 'missing_license' }, 401);
+  if (eaBurstLimited('ea_ping:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
   const row = await env.DB.prepare('SELECT email, plan, license_key, license_status, license_expires_at, mt5_account, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ ok:false, active:false, error:'license_not_found' }, 404);
   const lp = licenseState(row);
@@ -2123,7 +2692,8 @@ async function handleEaTrades(request, env, json, url) {
   const license = getEaLicense(request, url);
   if (!license) return json({ error: 'missing_license' }, 401);
   if (!(await eaSignatureOk(request, env, url, license))) return json({ error: 'bad_signature' }, 403);
-  const row = await env.DB.prepare('SELECT email, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
+  if (eaBurstLimited('ea_trades:' + license + ':' + clientIp(request), 120, 60)) return json({ error: 'too_many_requests' }, 429);
+  const row = await env.DB.prepare('SELECT email, plan, mt5_account, license_key, license_status, license_expires_at, account_limit, mt5_accounts FROM users WHERE license_key = ?').bind(license).first();
   if (!row) return json({ error: 'license_not_found', active:false }, 404);
   // v27 (P0-A): NÃO rejeitar aqui se a licença estiver vencida/revogada. O POST de
   // trades é o CANAL DE DADOS, não a permissão de operar. Rejeitar perderia PARA
@@ -2152,7 +2722,12 @@ async function handleEaTrades(request, env, json, url) {
 
   // v23: monta TUDO como um único env.DB.batch (atômico: ou grava tudo, ou nada).
   // COALESCE preserva o último saldo bom se o heartbeat vier parcial/nulo.
-  const bal = num(body.balance), eq = num(body.equity), op = intOrNull(body.open_positions), ver = body.ea_version ?? null;
+  // Aceita o contrato atual e variações comuns de MT5/NT. Isso elimina perda
+  // silenciosa quando uma versão do EA troca camelCase por snake_case.
+  const bal = num(body.balance ?? body.account_balance ?? body.accountBalance),
+        eq = num(body.equity ?? body.account_equity ?? body.accountEquity),
+        op = intOrNull(body.open_positions ?? body.openPositions ?? body.positions_total ?? body.positionsTotal),
+        ver = body.ea_version ?? body.eaVersion ?? body.version ?? null;
   const stmts = [
     env.DB.prepare(
       `INSERT INTO ea_status (license_key, email, account, balance, equity, open_positions, ea_version, last_seen, last_error)
@@ -2185,7 +2760,14 @@ async function handleEaTrades(request, env, json, url) {
   const persisted = [];
   // v29: teto DURO no array cru ANTES de ordenar — uma licença válida não pode
   // mandar um array gigante e gastar CPU/memória do worker (o robô pagina de 500).
-  let tradesArr = Array.isArray(body.trades) ? body.trades.slice(0, 2000).filter(t => t && t.ticket != null) : [];
+  const rawTrades = Array.isArray(body.trades) ? body.trades
+    : Array.isArray(body.deals) ? body.deals
+    : Array.isArray(body.history) ? body.history
+    : Array.isArray(body.closed_trades) ? body.closed_trades
+    : Array.isArray(body.closedTrades) ? body.closedTrades
+    : (body.trade && typeof body.trade === 'object') ? [body.trade]
+    : (body.deal && typeof body.deal === 'object') ? [body.deal] : [];
+  let tradesArr = rawTrades.slice(0, 2000).filter(t => t && (t.ticket ?? t.deal ?? t.deal_ticket ?? t.dealTicket ?? t.id) != null);
   const totalTrades = tradesArr.length;
   // v27 (P0-B): NUNCA gravar trade sem CONTA. No SQLite, NULL é distinto no índice
   // UNIQUE, então trade sem conta furaria o dedup e DUPLICARIA a cada reenvio
@@ -2207,14 +2789,14 @@ async function handleEaTrades(request, env, json, url) {
   const capped = tradesArr.slice(0, 500); // teto por POST; o robô pagina backlog maior
   const remaining = Math.max(0, tradesArr.length - capped.length);
   for (const tr of capped) {
-    const ticket = String(tr.ticket);
+    const ticket = String(tr.ticket ?? tr.deal ?? tr.deal_ticket ?? tr.dealTicket ?? tr.id);
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO trades (license_key,email,account,ticket,symbol,type,lots,open_time,close_time,open_price,close_price,profit,commission,swap,created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind(license, row.email, String(account), ticket, tr.symbol??null, tr.type??null, num(tr.lots),
-           tr.openTime??tr.open_time??null, tr.closeTime??tr.close_time??null,
-           num(tr.openPrice??tr.open_price), num(tr.closePrice??tr.close_price),
-           num(tr.profit), num(tr.commission), num(tr.swap), now));
+    ).bind(license, row.email, String(account), ticket, tr.symbol??tr.instrument??null, tr.type??tr.side??tr.direction??null, num(tr.lots??tr.volume),
+           tr.openTime??tr.open_time??tr.time_open??null, tr.closeTime??tr.close_time??tr.time_close??tr.time??null,
+           num(tr.openPrice??tr.open_price??tr.price_open), num(tr.closePrice??tr.close_price??tr.price_close??tr.price),
+           num(tr.profit??tr.pnl), num(tr.commission??tr.commission_value), num(tr.swap??tr.swap_value), now));
     persisted.push(ticket);
   }
   try {
@@ -2403,6 +2985,114 @@ async function handleAdminMt5(request, env, json) {
   return json({ ok: true, email: target, mt5_accounts: list });
 }
 
+/* ───────────────── COMPROVANTES DE SAQUE (v49) ─────────────────
+   D1 recebe só metadados. O arquivo fica privado no R2 e nunca recebe URL
+   pública: download passa por esta API, que checa o dono ou o administrador. */
+const WITHDRAWAL_MAX_BYTES = 10 * 1024 * 1024;
+const WITHDRAWAL_ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+async function ensureWithdrawalTable(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS withdrawal_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, account TEXT,
+    amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', withdrawal_date TEXT NOT NULL,
+    reference TEXT, file_key TEXT NOT NULL UNIQUE, file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL, file_size INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'submitted', created_at TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_withdrawals_email_created ON withdrawal_submissions (email, created_at DESC)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_withdrawals_created ON withdrawal_submissions (created_at DESC)').run();
+}
+function withdrawalFileType(bytes) {
+  const b = new Uint8Array(bytes.slice(0, 16));
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d) return 'application/pdf';
+  return null;
+}
+function withdrawalFilename(value, contentType) {
+  const base = String(value || 'comprovante').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'comprovante';
+  const ext = contentType === 'application/pdf' ? '.pdf' : contentType === 'image/png' ? '.png' : contentType === 'image/webp' ? '.webp' : '.jpg';
+  return /\.(pdf|png|webp|jpe?g)$/i.test(base) ? base : base + ext;
+}
+function withdrawalRow(row) {
+  return { id: row.id, account: row.account || null, amount: Number(row.amount), currency: row.currency || 'USD', withdrawal_date: row.withdrawal_date, reference: row.reference || null, file_name: row.file_name, content_type: row.content_type, file_size: Number(row.file_size), status: row.status, created_at: row.created_at };
+}
+async function handleWithdrawalsList(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  await ensureWithdrawalTable(env);
+  const rows = await env.DB.prepare(`SELECT id, account, amount, currency, withdrawal_date, reference, file_name, content_type, file_size, status, created_at
+    FROM withdrawal_submissions WHERE email = ? ORDER BY withdrawal_date DESC, id DESC LIMIT 200`).bind(email).all();
+  return json({ ok: true, withdrawals: (rows.results || []).map(withdrawalRow) });
+}
+async function handleWithdrawalUpload(request, env, json) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  if (!env.WITHDRAWAL_FILES) return json({ error: 'withdrawal_storage_not_configured' }, 503);
+  if (await rateLimited(env, 'withdrawal_upload:' + email, 10, 86400)) return json({ error: 'upload_limit_reached' }, 429);
+  let form; try { form = await request.formData(); } catch (e) { return json({ error: 'invalid_form' }, 400); }
+  const file = form.get('proof');
+  if (!file || typeof file.arrayBuffer !== 'function') return json({ error: 'proof_required' }, 400);
+  if (!Number.isFinite(file.size) || file.size < 1 || file.size > WITHDRAWAL_MAX_BYTES) return json({ error: 'invalid_file_size' }, 400);
+  const raw = await file.arrayBuffer();
+  const contentType = withdrawalFileType(raw);
+  if (!contentType || !WITHDRAWAL_ALLOWED_TYPES.has(contentType)) return json({ error: 'invalid_file_type' }, 400);
+  const amount = Number(String(form.get('amount') || '').replace(',', '.'));
+  const withdrawalDate = String(form.get('withdrawal_date') || '').trim();
+  const currency = String(form.get('currency') || 'USD').trim().toUpperCase();
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !/^\d{4}-\d{2}-\d{2}$/.test(withdrawalDate) || !['USD', 'BRL'].includes(currency)) return json({ error: 'invalid_withdrawal_data' }, 400);
+  const account = capStr(String(form.get('account') || '').trim(), 80) || null;
+  const reference = capStr(String(form.get('reference') || '').trim(), 160) || null;
+  const filename = withdrawalFilename(file.name, contentType);
+  const key = 'withdrawals/' + randomHex(24);
+  const now = new Date().toISOString();
+  await ensureWithdrawalTable(env);
+  await env.WITHDRAWAL_FILES.put(key, raw, { httpMetadata: { contentType, contentDisposition: 'attachment; filename="' + filename.replace(/["\\\\]/g, '_') + '"' }, customMetadata: { kind: 'withdrawal-proof', created_at: now } });
+  try {
+    const result = await env.DB.prepare(`INSERT INTO withdrawal_submissions (email,account,amount,currency,withdrawal_date,reference,file_key,file_name,content_type,file_size,status,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(email, account, amount, currency, withdrawalDate, reference, key, filename, contentType, file.size, 'submitted', now).run();
+    logEvent({ evt: 'withdrawal_proof_uploaded', id: result.meta && result.meta.last_row_id ? result.meta.last_row_id : null, by: 'user' });
+  } catch (e) {
+    try { await env.WITHDRAWAL_FILES.delete(key); } catch (ignore) {}
+    throw e;
+  }
+  return json({ ok: true });
+}
+async function handleWithdrawalFile(request, env, json, url) {
+  const email = await getSessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const id = Math.max(0, Math.floor(Number(url.searchParams.get('id')) || 0));
+  if (!id || !env.WITHDRAWAL_FILES) return json({ error: 'not_found' }, 404);
+  const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
+  const row = await env.DB.prepare('SELECT * FROM withdrawal_submissions WHERE id = ?').bind(id).first();
+  if (!row || (row.email !== email && (!me || me.role !== 'admin'))) return json({ error: 'not_found' }, 404);
+  const object = await env.WITHDRAWAL_FILES.get(row.file_key);
+  if (!object) return json({ error: 'file_unavailable' }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Content-Type', row.content_type || 'application/octet-stream');
+  headers.set('Content-Disposition', 'attachment; filename="' + String(row.file_name || 'comprovante').replace(/["\\\\]/g, '_') + '"');
+  headers.set('Cache-Control', 'private, no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  for (const [name, value] of Object.entries(corsHeaders(request))) headers.set(name, value);
+  return new Response(object.body, { headers });
+}
+async function handleAdminWithdrawals(request, env, json, url) {
+  const email = await requireAdmin(request, env, json);
+  if (!email) return json({ error: 'forbidden' }, 403);
+  await ensureWithdrawalTable(env);
+  const limit = Math.max(10, Math.min(100, Number(url.searchParams.get('limit')) || 50));
+  const offset = Math.max(0, Math.min(100000, Number(url.searchParams.get('offset')) || 0));
+  const q = String(url.searchParams.get('q') || '').trim().toLowerCase().slice(0, 80);
+  const where = q ? 'WHERE lower(w.email) LIKE ? OR lower(COALESCE(u.name,\'\')) LIKE ? OR lower(COALESCE(w.reference,\'\')) LIKE ? OR lower(COALESCE(w.account,\'\')) LIKE ?' : '';
+  const binds = q ? ['%' + q + '%', '%' + q + '%', '%' + q + '%', '%' + q + '%'] : [];
+  const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM withdrawal_submissions w LEFT JOIN users u ON u.email=w.email ' + where).bind(...binds).first();
+  const rows = await env.DB.prepare(`SELECT w.*, u.name, u.display_name FROM withdrawal_submissions w LEFT JOIN users u ON u.email=w.email ${where}
+    ORDER BY w.withdrawal_date DESC, w.id DESC LIMIT ? OFFSET ?`).bind(...binds, limit, offset).all();
+  return json({ ok: true, total: Number((count && count.total) || 0), withdrawals: (rows.results || []).map(r => ({ ...withdrawalRow(r), email: r.email, name: r.display_name || r.name || r.email })) });
+}
+
 /* O PAINEL do aluno busca os trades + status do robô (sessão autenticada).
    GET /api/my-data → { status:{...}, trades:[...] } */
 async function handleMyData(request, env, json) {
@@ -2447,9 +3137,8 @@ async function handleMt5Account(request, env, json) {
   if (!/^\d{1,20}$/.test(accountRaw)) return json({ error:'invalid_account' }, 400);
   const account = accountRaw;
 
-  const row = await env.DB.prepare('SELECT account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
-  const limit = row && row.account_limit === -1 ? -1
-              : (row && row.account_limit && row.account_limit > 1 ? row.account_limit : 1);
+  const row = await env.DB.prepare('SELECT plan, account_limit, mt5_account, mt5_accounts, license_key FROM users WHERE email = ?').bind(email).first();
+  const limit = effectiveAccountLimit(row);
   const lic = row && row.license_key ? row.license_key : null;
   let list = [];
   try { list = row && row.mt5_accounts ? JSON.parse(row.mt5_accounts) : []; } catch(e){ list = []; }

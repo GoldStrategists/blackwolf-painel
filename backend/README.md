@@ -3,6 +3,17 @@
 Este diretório versiona o código do Worker `blackwolf-api`
 (`https://blackwolf-api.contact-1f3.workers.dev`).
 
+## Comprovantes de saque (v49)
+
+- O cliente envia JPG, PNG, WEBP ou PDF de até 10 MB na aba **Saques**.
+- O arquivo vai para o bucket privado R2 `blackwolf-withdrawal-proofs`; o D1
+  guarda somente data, valor, referência e metadados. Nunca gravar binários,
+  base64 ou documentos no D1/KV.
+- O download passa pelo Worker e exige a sessão do próprio cliente ou de um
+  administrador. Não há URL pública de comprovante.
+- Antes do deploy, habilite R2 na conta Cloudflare, crie o bucket com esse
+  nome e aplique `migrations/2026-08-withdrawal-proofs.sql` no `blackwolf-db`.
+
 ## Versão atual: v27
 
 ### O que a v27 adiciona (auditoria profunda — segurança + dados de dinheiro)
