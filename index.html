@@ -1908,7 +1908,8 @@ function mapRealTrades(raw, endBalance, accBalances){
       day:close?fmtD(close):'', symbol:t.symbol||'XAUUSD',
       dir:(String(t.type||'').toLowerCase()==='sell')?'sell':'buy',
       lots:+(+t.lots||0), entry, exit, sl:0, tp:0, pips:0,
-      commission:+(+t.commission||0), swap:+(+t.swap||0),
+      commission:(t.commission==null||t.commission==='')?null:+t.commission, swap:(t.swap==null||t.swap==='')?null:+t.swap,
+      hasOpen:!!parseEaDate(t.open_time),
       pnl, balance:0, strat:stratGenericName(0,1), dur, win: pnl>0,
       _sort: close?close.getTime():0
     };
@@ -2408,13 +2409,6 @@ function renderHistory(){
       <option value="win">${LANG==='pt'?'Vitórias':LANG==='en'?'Wins':'Ganancias'}</option>
       <option value="loss">${LANG==='pt'?'Perdas':LANG==='en'?'Losses':'Pérdidas'}</option>
     </select>
-    <select class="filter-sel" id="histStrat" onchange="histFilterChange()">
-      <option value="all">${LANG==='pt'?'Estratégia: Todas':LANG==='en'?'Strategy: All':'Estrategia: Todas'}</option>
-      ${(function(){ // v24: opções derivadas dos trades reais (antes usava nomes demo → filtro nunca casava)
-        const src=(SESSION&&SESSION.isDemo)?STRATS:[...new Set((ALL_TRADES||[]).map(function(t){return t.strat;}).filter(Boolean))];
-        return src.map(s=>`<option value="${esc(s)}"${HIST_FILTER.strat===s?' selected':''}>${esc(s)}</option>`).join('');
-      })()}
-    </select>
   </div>
   <div class="card rv" style="padding-top:14px">
     <div id="histTableWrap"></div>
@@ -2426,8 +2420,7 @@ function getFilteredTrades(){
     if(HIST_FILTER.dir!=='all'&&tr.dir!==HIST_FILTER.dir)return false;
     if(HIST_FILTER.result==='win'&&!tr.win)return false;
     if(HIST_FILTER.result==='loss'&&tr.win)return false;
-    if(HIST_FILTER.strat!=='all'&&tr.strat!==HIST_FILTER.strat)return false;
-    if(HIST_FILTER.search){ const q=HIST_FILTER.search.toLowerCase(); if(!(''+tr.id).includes(q)&&!tr.symbol.toLowerCase().includes(q)&&!tr.strat.toLowerCase().includes(q))return false; }
+    if(HIST_FILTER.search){ const q=HIST_FILTER.search.toLowerCase(); if(!(''+tr.id).includes(q)&&!tr.symbol.toLowerCase().includes(q))return false; }
     return true;
   });
 }
@@ -2439,10 +2432,10 @@ function buildHistTable(){
   trades.forEach(tr=>{ groups[tr.day]=groups[tr.day]||[]; groups[tr.day].push(tr); });
   // v27 multi-conta: coluna "Conta" só aparece p/ clientes com 2+ contas
   const multiAcc=Array.from(new Set((ALL_TRADES||[]).map(t=>t.account).filter(Boolean))).length>1;
-  const nCols=multiAcc?9:8;
-  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?820:720}px"><thead><tr>
+  const nCols=multiAcc?8:7;
+  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?760:660}px"><thead><tr>
     <th>Ticket</th>${multiAcc?`<th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>`:''}<th>${LANG==='pt'?'Abertura':LANG==='en'?'Open':'Apertura'}</th><th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
-    <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>Pips</th><th>P&L</th><th></th>
+    <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>P&L</th><th></th>
   </tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dayTrades=groups[day];
@@ -2457,7 +2450,6 @@ function buildHistTable(){
         <td class="tbl-name">${esc(tr.symbol)}</td>
         <td><span class="pill ${tr.dir}">${tr.dir.toUpperCase()}</span></td>
         <td class="mono">${tr.lots.toFixed(2)}</td>
-        <td class="${tr.pips>=0?'pos':'neg'}">${tr.pips>=0?'+':''}${tr.pips}</td>
         <td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td>
         <td><svg class="exp-arrow" id="arr-${tr.id}" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:15px;height:15px;transition:transform .3s"><polyline points="6 9 12 15 18 9"/></svg></td>
       </tr>
@@ -2465,12 +2457,9 @@ function buildHistTable(){
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Fechamento':LANG==='en'?'Close':'Cierre'}</div><div class="v">${tr.closeT.slice(11,16)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Entrada':LANG==='en'?'Entry':'Entrada'}</div><div class="v">${tr.entry}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saída':LANG==='en'?'Exit':'Salida'}</div><div class="v">${tr.exit}</div></div>
-        <div class="expand-cell"><div class="l">Stop Loss</div><div class="v">${tr.sl}</div></div>
-        <div class="expand-cell"><div class="l">Take Profit</div><div class="v">${tr.tp}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.dur} min</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Estratégia':LANG==='en'?'Strategy':'Estrategia'}</div><div class="v" style="font-size:.72rem">${esc(tr.strat)}</div></div>
+        <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission==null?'—':tr.commission.toFixed(2)}</div></div>
+        <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap==null?'—':tr.swap.toFixed(2)}</div></div>
+        <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.hasOpen?tr.dur+' min':'—'}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saldo após':LANG==='en'?'Balance after':'Saldo después'}</div><div class="v">${fmtMoneyPlain(tr.balance)}</div></div>
       </div></div></td></tr>`;
     });
@@ -2482,7 +2471,6 @@ function histFilterChange(){
   HIST_FILTER.search=document.getElementById('histSearch').value;
   HIST_FILTER.dir=document.getElementById('histDir').value;
   HIST_FILTER.result=document.getElementById('histResult').value;
-  HIST_FILTER.strat=document.getElementById('histStrat').value;
   document.getElementById('histTableWrap').innerHTML=buildHistTable();
 }
 function toggleTradeRow(id){
@@ -2491,9 +2479,9 @@ function toggleTradeRow(id){
 }
 function exportCSV(){
   const trades=getFilteredTrades();
-  const headers=['Ticket','Account','Open','Close','Symbol','Direction','Lots','Entry','Exit','SL','TP','Pips','Commission','Swap','PnL','Balance','Strategy','Duration'];
+  const headers=['Ticket','Account','Open','Close','Symbol','Direction','Lots','Entry','Exit','Commission','Swap','PnL','Balance','Duration'];
   let csv=headers.join(',')+'\n';
-  trades.forEach(t=>{ csv+=[t.id,t.account||'',t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,t.sl,t.tp,t.pips,t.commission,t.swap,t.pnl,t.balance,t.strat,t.dur].join(',')+'\n'; });
+  trades.forEach(t=>{ csv+=[t.id,t.account||'',t.openT,t.closeT,t.symbol,t.dir,t.lots,t.entry,t.exit,(t.commission==null?'':t.commission),(t.swap==null?'':t.swap),t.pnl,t.balance,(t.hasOpen?t.dur:'')].join(',')+'\n'; });
   const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='blackwolf-trades.csv'; a.click();
   toast(LANG==='pt'?'CSV exportado':LANG==='en'?'CSV exported':'CSV exportado','success');
@@ -3377,6 +3365,7 @@ function renderAdminClientView(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
         <div style="font-family:var(--fh);font-weight:700;font-size:1.2rem">${esc(C.name||C.email)}</div>
+        ${C.reg_name&&C.reg_name!==C.name?`<div style="font-size:.72rem;color:var(--t3);margin-top:1px">${LANG==='pt'?'Nome de cadastro':LANG==='en'?'Registered name':'Nombre de registro'}: ${esc(C.reg_name)}</div>`:''}
         <div class="mono" style="font-size:.78rem;color:var(--t3);margin-top:2px">${esc(C.email)}</div>
         <div class="mono" style="font-size:.78rem;color:var(--t2);margin-top:4px">${LANG==='pt'?'Conta(s)':LANG==='en'?'Account(s)':'Cuenta(s)'}: ${esc(acc)}</div>
       </div>
@@ -4237,11 +4226,11 @@ function buildClientHistTable(trades){
   if(!trades.length)return `<div class="empty" style="padding:20px"><div class="empty-t">${LANG==='pt'?'Sem trades':LANG==='en'?'No trades':'Sin trades'}</div></div>`;
   const revTrades=trades.slice().reverse();
   const groups={}; revTrades.forEach(tr=>{groups[tr.day]=groups[tr.day]||[];groups[tr.day].push(tr);});
-  let html=`<div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl" style="min-width:580px"><thead><tr><th>Ticket</th><th>${LANG==='pt'?'Hora':LANG==='en'?'Time':'Hora'}</th><th>Dir</th><th>Lots</th><th>Pips</th><th>P&L</th><th>${LANG==='pt'?'Saldo':'Balance'}</th></tr></thead><tbody>`;
+  let html=`<div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl" style="min-width:520px"><thead><tr><th>Ticket</th><th>${LANG==='pt'?'Hora':LANG==='en'?'Time':'Hora'}</th><th>Dir</th><th>Lots</th><th>P&L</th><th>${LANG==='pt'?'Saldo':'Balance'}</th></tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dTrades=groups[day]; const dayPnl=dTrades.reduce((s,t)=>s+t.pnl,0);
-    html+=`<tr class="tbl-day-row"><td colspan="5">📅 ${day} · ${dTrades.length} trades</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
-    dTrades.forEach(tr=>{html+=`<tr><td class="mono" style="font-size:.72rem">#${tr.id}</td><td class="mono" style="font-size:.72rem">${tr.openT.slice(11,16)}</td><td><span class="pill ${tr.dir}" style="font-size:.58rem">${tr.dir.toUpperCase()}</span></td><td class="mono">${tr.lots}</td><td class="${tr.pips>=0?'pos':'neg'}">${tr.pips}</td><td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td><td class="mono" style="font-size:.72rem">${fmtMoneyPlain(tr.balance)}</td></tr>`;});
+    html+=`<tr class="tbl-day-row"><td colspan="4">📅 ${day} · ${dTrades.length} trades</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
+    dTrades.forEach(tr=>{html+=`<tr><td class="mono" style="font-size:.72rem">#${tr.id}</td><td class="mono" style="font-size:.72rem">${tr.openT.slice(11,16)}</td><td><span class="pill ${tr.dir}" style="font-size:.58rem">${tr.dir.toUpperCase()}</span></td><td class="mono">${tr.lots}</td><td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td><td class="mono" style="font-size:.72rem">${fmtMoneyPlain(tr.balance)}</td></tr>`;});
   });
   html+='</tbody></table></div>';
   return html;
