@@ -696,6 +696,12 @@ select.survey-finput{cursor:pointer;background-image:url("data:image/svg+xml,%3C
 
 /* ════════ SETTINGS PAGE ════════ */
 .set-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+details.card.coll{cursor:default}
+details.card.coll>summary{cursor:pointer;list-style:none;margin-bottom:0}
+details.card.coll>summary::-webkit-details-marker{display:none}
+details.card.coll[open]>summary{margin-bottom:18px}
+.coll-chev{width:18px;height:18px;color:var(--t3);transition:transform .25s;margin-left:auto;flex-shrink:0}
+details.card.coll[open] .coll-chev{transform:rotate(180deg)}
 .set-grid .card:first-child{grid-column:1 / -1}
 @media(max-width:780px){.set-grid{grid-template-columns:1fr}}
 .set-photo-row{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
@@ -3049,8 +3055,8 @@ function renderSettings(){
     </div>
 
     <!-- OPTIONAL ADDITIONAL INFO -->
-    <div class="card rv" style="grid-column:1 / -1">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>${x.extra}</div><span class="card-desc">${x.extraHint}</span></div>
+    <details class="card rv coll" style="grid-column:1 / -1">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>${x.extra}</div><span class="card-desc">${x.extraHint}</span><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <div class="set-extra-grid">
         <div class="set-field" style="margin-bottom:0">
           <label>${x.country} <span style="color:var(--t4);font-weight:400">${x.optional}</span></label>
@@ -3066,7 +3072,7 @@ function renderSettings(){
         </div>
       </div>
       <button class="btn-primary" style="margin-top:18px" onclick="settingsSaveProfile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${x.save}</button>
-    </div>
+    </details>
 
     <!-- SECURITY -->
     <div class="card rv">
@@ -3100,15 +3106,15 @@ function renderSettings(){
     </div>`:''}
 
     <!-- PROFILE SURVEY (atualizar questionário) -->
-    <div class="card rv">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div></div>
+    <details class="card rv coll">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${LANG==='pt'?'Meu perfil de investidor':LANG==='en'?'My investor profile':'Mi perfil de inversor'}</div><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <p style="color:var(--t3);font-size:.86rem;margin:0 0 14px">${LANG==='pt'?'As respostas do questionário que você preencheu ao entrar. Pode atualizar quando quiser — usamos para personalizar seu painel e o suporte.':LANG==='en'?'The answers from the survey you filled in on first login. Update them anytime — we use them to personalize your panel and support.':'Las respuestas del cuestionario que completaste al entrar. Puedes actualizarlas cuando quieras.'}</p>
       <button class="btn-ghost" onclick="surveyStartEdit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>${LANG==='pt'?'Atualizar perfil':LANG==='en'?'Update profile':'Actualizar perfil'}</button>
-    </div>
+    </details>
 
     <!-- ACTIVITY -->
-    <div class="card rv" style="grid-column:1 / -1">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${x.activity}</div></div>
+    <details class="card rv coll" style="grid-column:1 / -1">
+      <summary class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${x.activity}</div><svg class="coll-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></summary>
       <div class="activity-rows">
         <div class="activity-row">
           <div class="activity-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></div>
@@ -3120,7 +3126,7 @@ function renderSettings(){
           <div class="activity-body"><div class="al">${x.lastAccess}</div><div class="ad">${getPrevLogin()}</div></div>
         </div>
       </div>
-    </div>
+    </details>
   </div>
 
   <div class="banner info rv" style="margin-top:4px">
