@@ -1,6 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  BLACK WOLF — Back-end v48 (Cloudflare Worker)
+ *  BLACK WOLF — Back-end v51 (Cloudflare Worker)
+ *  + v51: account_limit=-1 representa ilimitado sem teto; limites finitos
+ *         continuam sendo arbitrados atomicamente no D1.
  *  + v48: CORREÇÃO DE TELEMETRIA — normaliza formatos de payload do EA,
  *         mantém o vínculo de contas pela fonte atômica (license_accounts),
  *         separa contas vinculadas de contas online e preserva compatibilidade
@@ -186,8 +188,8 @@ export default {
       if (path === '/api/reports' && request.method === 'GET')           return await handleReports(request, env, json, url);
       if (path === '/api/admin/license' && request.method === 'POST')     return await handleAdminLicense(request, env, json);
       if (path === '/api/admin/mt5-account' && request.method === 'POST') return await handleAdminMt5(request, env, json);
-      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v49' });
-      if (path === '/api/version')                                        return json({ ok: true, version: 'v49' });
+      if (path === '/api/health')                                        return json({ ok: true, service: 'blackwolf-api-v51' });
+      if (path === '/api/version')                                        return json({ ok: true, version: 'v51' });
 
       return json({ error: 'not_found' }, 404);
     } catch (err) {
@@ -2502,7 +2504,8 @@ async function bindOrCheckAccount(env, row, account){
   const lic = row.license_key;
   if(!lic) return { mismatch:false, bound: acc }; // sem licença amarrável (não deveria ocorrer nas rotas EA)
   const configuredLimit = effectiveAccountLimit(row);
-  const limit = configuredLimit === -1 ? 1000000 : configuredLimit;
+  const unlimited = configuredLimit === -1;
+  const limit = unlimited ? 0 : configuredLimit;
   const now = new Date().toISOString();
   // INSERT atômico: entra se JÁ pertence (idempotente) OU se há vaga. ON CONFLICT
   // evita erro em corrida; a cláusula WHERE garante o teto sem ler-antes-de-escrever.
@@ -2510,9 +2513,10 @@ async function bindOrCheckAccount(env, row, account){
     `INSERT INTO license_accounts (license_key, account, email, bound_at)
      SELECT ?1, ?2, ?3, ?4
      WHERE EXISTS (SELECT 1 FROM license_accounts WHERE license_key=?1 AND account=?2)
-        OR (SELECT COUNT(*) FROM license_accounts WHERE license_key=?1) < ?5
+        OR ?5 = 1
+        OR (SELECT COUNT(*) FROM license_accounts WHERE license_key=?1) < ?6
      ON CONFLICT(license_key, account) DO NOTHING`
-  ).bind(lic, acc, row.email || null, now, limit).run();
+  ).bind(lic, acc, row.email || null, now, unlimited ? 1 : 0, limit).run();
   // agora consulta o veredito real (pós-escrita atômica)
   const bound = await env.DB.prepare('SELECT 1 FROM license_accounts WHERE license_key=? AND account=?').bind(lic, acc).first();
   if(!bound){

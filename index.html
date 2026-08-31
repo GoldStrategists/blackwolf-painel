@@ -2843,7 +2843,7 @@ function renderLicense(){
       <div class="meta-row"><div class="lbl">${LANG==='pt'?'Expira':LANG==='en'?'Expires':'Expira'}</div><div class="val">${c.expiresAt?c.expiresAt.slice(0,10):'—'}</div></div>
     </div>
     <div style="margin-top:20px">
-      <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas em uso':LANG==='en'?'Accounts in use':'Cuentas en uso'} (${c.accountsUsed}/${c.accountLimit})</div><div class="limit-bar"><div class="limit-fill ${c.accountsUsed>=c.accountLimit?'full':''}" data-fill="${c.accountsUsed/c.accountLimit*100}"></div></div></div>
+      <div class="meta-row"><div class="lbl">${LANG==='pt'?'Contas em uso':LANG==='en'?'Accounts in use':'Cuentas en uso'} (${c.accountsUsed}/${c.accountLimit===-1?'∞':c.accountLimit})</div><div class="limit-bar"><div class="limit-fill ${c.accountLimit!==-1&&c.accountsUsed>=c.accountLimit?'full':''}" data-fill="${c.accountLimit===-1?0:c.accountsUsed/c.accountLimit*100}"></div></div></div>
     </div>
   </div>
   <div class="card rv">
