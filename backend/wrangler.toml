@@ -27,3 +27,8 @@ database_id = "7ce5731b-acf1-4b41-be20-ed6c5a74d2a2"
 [[r2_buckets]]
 binding = "WITHDRAWAL_FILES"
 bucket_name = "blackwolf-withdrawal-proofs"
+
+# Executa a manutenção diária: ciclo de cortesia e retenção de 90 dias do
+# histórico de saldo. Horário: 03:17 UTC, fora do pico operacional.
+[triggers]
+crons = ["17 3 * * *"]
