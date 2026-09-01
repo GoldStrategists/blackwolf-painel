@@ -6589,27 +6589,32 @@ function clearNotifs(){
 </script>
 
 <script>
-/* ══ BW LIVE — bloco ISOLADO: atualização quase em tempo real dos resultados ══
-   Usa apenas funções/variáveis já públicas do app (fetchMyData, refreshMe, SESSION). */
+/* ══ BW LIVE — atualização econômica do painel ══
+   O endpoint /api/my-data devolve histórico de operações. Consultá-lo a cada
+   poucos segundos multiplicava leituras no D1 e podia bloquear o banco inteiro.
+   A carga inicial e o botão Atualizar continuam imediatos; a sincronização em
+   segundo plano é deliberadamente espaçada para proteger todos os alunos. */
 (function(){
   'use strict';
 
-  /* 1) Tempo quase-real: busca trades/status do robô a cada 10s
-        (só logado com conta real, em modo cliente e com a aba visível) */
-  var meTick=0;
-  function liveTick(){
+  var lastBackgroundRefresh=0;
+  var backgroundRefreshRunning=false;
+  var BACKGROUND_REFRESH_MS=10*60*1000; // 10 min; atualização manual segue imediata
+  async function liveTick(){
     try{
       if(!SESSION||!SESSION.token||SESSION.isDemo)return;
       if(!document.getElementById('app').classList.contains('active'))return;
       if(document.visibilityState!=='visible')return;
-      // v23: a cada ~3 min revalida licença/status (detecta revogação/expiração
-      // no meio da sessão — antes o painel podia mostrar "ativa" por horas/dias)
-      meTick++; if(meTick%3===0){ try{ refreshMe(); }catch(e){} }
       if(VIEW_MODE!=='client')return;
-      fetchMyData();
+      var now=Date.now();
+      if(backgroundRefreshRunning || (now-lastBackgroundRefresh)<BACKGROUND_REFRESH_MS)return;
+      backgroundRefreshRunning=true;
+      lastBackgroundRefresh=now;
+      try{ await refreshMe(); }catch(e){}
+      backgroundRefreshRunning=false;
     }catch(e){}
   }
-  setInterval(liveTick,10000);
+  setInterval(liveTick,60000);
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') liveTick(); });
   setTimeout(liveTick,2000);
   // Black Wolf 2.0: sync de perfis globais de risco / saveGlobalProfiles REMOVIDOS
