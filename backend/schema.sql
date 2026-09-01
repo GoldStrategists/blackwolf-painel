@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS balance_history (
   ts           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_balhist_email ON balance_history (email, ts);
+CREATE INDEX IF NOT EXISTS idx_balhist_license_account_ts ON balance_history (license_key, account, ts);
 
 -- ─────────────── TRAVA 1 LICENÇA = N CONTAS ───────────────
 -- ON CONFLICT(license_key, account) → precisa da chave primária composta.

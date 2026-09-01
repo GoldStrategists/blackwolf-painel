@@ -105,6 +105,11 @@
  */
 
 const PBKDF2_ITER = 100000;
+// Um ponto de saldo a cada heartbeat fazia a tabela crescer dezenas de milhares
+// de linhas por dia. Quinze minutos preservam a curva de evolução e reduzem a
+// escrita em cerca de 60×, sem afetar o status atual do robô.
+const BALANCE_HISTORY_SNAPSHOT_MS = 15 * 60 * 1000;
+const BALANCE_HISTORY_RETENTION_DAYS = 90;
 // Proteção curta em memória para chamadas contínuas do EA. Diferente de login
 // e captação, ping/config/trades acontecem o dia inteiro por cliente; gravar
 // cada chamada no KV esgota a franquia diária e pode indisponibilizar o painel.
@@ -202,7 +207,10 @@ export default {
   // Configure um Cron Trigger diário no Cloudflare para este Worker. A rotina
   // é idempotente: se o Cloudflare repetir uma execução, não reenvia e-mail.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runCourtesyLifecycle(env));
+    ctx.waitUntil(Promise.all([
+      runCourtesyLifecycle(env),
+      pruneBalanceHistory(env),
+    ]));
   },
 };
 
@@ -493,6 +501,19 @@ async function runCourtesyLifecycle(env) {
   }
   logEvent({ evt: 'courtesy_lifecycle_run', checked: result.checked, expired: result.expired, emails_sent: result.emails.sent, emails_failed: result.emails.failed });
   return result;
+}
+
+// Mantém a série de saldo útil para relatórios sem deixar o D1 crescer para
+// sempre. O corte só remove amostras antigas; nunca apaga trades, licenças ou
+// o status atual de uma conta.
+async function pruneBalanceHistory(env) {
+  const cutoff = new Date(Date.now() - BALANCE_HISTORY_RETENTION_DAYS * 86400000).toISOString();
+  try {
+    const result = await env.DB.prepare('DELETE FROM balance_history WHERE ts < ?').bind(cutoff).run();
+    logEvent({ evt: 'balance_history_prune', deleted: Number(result && result.meta && result.meta.changes || 0) });
+  } catch (e) {
+    logEvent({ evt: 'balance_history_prune_fail', detail: String(e && e.message || e) });
+  }
 }
 
 /* ───────────────── CRIPTOGRAFIA ───────────────── */
@@ -2755,10 +2776,21 @@ async function handleEaTrades(request, env, json, url) {
          ea_version=COALESCE(excluded.ea_version, ea_status_acc.ea_version),
          last_seen=excluded.last_seen, last_error=NULL`
     ).bind(license, String(account), row.email, bal, eq, op, ver, now));
-    // série temporal de saldo (1 ponto por heartbeat) — base p/ relatório de evolução
+    // Série temporal de saldo: no máximo um ponto a cada 15 minutos por conta.
+    // O status atual segue sendo atualizado em toda chamada acima; esta tabela é
+    // somente o histórico para relatórios e não precisa crescer por heartbeat.
     if (bal != null || eq != null)
-      stmts.push(env.DB.prepare('INSERT INTO balance_history (license_key, account, email, balance, equity, ts) VALUES (?,?,?,?,?,?)')
-        .bind(license, String(account), row.email, bal, eq, now));
+      stmts.push(env.DB.prepare(
+        `INSERT INTO balance_history (license_key, account, email, balance, equity, ts)
+         SELECT ?,?,?,?,?,?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM balance_history
+           WHERE license_key=? AND account=? AND ts>=?
+         )`
+      ).bind(
+        license, String(account), row.email, bal, eq, now,
+        license, String(account), new Date(Date.now() - BALANCE_HISTORY_SNAPSHOT_MS).toISOString()
+      ));
   }
   // trades fechados — dedupe por (licença, CONTA, ticket)
   const persisted = [];
