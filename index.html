@@ -3611,6 +3611,20 @@ async function loadAdminClient(email){
 }
 function openAdminClient(email){ ADMIN_CLIENT_EMAIL=email; loadAdminClient(email); renderPage('admin-results'); }
 function closeAdminClient(){ ADMIN_CLIENT=null; ADMIN_CLIENT_EMAIL=null; renderPage('admin-results'); }
+async function saveAccountBonus(email,btn){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) salvaria as contas extras':'(demo) would save extra accounts','info'); return; }
+  const inp=document.getElementById('accBonusInput'); if(!inp)return;
+  const bonus=Math.max(0,Math.min(100,Math.floor(Number(inp.value)||0)));
+  const old=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Salvando…':'Saving…'; }
+  try{
+    const r=await apiFetch('/api/admin/account-bonus',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,bonus})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ toast(LANG==='pt'?('Contas extras salvas ✓ Total: '+(d.account_limit===-1?'ilimitadas':d.account_limit)):'Saved ✓','success'); await loadAdminClient(email); }
+    else if(d.error==='not_found'){ toast(LANG==='pt'?'Cliente não encontrado.':'Client not found.','error'); }
+    else { toast(LANG==='pt'?'Não foi possível salvar. Atualize o worker (v53) e tente de novo.':'Could not save. Update the worker (v53) and retry.','error'); }
+  }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
+  if(btn){ btn.disabled=false; btn.innerHTML=old; }
+}
 function resMoney(v){ return v==null?'—':(v<0?'−':(v>0?'+':''))+'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function resPlainMoney(v){ return v==null?'—':'US$ '+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function resPayPill(pay){
@@ -3713,6 +3727,17 @@ function renderAdminClientView(){
         <div>${statusPill(C.status||'expired')}</div>
         <div class="mono" style="font-size:.78rem;color:var(--t3);margin-top:6px">${LANG==='pt'?'Saldo':LANG==='en'?'Balance':'Saldo'}: ${resPlainMoney(C.balance)}</div>
       </div>
+    </div>
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg>${LANG==='pt'?'Contas / Licenças':LANG==='en'?'Accounts / Licenses':'Cuentas / Licencias'}</div></div>
+    <p style="color:var(--t3);font-size:.84rem;margin:0 0 12px">${LANG==='pt'?`Liberado agora: <b style="color:var(--t1)">${C.account_limit===-1?'ilimitadas':(C.account_limit!=null?C.account_limit:1)}</b> conta(s). Use "contas extras" pra dar mais que o plano — a Stripe nunca derruba.`:LANG==='en'?`Currently allowed: <b style="color:var(--t1)">${C.account_limit===-1?'unlimited':(C.account_limit!=null?C.account_limit:1)}</b> account(s). Use "extra accounts" to grant more than the plan — Stripe never overrides it.`:`Habilitado ahora: <b style="color:var(--t1)">${C.account_limit===-1?'ilimitadas':(C.account_limit!=null?C.account_limit:1)}</b> cuenta(s).`}</p>
+    <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+      <div class="set-field" style="margin:0">
+        <label>${LANG==='pt'?'Contas extras (bônus)':LANG==='en'?'Extra accounts (bonus)':'Cuentas extra (bono)'}</label>
+        <input type="number" min="0" max="100" step="1" class="set-input" id="accBonusInput" value="${C.account_bonus||0}" style="width:120px">
+      </div>
+      <button class="btn-primary" id="accBonusBtn" onclick="saveAccountBonus('${jsAttr(C.email)}',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${LANG==='pt'?'Salvar':LANG==='en'?'Save':'Guardar'}</button>
     </div>
   </div>
   <div class="hero-card rv" style="margin-top:12px">
