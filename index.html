@@ -2530,9 +2530,9 @@ function buildHistTable(){
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Fechamento':LANG==='en'?'Close':'Cierre'}</div><div class="v">${tr.closeT.slice(11,16)}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Entrada':LANG==='en'?'Entry':'Entrada'}</div><div class="v">${tr.entry}</div></div>
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saída':LANG==='en'?'Exit':'Salida'}</div><div class="v">${tr.exit}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission==null?'—':tr.commission.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap==null?'—':tr.swap.toFixed(2)}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.hasOpen?tr.dur+' min':'—'}</div></div>
+        ${tr.commission==null?'':`<div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission.toFixed(2)}</div></div>`}
+        ${tr.swap==null?'':`<div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap.toFixed(2)}</div></div>`}
+        ${tr.hasOpen?`<div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.dur} min</div></div>`:''}
         <div class="expand-cell"><div class="l">${LANG==='pt'?'Saldo após':LANG==='en'?'Balance after':'Saldo después'}</div><div class="v">${fmtMoneyPlain(tr.balance)}</div></div>
       </div></div></td></tr>`;
     });
