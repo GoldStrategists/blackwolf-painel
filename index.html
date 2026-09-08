@@ -1168,7 +1168,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offse
         <div class="side-sec" data-i18n="nav_section_admin">ADMINISTRAÇÃO</div>
         <div class="nav-item active" data-page="admin-overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span data-i18n="nav_admin_overview">Visão Geral</span></div>
         <div class="nav-item" data-page="admin-results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span data-i18n="nav_admin_results">Resultados</span></div>
-        <div class="nav-item" data-page="admin-live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_live">Quem está vivo</span><span class="badge" id="liveCountBadge" style="display:none">0</span></div>
+        <div class="nav-item" data-page="admin-live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span data-i18n="nav_admin_live">Monitoramento</span><span class="badge" id="liveCountBadge" style="display:none">0</span></div>
         <div class="nav-item" data-page="admin-withdrawals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg><span data-i18n="nav_admin_withdrawals">Comprovantes de Saque</span></div>
         <div class="nav-item" data-page="admin-comms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span data-i18n="nav_admin_comms">Comunicados</span></div>
         <div class="nav-item" data-page="admin-maint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z"/></svg><span data-i18n="nav_admin_maint">Manutenção</span></div>
@@ -1276,7 +1276,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Dashboard",nav_results:"Meus Resultados",nav_history:"Histórico de Trades",nav_withdrawals:"Saques",nav_reports:"Relatórios",nav_admin_withdrawals:"Comprovantes de Saque",
     nav_strategies:"Estratégias",nav_config:"Configurar Robô",nav_section_account:"CONTA",nav_license:"Licença & Contas",
     nav_downloads:"Downloads",nav_setup:"Instalação",nav_faq:"FAQ / Suporte",nav_legal:"Termos Legais",
-    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_live:"Quem está vivo",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_relationship:"Base & Relacionamento",nav_admin_leads:"Leads do Curso",
+    nav_section_admin:"ADMINISTRAÇÃO",nav_admin_overview:"Visão Geral",nav_admin_results:"Resultados",nav_admin_live:"Monitoramento",nav_admin_comms:"Comunicados",nav_admin_maint:"Manutenção",nav_admin_clients:"Clientes",nav_admin_relationship:"Base & Relacionamento",nav_admin_leads:"Leads do Curso",
     nav_admin_licenses:"Licenças",nav_admin_accounts:"Contas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versões do EA",nav_admin_payments:"Pagamentos",
     sidefoot_title:"Precisa de ajuda?",sidefoot_desc:"Fale com nosso suporte via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Atualizar",
@@ -1295,7 +1295,7 @@ const I18N = {
     nav_section_main:"MAIN",nav_dashboard:"Dashboard",nav_results:"My Results",nav_history:"Trade History",nav_withdrawals:"Withdrawals",nav_reports:"Reports",nav_admin_withdrawals:"Withdrawal Proofs",
     nav_strategies:"Strategies",nav_config:"Configure Robot",nav_section_account:"ACCOUNT",nav_license:"License & Accounts",
     nav_downloads:"Downloads",nav_setup:"Installation",nav_faq:"FAQ / Support",nav_legal:"Legal Terms",
-    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_live:"Who's live",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_relationship:"Relationship Base",nav_admin_leads:"Course Leads",
+    nav_section_admin:"ADMINISTRATION",nav_admin_overview:"Overview",nav_admin_results:"Results",nav_admin_live:"Monitoring",nav_admin_comms:"Announcements",nav_admin_maint:"Maintenance",nav_admin_clients:"Clients",nav_admin_relationship:"Relationship Base",nav_admin_leads:"Course Leads",
     nav_admin_licenses:"Licenses",nav_admin_accounts:"MT5 Accounts",nav_section_system:"SYSTEM",nav_admin_files:"EA Versions",nav_admin_payments:"Payments",
     sidefoot_title:"Need help?",sidefoot_desc:"Talk to our support via WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancel",modal_confirm:"Confirm",refresh:"Refresh",
@@ -1314,7 +1314,7 @@ const I18N = {
     nav_section_main:"PRINCIPAL",nav_dashboard:"Panel",nav_results:"Mis Resultados",nav_history:"Historial de Trades",nav_withdrawals:"Retiros",nav_reports:"Informes",nav_admin_withdrawals:"Comprobantes de Retiro",
     nav_strategies:"Estrategias",nav_config:"Configurar Robot",nav_section_account:"CUENTA",nav_license:"Licencia & Cuentas",
     nav_downloads:"Descargas",nav_setup:"Instalación",nav_faq:"FAQ / Soporte",nav_legal:"Términos Legales",
-    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_live:"Quién está activo",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_relationship:"Base de Relaciones",nav_admin_leads:"Leads del Curso",
+    nav_section_admin:"ADMINISTRACIÓN",nav_admin_overview:"Resumen",nav_admin_results:"Resultados",nav_admin_live:"Monitoreo",nav_admin_comms:"Comunicados",nav_admin_maint:"Mantenimiento",nav_admin_clients:"Clientes",nav_admin_relationship:"Base de Relaciones",nav_admin_leads:"Leads del Curso",
     nav_admin_licenses:"Licencias",nav_admin_accounts:"Cuentas MT5",nav_section_system:"SISTEMA",nav_admin_files:"Versiones del EA",nav_admin_payments:"Pagos",
     sidefoot_title:"¿Necesitas ayuda?",sidefoot_desc:"Habla con nuestro soporte por WhatsApp.",sidefoot_btn:"WhatsApp",
     modal_cancel:"Cancelar",modal_confirm:"Confirmar",refresh:"Actualizar",
@@ -5042,19 +5042,21 @@ function renderAdminAccounts(){
 }
 
 /* ─────── ADMIN: QUEM ESTÁ VIVO (monitor de robôs em tempo real) ─────── */
-let ADMIN_LIVE=null, ADMIN_LIVE_LOADING=false;
+let ADMIN_LIVE=null, ADMIN_LIVE_LOADING=false, LIVE_OPEN=new Set();
 async function loadAdminLive(force){
   if(force){ ADMIN_LIVE=null; }
   if(SESSION&&SESSION.isDemo){
     // demo: contas estáveis só para ilustrar a tela (não afeta produção)
     const now=Date.now();
     ADMIN_LIVE={ ok:true, now:new Date(now).toISOString(),
-      counts:{total:4,online:2,idle:1,offline:1,inactive_profile:1},
+      counts:{total:6,online:3,idle:1,offline:2,inactive_profile:1},
       accounts:[
-        {email:'ana@demo.com',name:'Ana Prado',account:'80722145',ea_version:'3.0',balance:12480.55,equity:12510.20,open_positions:1,last_seen:new Date(now-3*6e4).toISOString(),minutes_ago:3,status:'online',last_error:null,symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.5,sessoes_no_grafico:3,contratos:null,teto_perda:null},
-        {email:'bruno@demo.com',name:'Bruno Lima',account:'PA-APEX-611578-02',ea_version:'3.1',balance:50000,equity:49875.10,open_positions:0,last_seen:new Date(now-8*6e4).toISOString(),minutes_ago:8,status:'online',last_error:null,symbol:'MGC 12-26',timeframe:'M5',perfil_ativo:true,modo_entrada:'Conservador',break_even:false,inversa:false,payroll:true,pausado:false,risco_pct:null,sessoes_no_grafico:3,contratos:2,teto_perda:800},
-        {email:'caio@demo.com',name:'Caio Reis',account:'80730991',ea_version:'3.0',balance:9800.00,equity:9800.00,open_positions:0,last_seen:new Date(now-42*6e4).toISOString(),minutes_ago:42,status:'idle',last_error:null,symbol:'XAUUSD',timeframe:'M5',perfil_ativo:false,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.0,sessoes_no_grafico:3,contratos:null,teto_perda:null},
-        {email:'davi@demo.com',name:'Davi Souza',account:'80711002',ea_version:'2.9',balance:15230.75,equity:15230.75,open_positions:0,last_seen:new Date(now-190*6e4).toISOString(),minutes_ago:190,status:'offline',last_error:'no_connection',symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Agressivo',break_even:true,inversa:true,payroll:false,pausado:false,risco_pct:2.0,sessoes_no_grafico:3,contratos:null,teto_perda:null}
+        {email:'luis@demo.com',name:'Luis Braga',account:'80722145',ea_version:'3.0',balance:12480.55,equity:12510.20,open_positions:1,last_seen:new Date(now-3*6e4).toISOString(),minutes_ago:3,status:'online',last_error:null,symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.5,sessoes_no_grafico:3,contratos:null,teto_perda:null},
+        {email:'luis@demo.com',name:'Luis Braga',account:'PA-APEX-611578-02',ea_version:'3.1',balance:50000,equity:49875.10,open_positions:0,last_seen:new Date(now-6*6e4).toISOString(),minutes_ago:6,status:'online',last_error:null,symbol:'MGC 12-26',timeframe:'M5',perfil_ativo:true,modo_entrada:'Conservador',break_even:false,inversa:false,payroll:true,pausado:false,risco_pct:null,sessoes_no_grafico:3,contratos:2,teto_perda:800},
+        {email:'luis@demo.com',name:'Luis Braga',account:'80730991',ea_version:'3.0',balance:9800.00,equity:9800.00,open_positions:0,last_seen:new Date(now-200*6e4).toISOString(),minutes_ago:200,status:'offline',last_error:'no_connection',symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.0,sessoes_no_grafico:3,contratos:null,teto_perda:null},
+        {email:'ana@demo.com',name:'Ana Prado',account:'80712233',ea_version:'3.0',balance:15230.75,equity:15260.10,open_positions:1,last_seen:new Date(now-4*6e4).toISOString(),minutes_ago:4,status:'online',last_error:null,symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Agressivo',break_even:true,inversa:true,payroll:false,pausado:false,risco_pct:2.0,sessoes_no_grafico:3,contratos:null,teto_perda:null},
+        {email:'caio@demo.com',name:'Caio Reis',account:'80730555',ea_version:'3.0',balance:9800.00,equity:9800.00,open_positions:0,last_seen:new Date(now-42*6e4).toISOString(),minutes_ago:42,status:'idle',last_error:null,symbol:'XAUUSD',timeframe:'M5',perfil_ativo:false,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.0,sessoes_no_grafico:3,contratos:null,teto_perda:null},
+        {email:'davi@demo.com',name:'Davi Souza',account:'80711002',ea_version:'2.9',balance:7100.00,equity:7100.00,open_positions:0,last_seen:new Date(now-320*6e4).toISOString(),minutes_ago:320,status:'offline',last_error:'no_connection',symbol:'XAUUSD',timeframe:'M5',perfil_ativo:true,modo_entrada:'Moderado',break_even:true,inversa:false,payroll:false,pausado:false,risco_pct:1.0,sessoes_no_grafico:3,contratos:null,teto_perda:null}
       ]};
     updateLiveBadge(); if(CURRENT_PAGE==='admin-live')renderPage('admin-live'); return;
   }
@@ -5098,9 +5100,9 @@ function renderAdminLive(){
   if(ADMIN_LIVE===null && !ADMIN_LIVE_LOADING){ setTimeout(loadAdminLive,0); }
   const refresh=`<button class="refresh-btn" onclick="loadAdminLive(true);doRefreshSpin(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${t('refresh')}</button>`;
   const head=pageHead(
-    LANG==='pt'?'MONITORAMENTO':LANG==='en'?'MONITORING':'MONITOREO',
-    LANG==='pt'?'Quem está vivo':LANG==='en'?"Who's live":'Quién está activo',
-    LANG==='pt'?'Robôs conectados agora, em tempo quase real. Cada robô se reporta a cada ~5 min — verde = reportou há pouco, vermelho = sumiu.':LANG==='en'?'Robots connected now, near real-time. Each robot reports every ~5 min — green = recent, red = gone.':'Robots conectados ahora, casi en tiempo real.',
+    LANG==='pt'?'AO VIVO':LANG==='en'?'LIVE':'EN VIVO',
+    LANG==='pt'?'Monitoramento de robôs':LANG==='en'?'Robot monitoring':'Monitoreo de robots',
+    LANG==='pt'?'Agrupado por cliente. Cada robô se reporta a cada ~5 min — verde = reportou há pouco, vermelho = sumiu. Clique num cliente para ver os robôs dele.':LANG==='en'?'Grouped by client. Each robot reports every ~5 min — green = recent, red = gone. Click a client to expand their robots.':'Agrupado por cliente. Haz clic en un cliente para ver sus robots.',
     refresh
   );
   if(ADMIN_LIVE===null || ADMIN_LIVE_LOADING){
@@ -5110,43 +5112,74 @@ function renderAdminLive(){
     return head+`<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Não foi possível carregar':LANG==='en'?'Could not load':'No se pudo cargar'}</div><div class="empty-d">${LANG==='pt'?'Verifique se o worker está na versão v55 (endpoint /api/admin/live) e tente de novo.':LANG==='en'?'Make sure the worker is v55 (/api/admin/live) and retry.':'Verifica que el worker sea v55 y reintenta.'}</div></div></div>`;
   }
   const c=ADMIN_LIVE.counts||{total:0,online:0,idle:0,offline:0,inactive_profile:0};
-  const accounts=(ADMIN_LIVE.accounts||[]).slice().sort((a,b)=>{
-    const rank={online:0,idle:1,offline:2,unknown:3};
-    const ra=rank[a.status]??3, rb=rank[b.status]??3;
-    if(ra!==rb) return ra-rb;
-    return (a.minutes_ago==null?1e9:a.minutes_ago)-(b.minutes_ago==null?1e9:b.minutes_ago);
+  const accounts=(ADMIN_LIVE.accounts||[]).slice();
+  // agrupa robôs por cliente (email) — o Luis, por ex., tem vários
+  const gmap={};
+  accounts.forEach(a=>{ const k=String(a.email||'—'); (gmap[k]=gmap[k]||{email:k,name:a.name||a.email||'—',robots:[]}).robots.push(a); });
+  const people=Object.values(gmap).map(g=>{
+    let on=0,idle=0,off=0,perfilOff=0,lastMin=null; const vers=new Set();
+    g.robots.forEach(r=>{
+      if(r.status==='online')on++; else if(r.status==='idle')idle++; else if(r.status==='offline')off++;
+      if(r.perfil_ativo===false)perfilOff++;
+      if(r.ea_version)vers.add(String(r.ea_version));
+      if(r.minutes_ago!=null && (lastMin==null||r.minutes_ago<lastMin))lastMin=r.minutes_ago;
+    });
+    const gstatus = on>0?'online':idle>0?'idle':off>0?'offline':'unknown';
+    // robôs do cliente: online primeiro
+    g.robots.sort((x,y)=>{ const rk={online:0,idle:1,offline:2,unknown:3}; const rx=rk[x.status]??3,ry=rk[y.status]??3; if(rx!==ry)return rx-ry; return (x.minutes_ago==null?1e9:x.minutes_ago)-(y.minutes_ago==null?1e9:y.minutes_ago); });
+    return Object.assign(g,{on,idle,off,perfilOff,vers:[...vers].sort(),lastMin,gstatus});
   });
-  const stats=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
-    ${liveStatCard(c.total||0, LANG==='pt'?'Total':LANG==='en'?'Total':'Total', 'var(--t1)')}
+  // ordena pessoas: quem precisa de atenção (perfil off / offline) primeiro, depois mais vivos, depois nome
+  people.sort((a,b)=>{
+    const aa=(a.perfilOff>0||a.off>0)?0:1, bb=(b.perfilOff>0||b.off>0)?0:1; if(aa!==bb)return aa-bb;
+    const rk={online:0,idle:1,offline:2,unknown:3}; if(rk[a.gstatus]!==rk[b.gstatus])return rk[a.gstatus]-rk[b.gstatus];
+    return String(a.name).localeCompare(String(b.name));
+  });
+  const stats=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin-bottom:14px">
+    ${liveStatCard(people.length, LANG==='pt'?'Clientes':LANG==='en'?'Clients':'Clientes', 'var(--t1)')}
+    ${liveStatCard(c.total!=null?c.total:accounts.length, LANG==='pt'?'Robôs':LANG==='en'?'Robots':'Robots', 'var(--t1)')}
     ${liveStatCard(c.online||0, LANG==='pt'?'Online':LANG==='en'?'Online':'En línea', 'var(--green-l)')}
-    ${liveStatCard(c.idle||0, LANG==='pt'?'Ocioso':LANG==='en'?'Idle':'Inactivo', 'var(--amber-l)')}
     ${liveStatCard(c.offline||0, 'Offline', 'var(--red-l)')}
-    ${liveStatCard(c.inactive_profile||0, LANG==='pt'?'Perfil inativo':LANG==='en'?'Profile off':'Perfil off', (c.inactive_profile>0?'var(--red-l)':'var(--t1)'))}
+    ${liveStatCard(c.inactive_profile||0, LANG==='pt'?'Perfil off':LANG==='en'?'Profile off':'Perfil off', (c.inactive_profile>0?'var(--red-l)':'var(--t1)'))}
   </div>`;
   const alarm = (c.inactive_profile>0)
     ? `<div class="banner warn rv" style="margin-bottom:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div class="banner-tx">${LANG==='pt'?`<b>${c.inactive_profile}</b> robô(s) conectado(s) mas com o <b>perfil desativado</b> — o robô está rodando porém não vai operar. Verifique com o cliente.`:LANG==='en'?`<b>${c.inactive_profile}</b> robot(s) connected but with the <b>profile disabled</b> — running but won't trade.`:`<b>${c.inactive_profile}</b> robot(s) con el perfil desactivado.`}</div></div>`
     : '';
-  const rows = accounts.map(a=>{
-    const sm=liveStatusMeta(a.status);
-    const cfg=[];
-    if(a.perfil_ativo===false) cfg.push(`<span class="pill revoked" style="font-size:.58rem">${LANG==='pt'?'perfil OFF':LANG==='en'?'profile OFF':'perfil OFF'}</span>`);
-    if(a.pausado===true) cfg.push(`<span class="pill due" style="font-size:.58rem">${LANG==='pt'?'pausado':'paused'}</span>`);
-    if(a.open_positions>0) cfg.push(`<span class="pill active" style="font-size:.58rem">${a.open_positions} ${LANG==='pt'?'aberta'+(a.open_positions>1?'s':''):'open'}</span>`);
-    const sub=[a.symbol?esc(a.symbol):null,a.timeframe?esc(a.timeframe):null].filter(Boolean).join(' · ');
-    return `<tr>
-      <td><div class="tbl-name">${esc(a.name||a.email||'—')}</div><div style="font-size:.7rem;color:var(--t3)" class="mono">${esc(a.email||'')}</div></td>
-      <td class="mono" style="font-size:.78rem">${esc(String(a.account||'—'))}</td>
-      <td class="mono" style="font-size:.78rem">${a.ea_version?('v'+esc(a.ea_version)):'—'}</td>
-      <td style="font-size:.78rem">${sub||'—'}</td>
-      <td class="mono" style="font-size:.78rem">${a.balance!=null?fmtMoneyPlain(a.balance):'—'}</td>
-      <td>${cfg.join(' ')||'<span style="color:var(--t3)">—</span>'}</td>
-      <td class="mono" style="font-size:.78rem;color:var(--t3)">${liveAgo(a.minutes_ago)}</td>
-      <td><span style="display:inline-flex;align-items:center;gap:6px;font-size:.78rem"><span style="width:8px;height:8px;border-radius:50%;background:${sm.c};box-shadow:0 0 6px ${sm.c};flex-shrink:0"></span>${sm.l}</span></td>
-    </tr>`;
-  }).join('');
-  const table = accounts.length
-    ? `<div class="card rv"><div class="tbl-wrap"><table class="tbl" style="min-width:820px"><thead><tr>
-        <th>${LANG==='pt'?'Cliente':LANG==='en'?'Client':'Cliente'}</th>
+  const numPill=(n,color,title)=>n>0?`<span title="${title}" style="display:inline-flex;align-items:center;gap:5px;font-size:.74rem;color:var(--t2)"><span style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color}"></span>${n}</span>`:'';
+  const cards = people.map((p,idx)=>{
+    const sm=liveStatusMeta(p.gstatus);
+    const open=LIVE_OPEN.has(p.email);
+    const robClass=p.robots.length===1?(LANG==='pt'?'robô':'robot'):(LANG==='pt'?'robôs':'robots');
+    const versTxt=p.vers.length?p.vers.map(v=>'v'+esc(v)).join(' · '):'—';
+    // linha-resumo por cliente
+    const header=`<div onclick="toggleLive(${idx},'${jsAttr(p.email)}')" style="cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="width:10px;height:10px;border-radius:50%;background:${sm.c};box-shadow:0 0 7px ${sm.c};flex-shrink:0"></span>
+      <div style="flex:1;min-width:150px">
+        <div class="tbl-name">${esc(p.name)}${p.perfilOff>0?` <span class="pill revoked" style="font-size:.55rem">${LANG==='pt'?'perfil OFF':'profile OFF'}</span>`:''}</div>
+        <div style="font-size:.7rem;color:var(--t3)" class="mono">${esc(p.email)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">${numPill(p.on,'var(--green)',LANG==='pt'?'online':'online')}${numPill(p.idle,'var(--amber)',LANG==='pt'?'ocioso':'idle')}${numPill(p.off,'var(--red)','offline')}</div>
+      <div style="font-family:var(--fm);font-size:.72rem;color:var(--t3);min-width:64px;text-align:right">${versTxt}</div>
+      <div style="display:flex;align-items:center;gap:8px;color:var(--t3)"><span style="font-size:.74rem">${p.robots.length} ${robClass}</span><svg id="live-chev-${idx}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;transition:transform .18s;transform:${open?'rotate(180deg)':'none'}"><polyline points="6 9 12 15 18 9"/></svg></div>
+    </div>`;
+    const rrows=p.robots.map(a=>{
+      const rsm=liveStatusMeta(a.status);
+      const cfg=[];
+      if(a.perfil_ativo===false) cfg.push(`<span class="pill revoked" style="font-size:.55rem">${LANG==='pt'?'perfil OFF':'profile OFF'}</span>`);
+      if(a.pausado===true) cfg.push(`<span class="pill due" style="font-size:.55rem">${LANG==='pt'?'pausado':'paused'}</span>`);
+      if(a.open_positions>0) cfg.push(`<span class="pill active" style="font-size:.55rem">${a.open_positions} ${LANG==='pt'?'aberta'+(a.open_positions>1?'s':''):'open'}</span>`);
+      const sub=[a.symbol?esc(a.symbol):null,a.timeframe?esc(a.timeframe):null].filter(Boolean).join(' · ');
+      return `<tr>
+        <td class="mono" style="font-size:.76rem">${esc(String(a.account||'—'))}</td>
+        <td class="mono" style="font-size:.76rem">${a.ea_version?('v'+esc(a.ea_version)):'—'}</td>
+        <td style="font-size:.76rem">${sub||'—'}</td>
+        <td class="mono" style="font-size:.76rem">${a.balance!=null?fmtMoneyPlain(a.balance):'—'}</td>
+        <td>${cfg.join(' ')||'<span style="color:var(--t3)">—</span>'}</td>
+        <td class="mono" style="font-size:.76rem;color:var(--t3)">${liveAgo(a.minutes_ago)}</td>
+        <td><span style="display:inline-flex;align-items:center;gap:6px;font-size:.76rem"><span style="width:8px;height:8px;border-radius:50%;background:${rsm.c};box-shadow:0 0 6px ${rsm.c};flex-shrink:0"></span>${rsm.l}</span></td>
+      </tr>`;
+    }).join('');
+    const detail=`<div id="live-det-${idx}"${open?'':' hidden'} style="border-top:1px solid var(--bord)"><div class="tbl-wrap"><table class="tbl" style="min-width:680px"><thead><tr>
         <th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>
         <th>${LANG==='pt'?'Robô':'Robot'}</th>
         <th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
@@ -5154,9 +5187,19 @@ function renderAdminLive(){
         <th>${LANG==='pt'?'Estado':LANG==='en'?'Flags':'Estado'}</th>
         <th>${LANG==='pt'?'Visto há':LANG==='en'?'Last seen':'Visto hace'}</th>
         <th>Status</th>
-      </tr></thead><tbody>${rows}</tbody></table></div></div>`
+      </tr></thead><tbody>${rrows}</tbody></table></div></div>`;
+    return `<div class="card rv" style="padding:0;overflow:hidden;margin-bottom:10px">${header}${detail}</div>`;
+  }).join('');
+  const body = people.length
+    ? `<div>${cards}</div>`
     : `<div class="card rv"><div class="empty"><div class="empty-t">${LANG==='pt'?'Nenhum robô conectado ainda':LANG==='en'?'No robots connected yet':'Aún no hay robots conectados'}</div><div class="empty-d">${LANG==='pt'?'Assim que um cliente ligar o robô, ele aparece aqui em poucos minutos.':LANG==='en'?'As soon as a client turns on their robot it appears here within minutes.':'En cuanto un cliente encienda su robot aparecerá aquí.'}</div></div></div>`;
-  return head+stats+alarm+table;
+  return head+stats+alarm+body;
+}
+function toggleLive(idx,email){
+  const d=document.getElementById('live-det-'+idx); if(!d)return;
+  d.hidden=!d.hidden;
+  const chev=document.getElementById('live-chev-'+idx); if(chev)chev.style.transform=d.hidden?'none':'rotate(180deg)';
+  if(d.hidden)LIVE_OPEN.delete(email); else LIVE_OPEN.add(email);
 }
 function doRefreshSpin(btn){ if(btn){ btn.classList.add('spin'); setTimeout(()=>btn.classList.remove('spin'),1000); } }
 
