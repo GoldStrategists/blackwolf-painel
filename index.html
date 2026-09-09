@@ -4096,32 +4096,32 @@ function robotUpload(kind){
   const f=(document.getElementById(ids.file)||{}).files;
   if(!f||!f[0]){ toast(isNt?(LANG==='pt'?'Escolha o arquivo .zip do NinjaTrader.':'Choose the NinjaTrader .zip file.'):(LANG==='pt'?'Escolha o arquivo .ex5.':'Choose the .ex5 file.'),'error'); return; }
   const file=f[0];
+  const validExt=isNt?/.zip$/i:/.ex5$/i;
+  if(!validExt.test(file.name)){ toast(isNt?(LANG==='pt'?'Envie o pacote .zip do NinjaTrader.':'Upload the NinjaTrader .zip package.'):(LANG==='pt'?'Envie o arquivo .ex5 do MetaTrader.':'Upload the MetaTrader .ex5 file.'),'error'); return; }
   if(file.size>4*1024*1024){ toast(LANG==='pt'?'Arquivo grande demais (máx 4MB).':'File too large.','error'); return; }
   const ver=(document.getElementById(ids.ver)||{}).value||'1.0';
   const mandatory=!!(document.getElementById(ids.mand)||{}).checked;
   const btn=document.getElementById(ids.btn); if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Enviando…':'Uploading…'; }
-  // Envia o binário diretamente em multipart. A versão anterior convertia o robô
-  // inteiro em base64/JSON no navegador: além de aumentar o arquivo em ~33%, isso
-  // falhava em alguns Safari/arquivos do NinjaTrader antes de chegar ao Worker.
-  (async()=>{
+  // O Worker ativo recebe base64 JSON. A leitura foi mantida isolada para não
+  // travar a interface e sempre restaura o botão mesmo quando o envio falhar.
+  const reader=new FileReader();
+  reader.onload=async()=>{
     try{
-      const body=new FormData();
-      body.append('file',file,file.name);
-      body.append('version',ver);
-      body.append('mandatory',mandatory?'true':'false');
-      body.append('type',kind);
-      const r=await apiFetch('/api/admin/robot',{method:'POST',body});
+      const b64=String(reader.result).replace(/^data:[^,]*,/,'');
+      const r=await apiFetch('/api/admin/robot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base64:b64,version:ver,filename:file.name,mandatory,type:kind})});
       const d=await r.json().catch(()=>({}));
       if(r.ok){ if(isNt){ ROBOT_META_NT={hasFile:true,meta:d.meta}; } else { ROBOT_META={hasFile:true,meta:d.meta}; } toast(LANG==='pt'?'Robô atualizado ✓':'Robot updated ✓','success'); renderPage(CURRENT_PAGE==='admin-files'?'admin-files':'admin-maint'); }
       else {
         const msg=d.error==='too_large'?(LANG==='pt'?'Arquivo grande demais.':'Too large.')
-          :d.error==='invalid_file_type'?(LANG==='pt'?'Formato de arquivo inválido para esta plataforma.':'Invalid file type for this platform.')
+          :d.error==='unauthorized'||d.error==='forbidden'?(LANG==='pt'?'Sua sessão não tem permissão de administrador. Entre novamente.':'Your session does not have administrator permission. Please sign in again.')
           :(LANG==='pt'?'Falha ao enviar. Tente novamente.':'Upload failed. Please try again.');
         toast(msg,'error');
       }
     }catch(e){ toast(LANG==='pt'?'Sem conexão com o servidor.':'No connection to the server.','error'); }
     if(btn){ btn.disabled=false; btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot'; }
-  })();
+  };
+  reader.onerror=()=>{ toast(LANG==='pt'?'Erro ao ler o arquivo.':'Read error.','error'); if(btn){btn.disabled=false;btn.textContent=LANG==='pt'?'Enviar robô':'Upload robot';} };
+  reader.readAsDataURL(file);
 }
 // baixa o robô guardado no servidor (com sessão); MT5 cai pro estático se não houver
 async function downloadRobot(kind){
