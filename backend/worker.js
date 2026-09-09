@@ -2313,13 +2313,34 @@ async function handleAdminPause(request, env, json) {
 
 // bytes <-> base64 (o robô é binário; guardamos base64 no KV)
 function b64ToBytes(b64) { const bin = atob(b64); const n = bin.length; const out = new Uint8Array(n); for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i); return out; }
-// POST /api/admin/robot  { base64, version, size, filename?, mandatory? }
+function bytesToB64(bytes) {
+  // Evita estourar a pilha do btoa/apply quando o pacote vem do NinjaTrader.
+  const chunk = 0x8000;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const part = bytes.subarray(i, Math.min(i + chunk, bytes.length));
+    for (let j = 0; j < part.length; j++) bin += String.fromCharCode(part[j]);
+  }
+  return btoa(bin);
+}
+// POST /api/admin/robot — multipart {file, version, mandatory, type}
+// Mantém JSON/base64 como compatibilidade para instalações antigas do painel.
 async function handleRobotUpload(request, env, json) {
   const email = await getSessionEmail(request, env);
   if (!email) return json({ error: 'unauthorized' }, 401);
   const me = await env.DB.prepare('SELECT role FROM users WHERE email = ?').bind(email).first();
   if (!me || me.role !== 'admin') return json({ error: 'forbidden' }, 403);
-  const b = await request.json();
+  const multipart = (request.headers.get('Content-Type') || '').toLowerCase().includes('multipart/form-data');
+  let b;
+  if (multipart) {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File) || !file.size) return json({ error: 'no_file' }, 400);
+    if (file.size > 4 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx 4 MB' }, 413);
+    b = { type: form.get('type'), version: form.get('version'), filename: file.name, mandatory: form.get('mandatory') === 'true', base64: bytesToB64(new Uint8Array(await file.arrayBuffer())) };
+  } else {
+    try { b = await request.json(); } catch (e) { return json({ error: 'invalid_payload' }, 400); }
+  }
   const kind = (b.type === 'nt') ? 'nt' : 'mt5';                      // v40: dois robôs (MT5 e NinjaTrader)
   const kvFile = kind === 'nt' ? 'robot_nt' : 'robot_ex5';
   const kvMeta = kind === 'nt' ? 'robot_nt_meta' : 'robot_meta';
@@ -2327,8 +2348,10 @@ async function handleRobotUpload(request, env, json) {
   const b64 = String(b.base64 || '').replace(/^data:[^,]*,/, '');   // aceita data-URL ou base64 puro
   if (!b64) return json({ error: 'no_file' }, 400);
   if (b64.length > 6 * 1024 * 1024) return json({ error: 'too_large', message: 'Máx ~4MB' }, 413); // ~4MB binário
+  const filename = capStr(b.filename, 80) || defName;
+  if ((kind === 'nt' && !/\.zip$/i.test(filename)) || (kind === 'mt5' && !/\.ex5$/i.test(filename))) return json({ error: 'invalid_file_type' }, 400);
   const size = Math.round(b64.length * 3 / 4);
-  const meta = { version: capStr(b.version, 40) || '1.0', size, filename: capStr(b.filename, 80) || defName, mandatory: !!b.mandatory, platform: kind, updatedAt: new Date().toISOString(), by: email };
+  const meta = { version: capStr(b.version, 40) || '1.0', size, filename, mandatory: !!b.mandatory, platform: kind, updatedAt: new Date().toISOString(), by: email };
   await env.SESSIONS.put(kvFile, b64);
   await env.SESSIONS.put(kvMeta, JSON.stringify(meta));
   logEvent({ evt: 'robot_upload', by: email, platform: kind, version: meta.version, size });
