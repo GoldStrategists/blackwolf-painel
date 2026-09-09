@@ -1763,7 +1763,7 @@ const DEMO_DATA = {
       sessions:{sydney:false,tokyo:true,london:true,newyork:true},
       timezone:"GMT+0", newsPause:true,
     },
-    eaFile:{name:"BlackWolf_AI.ex5",version:"2026.08.23",size:"165 KB"},
+    eaFile:{name:"BlackWolf_AI.ex5",version:"3.0",size:"188 KB"},
     webRequestUrl:"https://blackwolf-api.contact-1f3.workers.dev", mt5Folder:"\\MQL5\\Experts\\Advisors",
   },
   admin:{
@@ -1805,7 +1805,7 @@ function buildEmptyData(){
         sessions:{sydney:false,tokyo:true,london:true,newyork:true},
         timezone:"GMT+0", newsPause:true,
       },
-      eaFile:{name:"BlackWolf_AI.ex5",version:"2026.08.23",size:"165 KB"},
+      eaFile:{name:"BlackWolf_AI.ex5",version:"3.0",size:"188 KB"},
       webRequestUrl:"https://blackwolf-api.contact-1f3.workers.dev", mt5Folder:"\\MQL5\\Experts\\Advisors",
     },
     admin:{
@@ -3005,7 +3005,7 @@ function renderDownloads(){
   <div class="card grad rv" style="margin-top:12px">
     <div class="dl-card">
       <div class="dl-ico">🐺</div>
-      <div class="dl-info"><div class="dl-name">BlackWolf_NinjaTrader.zip<span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div><div class="dl-meta">Strategy · NinjaTrader 8 · .zip</div></div>
+      <div class="dl-info"><div class="dl-name">BlackWolf_NinjaTrader.zip<span class="pill current">v3.1</span><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div><div class="dl-meta">Strategy · NinjaTrader 8 · 182 KB · .zip</div></div>
       ${dlBtn('nt', baixar+' (NT8)')}
     </div>
   </div>
@@ -4133,9 +4133,9 @@ async function downloadRobot(kind){
     const r=await apiFetch('/api/robot/download'+(isNt?'?type=nt':''));
     if(r.ok){ const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500); }
     else if(r.status===403){ toast(LANG==='pt'?'Sua licença está inativa.':'Your license is inactive.','error'); }
-    else if(isNt){ toast(LANG==='pt'?'Robô do NinjaTrader ainda não está disponível.':LANG==='en'?'The NinjaTrader robot is not available yet.':'El robot de NinjaTrader aún no está disponible.','error'); }
+    else if(isNt){ window.location.href='/BlackWolf_NinjaTrader.zip'; } // fallback estático NT 3.1
     else { window.location.href='/BlackWolf_AI.ex5'; } // fallback: arquivo estático (só MT5)
-  }catch(e){ if(isNt){ toast(LANG==='pt'?'Sem conexão.':'No connection.','error'); } else { window.location.href='/BlackWolf_AI.ex5'; } }
+  }catch(e){ window.location.href=isNt?'/BlackWolf_NinjaTrader.zip':'/BlackWolf_AI.ex5'; }
 }
 // abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
 // cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
