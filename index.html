@@ -6,6 +6,27 @@
 <title>Black Wolf — Painel</title>
 <meta name="description" content="Painel Black Wolf — resultados detalhados, histórico completo, licença e suporte.">
 <meta name="theme-color" content="#07080B">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<script>
+// Safari pode restaurar uma aba inteira pelo Back/Forward Cache, sem pedir o
+// HTML atual ao servidor. Nessa situação, abre a URL atual uma única vez.
+// Isso evita que uma tela de downloads já aberta mostre versões antigas.
+(()=>{
+  const BUILD='20260910-310';
+  const reloadRestoredPage=()=>{
+    const u=new URL(window.location.href);
+    if(u.searchParams.get('_bw_build')===BUILD) return;
+    u.searchParams.set('_bw_build',BUILD);
+    window.location.replace(u.toString());
+  };
+  window.addEventListener('pageshow',(event)=>{
+    const nav=performance.getEntriesByType&&performance.getEntriesByType('navigation')[0];
+    if(event.persisted||(nav&&nav.type==='back_forward')) reloadRestoredPage();
+  });
+})();
+</script>
 <!-- Favicon: inline SVG wolf head (blue) -->
 <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMjMyIDEyNzUnPjxyZWN0IHdpZHRoPScxMjMyJyBoZWlnaHQ9JzEyNzUnIHJ4PScyMzAnIGZpbGw9JyMwNzA4MEInLz48ZyB0cmFuc2Zvcm09J3RyYW5zbGF0ZSgxODUsMTkxKSBzY2FsZSgwLjcpJz48cGF0aCBmaWxsPScjMkQ2Q0ZGJyBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGQ9J000MzEsODY4IDYxNiwxMjc0IDgwMCw4NjggNjE3LDk3NlogTTAsMCAzNyw1OTkgNDkxLDgxMCA2MTYsNzMxIDc0MSw4MTAgMTIwMCw1OTYgMTIzMSwwIDk1Myw0NjIgNjE4LDU2OSAyNzgsNDYyWiBNNzI1LDczMiA3MjYsNzMxIDcyNyw3MzIgNzI2LDczM1ogTTUwNCw3MzIgNTA1LDczMSA1MDYsNzMyIDUwNSw3MzNaIE05MjQsNjYyIDcyNiw3MzEgODI1LDU4NVogTTMwNyw2NjIgNDA2LDU4NSA1MDUsNzMxWicvPjwvZz48L3N2Zz4=">
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMjMyIDEyNzUnPjxyZWN0IHdpZHRoPScxMjMyJyBoZWlnaHQ9JzEyNzUnIHJ4PScyMzAnIGZpbGw9JyMwNzA4MEInLz48ZyB0cmFuc2Zvcm09J3RyYW5zbGF0ZSgxODUsMTkxKSBzY2FsZSgwLjcpJz48cGF0aCBmaWxsPScjMkQ2Q0ZGJyBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGQ9J000MzEsODY4IDYxNiwxMjc0IDgwMCw4NjggNjE3LDk3NlogTTAsMCAzNyw1OTkgNDkxLDgxMCA2MTYsNzMxIDc0MSw4MTAgMTIwMCw1OTYgMTIzMSwwIDk1Myw0NjIgNjE4LDU2OSAyNzgsNDYyWiBNNzI1LDczMiA3MjYsNzMxIDcyNyw3MzIgNzI2LDczM1ogTTUwNCw3MzIgNTA1LDczMSA1MDYsNzMyIDUwNSw3MzNaIE05MjQsNjYyIDcyNiw3MzEgODI1LDU4NVogTTMwNyw2NjIgNDA2LDU4NSA1MDUsNzMxWicvPjwvZz48L3N2Zz4=">
