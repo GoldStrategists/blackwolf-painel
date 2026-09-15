@@ -34,9 +34,15 @@
 | 7 PAPER TRADE | | | `stage-7-paper.md` | |
 | 8 PRODUCTION | | | `stage-8-production.md` | |
 
-## Modelo de custo
+## Modelo de custo e fonte de dados
 
-<Spread médio real, comissão, swap, tick/contrato em futuros, e de onde saiu cada número.>
+- **Modo de modelagem:** tick real (`real_ticks`) — obrigatório
+- **Qualidade do histórico:** ____% (mínimo 99)
+- **Corretora / servidor:** ____
+- **Período coberto por tick real:** ____ a ____
+- **Spread:** <real dos ticks ou fixo de ____ pontos>
+- **Comissão conferida na especificação do símbolo:** US$ ____ por lote/contrato
+- **Swap:** ____
 
 ## Controle de teste múltiplo
 

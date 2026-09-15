@@ -28,7 +28,9 @@ const historico = (ate) =>
   }));
 
 const metricasCompletas = {
-  cost_model: 'spread 20 pts + comissao 7/lote + swap', is_trades: 420, is_profit_factor: 1.6,
+  cost_model: 'spread real dos ticks + comissao 7/lote + swap da corretora', modeling_mode: 'real_ticks',
+  history_quality_pct: 100, data_source: 'Corretora X — servidor Live, ticks reais 2022-01 a 2026-08',
+  is_trades: 420, is_profit_factor: 1.6,
   reproduction_reference: 'reimplementacao independente em Python', reproduction_delta_pct: 8,
   oos_trades: 180, oos_profit_factor: 1.4, oos_expectancy_r: 0.18, oos_degradation_pct: 22, final_holdout_uses: 1,
   wf_windows: 8, wf_profitable_windows_pct: 75, wf_efficiency_pct: 61,
@@ -91,6 +93,8 @@ caso('estrategia rejeitada nao e cobrada pelo gate em que morreu', [morta()], { 
 caso('pular estagio e recusado', [{ ...aprovada(), stage_history: historico(8).filter((h) => h.stage !== 5) }], { contendo: 'sem pular etapa' });
 caso('evidencia inexistente e recusada', [{ ...aprovada(), stage_history: historico(8).map((h) => (h.stage === 4 ? { ...h, evidence: 'lab/strategies/alvo/nao-existe.md' } : h)) }], { contendo: 'evidência não existe em disco' });
 caso('metrica ausente barra a promocao', [{ ...aprovada(), metrics: { ...metricasCompletas, mc_dd95_pct: null } }], { contendo: 'falta a evidência "mc_dd95_pct"' });
+caso('backtest fora de tick real e recusado', [{ ...aprovada(), metrics: { ...metricasCompletas, modeling_mode: 'every_tick' } }], { contendo: 'roda em tick real' });
+caso('qualidade de historico baixa barra a promocao', [{ ...aprovada(), metrics: { ...metricasCompletas, history_quality_pct: 62 } }], { contendo: 'history_quality_pct = 62 < mínimo 99' });
 caso('numero abaixo do gate barra a promocao', [{ ...aprovada(), metrics: { ...metricasCompletas, oos_profit_factor: 1.05 } }], { contendo: 'oos_profit_factor = 1.05 < mínimo 1.25' });
 caso('drawdown de monte carlo acima do teto barra', [{ ...aprovada(), metrics: { ...metricasCompletas, mc_dd95_pct: 40 } }], { contendo: 'mc_dd95_pct = 40 > máximo 25' });
 caso('muitas configuracoes sem ajuste de teste multiplo barra', [{ ...aprovada(), configs_tested: 400 }], { contendo: 'multiple_testing_adjustment' });

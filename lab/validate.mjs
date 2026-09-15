@@ -182,6 +182,12 @@ function validateStrategy(s) {
     }
   }
 
+  // --- tick real: regra fixa da casa, não preferência
+  const modoExigido = (gates._regras_fixas || {}).modeling_mode;
+  if (modoExigido && vencidos >= 1 && metrics.modeling_mode && metrics.modeling_mode !== modoExigido) {
+    err(id, `modeling_mode = "${metrics.modeling_mode}": backtest aqui roda em tick real ("${modoExigido}"). Tick gerado a partir de M1 não vale para estratégia de M5.`);
+  }
+
   // --- controles anti-overfitting (valem a partir da validação)
   if (vencidos >= 3) {
     const limite = gates.global.max_configs_without_adjustment;

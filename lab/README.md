@@ -10,6 +10,7 @@ lab/
   gates.json             os números que promovem ou reprovam
   validate.mjs           aplica a lei e gera os documentos
   validate.test.mjs      testa o validador
+  COMO_RODAR_NO_MT5.md   guia prático de cada estágio no MetaTrader 5
   templates/             modelos de dossiê e de relatório de estágio
   strategies/<id>/       dossiê + evidência de cada estratégia
 ```
@@ -22,7 +23,7 @@ Os arquivos `HALL_OF_FAME.md` e `STRATEGY_GRAVEYARD.md` na raiz são **gerados**
 ```bash
 node lab/validate.mjs           # confere tudo (exit 1 se houver erro)
 node lab/validate.mjs --write   # regenera os dois documentos
-node lab/validate.test.mjs      # 17 testes do próprio validador
+node lab/validate.test.mjs      # 19 testes do próprio validador
 ```
 
 Rode `node lab/validate.mjs` antes de todo commit que toque no laboratório. Se um dia houver

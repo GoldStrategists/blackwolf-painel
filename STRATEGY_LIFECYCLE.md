@@ -43,7 +43,14 @@ Regras congeladas antes de rodar. Custo realista significa spread médio real do
 comissão, swap e — em futuros — comissão por contrato e tick correto. Backtest sem custo
 não é backtest, é gráfico.
 
-- **Gate:** ≥ 100 trades, profit factor > 1.0 **depois** dos custos, modelo de custo descrito.
+**Tick real é obrigatório.** No MetaTrader 5, modo "Cada tick com base em ticks reais", com a
+barra de qualidade do histórico em 100%. Tick gerado a partir do candle de 1 minuto não vale
+para estratégia de M5 — e quando a corretora não tem tick real no período, o MT5 completa com
+tick sintético sem avisar. Por isso o registro exige `modeling_mode`, `history_quality_pct` e
+`data_source` juntos. Passo a passo em [`lab/COMO_RODAR_NO_MT5.md`](lab/COMO_RODAR_NO_MT5.md).
+
+- **Gate:** ≥ 100 trades, profit factor > 1.0 **depois** dos custos, modelo de custo descrito,
+  tick real e qualidade de histórico ≥ 99%.
 - **Evidência:** `stage-1-backtest.md` + relatório exportado da plataforma + o arquivo de
   trades (CSV) usado para calcular tudo.
 
