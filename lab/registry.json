@@ -22,7 +22,16 @@
       "promoted_at": null,
       "grandfathered": {
         "reason": "Em produção e vendido a clientes desde antes da criação do laboratório. Entra no registro para ser auditado, NÃO para ser aprovado.",
-        "missing_stages": [0, 1, 2, 3, 4, 5, 6, 7],
+        "missing_stages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
         "audit_deadline": "2026-12-31"
       },
       "configs_tested": null,
@@ -49,7 +58,16 @@
       "promoted_at": null,
       "grandfathered": {
         "reason": "Em produção e distribuído a clientes desde antes da criação do laboratório. Entra no registro para ser auditado, NÃO para ser aprovado.",
-        "missing_stages": [0, 1, 2, 3, 4, 5, 6, 7],
+        "missing_stages": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
         "audit_deadline": "2026-12-31"
       },
       "configs_tested": null,
@@ -62,6 +80,38 @@
         "Depende do mesmo ativo do EA: risco de concentração somado, não diversificado."
       ],
       "rejection": null
+    },
+    {
+      "id": "nasdaq-intraday-momentum",
+      "name": "Nasdaq — momentum intradiário de fim de sessão",
+      "market": "US100 (Nasdaq) · M5 · MetaTrader 5 · posição sempre zerada antes do fechamento",
+      "version": "0.1",
+      "origin": "public",
+      "owner": "Luiz",
+      "hypothesis": "Perto do fechamento existe fluxo obrigatório (rebalanceamento de fundos, ETFs alavancados e quem só opera uma vez ao dia) que não é opinião sobre preço. Esse fluxo tende a empurrar o preço na direção que o dia já vinha tomando, e o formador de mercado cobra para absorver esse desequilíbrio. Referência pública: Gao, Han, Li & Zhou, Market Intraday Momentum, Journal of Financial Economics (2018).",
+      "stage": 0,
+      "status": "in_lab",
+      "promoted_at": null,
+      "configs_tested": 0,
+      "stage_history": [
+        {
+          "stage": 0,
+          "date": "2026-09-15",
+          "verdict": "pass",
+          "evidence": "lab/strategies/nasdaq-intraday-momentum/stage-0-idea.md",
+          "notes": "Hipótese e critério de morte escritos antes de qualquer teste. Desenvolvimento: 2025. Validação lacrada: 2026 em diante."
+        }
+      ],
+      "metrics": {},
+      "weaknesses": [
+        "Evidência dividida: parte da literatura pós-publicação indica enfraquecimento fora da amostra original; parte sustenta que o efeito persiste.",
+        "Estratégia pública: margem apertada, o custo de operação decide se sobra lucro.",
+        "Entra perto do fechamento, janela de notícia de banco central e balanço — gap dentro da sessão fura stop.",
+        "Se o resultado morrer ao deslocar o horário em 15 minutos, é ajuste ao passado e não fluxo institucional.",
+        "Índice em CFD: spread e horário de sessão variam por corretora; o resultado pode ser da fonte de dados."
+      ],
+      "rejection": null
     }
-  ]
+  ],
+  "updated": "2026-09-15"
 }
