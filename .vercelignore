@@ -1,0 +1,17 @@
+# Arquivos que NÃO devem ir para o deploy público do painel.
+# Este repositório é servido como site estático: tudo que é versionado aqui e não
+# está nesta lista fica acessível por URL.
+
+# Laboratório de estratégias — documentação interna.
+# (vercel.json também redireciona estes caminhos para "/", como segunda barreira:
+#  não consegui confirmar se .vercelignore vale igual em deploy via Git.)
+lab/
+STRATEGY_LIFECYCLE.md
+HALL_OF_FAME.md
+STRATEGY_GRAVEYARD.md
+
+# PENDENTE DE DECISÃO (não habilitado sem o Luiz confirmar):
+# o diretório backend/ contém o código-fonte do Worker, o schema do D1 e as
+# migrações. O painel não referencia nenhum caminho /backend/, então excluir
+# daqui parece seguro — mas é produção, e a decisão é do dono.
+# backend/

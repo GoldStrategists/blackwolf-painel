@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    { "source": "/lab", "destination": "/", "permanent": false },
+    { "source": "/lab/:path*", "destination": "/", "permanent": false },
+    { "source": "/HALL_OF_FAME.md", "destination": "/", "permanent": false },
+    { "source": "/STRATEGY_GRAVEYARD.md", "destination": "/", "permanent": false },
+    { "source": "/STRATEGY_LIFECYCLE.md", "destination": "/", "permanent": false }
+  ],
   "rewrites": [
     {
       "source": "/atualizacao-robot-310",

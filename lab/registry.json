@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "_leia_isto": [
+    "FONTE ÚNICA DA VERDADE do laboratório. HALL_OF_FAME.md e STRATEGY_GRAVEYARD.md",
+    "são GERADOS a partir daqui (node lab/validate.mjs --write). Não edite os .md.",
+    "Regra inegociável: todo número neste arquivo tem que apontar para um artefato",
+    "em lab/strategies/<id>/. Número sem artefato é invenção, e invenção aqui vira",
+    "prejuízo lá na frente. Métrica não medida se registra como null, nunca como",
+    "estimativa."
+  ],
+  "strategies": [
+    {
+      "id": "blackwolf-ai-mt5",
+      "name": "Black Wolf AI (EA MetaTrader 5)",
+      "market": "XAUUSD spot · M5 · MetaTrader 5",
+      "version": "3.0",
+      "origin": "original",
+      "owner": "Luiz",
+      "hypothesis": "NÃO DOCUMENTADA. O produto foi construído e vendido antes deste laboratório existir; a hipótese econômica precisa ser reconstruída por escrito na auditoria retroativa.",
+      "stage": 8,
+      "status": "legacy",
+      "promoted_at": null,
+      "grandfathered": {
+        "reason": "Em produção e vendido a clientes desde antes da criação do laboratório. Entra no registro para ser auditado, NÃO para ser aprovado.",
+        "missing_stages": [0, 1, 2, 3, 4, 5, 6, 7],
+        "audit_deadline": "2026-12-31"
+      },
+      "configs_tested": null,
+      "stage_history": [],
+      "metrics": {},
+      "weaknesses": [
+        "Sem dossiê: não existe registro arquivado de out-of-sample, walk-forward, stress test ou Monte Carlo. Hoje não é possível afirmar que o resultado não é overfit.",
+        "Concentração total em ouro: EA (XAUUSD) e NinjaTrader (MGC) são o mesmo ativo em dois invólucros. Um regime ruim no ouro atinge 100% da linha de produtos ao mesmo tempo.",
+        "Resultado do cliente não é resultado da estratégia: cada conta roda risco %, modo de entrada, sessões, break-even, inversa e filtro de payroll diferentes. Não existe uma curva única auditável do robô.",
+        "As métricas do painel (fator de lucro, drawdown) vêm de contas reais com parâmetros heterogêneos — servem para suporte ao cliente, NÃO como evidência estatística de estratégia."
+      ],
+      "rejection": null
+    },
+    {
+      "id": "blackwolf-nt-mgc",
+      "name": "Black Wolf NinjaTrader",
+      "market": "Futuros de ouro MGC (micro) · M5 · NinjaTrader 8",
+      "version": "3.1",
+      "origin": "original",
+      "owner": "Luiz",
+      "hypothesis": "NÃO DOCUMENTADA. Porte da lógica do EA para futuros de ouro; a hipótese e as diferenças de execução (book, horário, custo por contrato) precisam ser escritas na auditoria retroativa.",
+      "stage": 8,
+      "status": "legacy",
+      "promoted_at": null,
+      "grandfathered": {
+        "reason": "Em produção e distribuído a clientes desde antes da criação do laboratório. Entra no registro para ser auditado, NÃO para ser aprovado.",
+        "missing_stages": [0, 1, 2, 3, 4, 5, 6, 7],
+        "audit_deadline": "2026-12-31"
+      },
+      "configs_tested": null,
+      "stage_history": [],
+      "metrics": {},
+      "weaknesses": [
+        "Sem dossiê: mesma situação do EA — nenhuma etapa do ciclo tem evidência arquivada.",
+        "Porte não reproduzido: não há teste mostrando que a versão NinjaTrader gera as mesmas entradas da versão MT5 no mesmo período. Enquanto isso não existir, são dois produtos diferentes vendidos como um.",
+        "Custo de futuros é estrutural (comissão por contrato + tick de 0,10 no MGC) e não foi modelado em nenhum backtest arquivado.",
+        "Depende do mesmo ativo do EA: risco de concentração somado, não diversificado."
+      ],
+      "rejection": null
+    }
+  ]
+}

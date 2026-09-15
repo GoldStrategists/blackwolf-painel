@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "_leia_isto": [
+    "Estes são os CRITÉRIOS DE PROMOÇÃO. Enquanto estiverem aqui, eles valem — o",
+    "validador (lab/validate.mjs) recusa promoção que não bata o número.",
+    "Os valores abaixo são PADRÕES DE PARTIDA propostos, não verdades de mercado.",
+    "Calibre com os dados do laboratório, mas calibre ANTES de rodar o teste,",
+    "nunca depois de ver o resultado. Afrouxar um gate para aprovar uma",
+    "estratégia específica é a forma mais comum de fraudar o processo — se",
+    "acontecer, o commit fica no histórico do git e é auditável."
+  ],
+  "global": {
+    "max_configs_without_adjustment": 30,
+    "max_final_holdout_uses": 1
+  },
+  "stages": {
+    "0": {
+      "name": "IDEA",
+      "required": ["hypothesis"],
+      "_nota": "Hipótese econômica/estrutural escrita ANTES de qualquer teste."
+    },
+    "1": {
+      "name": "BASIC BACKTEST",
+      "required": ["cost_model", "is_trades", "is_profit_factor"],
+      "min": { "is_trades": 100, "is_profit_factor": 1.0 },
+      "_nota": "Regras fixas, custos realistas (spread + comissão + swap). PF <= 1 com custo mata a ideia aqui."
+    },
+    "2": {
+      "name": "REPRODUCTION",
+      "required": ["reproduction_reference", "reproduction_delta_pct"],
+      "max": { "reproduction_delta_pct": 20 },
+      "_nota": "Estratégia pública: reproduzir o autor. Original: reimplementar de forma independente. Desvio > 20% no lucro líquido = você não entendeu a estratégia."
+    },
+    "3": {
+      "name": "VALIDATION",
+      "required": ["oos_trades", "oos_profit_factor", "oos_expectancy_r", "oos_degradation_pct", "final_holdout_uses"],
+      "min": { "oos_trades": 100, "oos_profit_factor": 1.25, "oos_expectancy_r": 0.1 },
+      "max": { "oos_degradation_pct": 40 },
+      "_nota": "Período que NÃO participou do desenvolvimento. Degradação = quanto o PF caiu do IS para o OOS."
+    },
+    "4": {
+      "name": "WALK-FORWARD",
+      "required": ["wf_windows", "wf_profitable_windows_pct", "wf_efficiency_pct"],
+      "min": { "wf_windows": 6, "wf_profitable_windows_pct": 60, "wf_efficiency_pct": 50 },
+      "_nota": "Janelas cronológicas, reotimização honesta a cada janela. Eficiência = resultado WF / resultado in-sample."
+    },
+    "5": {
+      "name": "STRESS TEST",
+      "required": ["stress_slippage_multiple", "stress_fee_increase_pct", "stress_execution_delay", "stress_param_perturbation_pct", "stress_pf_worst_case", "stress_trade_removal_pct", "stress_regimes_tested"],
+      "min": { "stress_slippage_multiple": 2, "stress_fee_increase_pct": 50, "stress_param_perturbation_pct": 20, "stress_pf_worst_case": 1.1, "stress_trade_removal_pct": 5, "stress_regimes_tested": 2 },
+      "_nota": "stress_pf_worst_case é o PIOR PF entre todos os cenários de estresse. Se o resultado morre com 2x slippage, ele nunca foi seu."
+    },
+    "6": {
+      "name": "MONTE CARLO",
+      "required": ["mc_runs", "mc_dd95_pct", "mc_risk_of_ruin_pct", "mc_losing_streak_p95"],
+      "min": { "mc_runs": 10000 },
+      "max": { "mc_dd95_pct": 25, "mc_risk_of_ruin_pct": 1 },
+      "_nota": "DD95 = drawdown no percentil 95 das simulações. Risk of ruin no risco recomendado ao cliente, não no risco otimista."
+    },
+    "7": {
+      "name": "PAPER TRADE",
+      "required": ["paper_sessions", "paper_trades", "paper_pf", "paper_vs_backtest_pf_delta_pct", "paper_avg_slippage", "slippage_tolerance", "sharpe", "max_drawdown_pct", "avg_holding_time"],
+      "min": { "paper_sessions": 60, "paper_trades": 100 },
+      "max": { "paper_vs_backtest_pf_delta_pct": 30 },
+      "_nota": "Tempo real, sem capital, versão congelada. Divergência > 30% entre paper e backtest = o backtest mentia."
+    },
+    "8": {
+      "name": "PRODUCTION CANDIDATE",
+      "required": ["risk_plan", "kill_switch", "monitoring"],
+      "_nota": "Sobreviveu a tudo. Só entra com plano de risco escrito, kill-switch testado e monitoramento ligado."
+    }
+  }
+}
