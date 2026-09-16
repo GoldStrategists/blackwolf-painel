@@ -2519,48 +2519,63 @@ function getFilteredTrades(){
     return true;
   });
 }
+function histDayKey(day){ return String(day).replace(/[^0-9A-Za-z]/g,''); }
 function buildHistTable(){
   const trades=getFilteredTrades().slice().reverse(); // newest first
   if(trades.length===0)return `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div class="empty-t">${LANG==='pt'?'Nenhuma operação encontrada':LANG==='en'?'No trades found':'Ninguna operación encontrada'}</div><div class="empty-d">${LANG==='pt'?'Tente ajustar os filtros.':LANG==='en'?'Try adjusting the filters.':'Intenta ajustar los filtros.'}</div></div>`;
-  // group by day
+  // agrupa por dia: a tabela mostra UMA linha por dia; o detalhe abre ao clicar
   const groups={};
   trades.forEach(tr=>{ groups[tr.day]=groups[tr.day]||[]; groups[tr.day].push(tr); });
-  // v27 multi-conta: coluna "Conta" só aparece p/ clientes com 2+ contas
   const multiAcc=Array.from(new Set((ALL_TRADES||[]).map(t=>t.account).filter(Boolean))).length>1;
-  const nCols=multiAcc?8:7;
-  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?760:660}px"><thead><tr>
-    <th>Ticket</th>${multiAcc?`<th>${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}</th>`:''}<th>${LANG==='pt'?'Abertura':LANG==='en'?'Open':'Apertura'}</th><th>${LANG==='pt'?'Símbolo':LANG==='en'?'Symbol':'Símbolo'}</th>
-    <th>${LANG==='pt'?'Direção':LANG==='en'?'Dir':'Dir'}</th><th>Lotes</th><th>P&L</th><th></th>
+  const T=(pt,en,es)=>LANG==='pt'?pt:LANG==='en'?en:es;
+  const nCols=multiAcc?7:6;
+  let html=`<div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?680:600}px"><thead><tr>
+    <th>${T('Dia','Day','Día')}</th><th>${T('Operações','Trades','Operaciones')}</th>
+    <th>${T('Lucros','Wins','Ganancias')}</th><th>${T('Perdas','Losses','Pérdidas')}</th>
+    ${multiAcc?`<th>${T('Contas','Accounts','Cuentas')}</th>`:''}<th>${T('Resultado','Result','Resultado')}</th><th></th>
   </tr></thead><tbody>`;
   Object.keys(groups).forEach(day=>{
     const dayTrades=groups[day];
+    const k=histDayKey(day);
     const dayPnl=dayTrades.reduce((s,t)=>s+t.pnl,0);
     const dayWins=dayTrades.filter(t=>t.win).length;
-    html+=`<tr class="tbl-day-row"><td colspan="${nCols-2}">📅 ${day} · ${dayTrades.length} ${LANG==='pt'?'ops':LANG==='en'?'trades':'ops'} · ${dayWins}/${dayTrades.length} ${LANG==='pt'?'win':'win'}</td><td class="day-pnl ${dayPnl>=0?'pos':'neg'}" colspan="2">${fmtMoney(dayPnl)}</td></tr>`;
-    dayTrades.forEach(tr=>{
-      html+=`<tr onclick="toggleTradeRow('${tr.id}')" style="cursor:pointer">
+    const dayLosses=dayTrades.length-dayWins;
+    const dayAccs=Array.from(new Set(dayTrades.map(t=>t.account).filter(Boolean))).length;
+    html+=`<tr class="tbl-day-row" onclick="toggleHistDay('${k}')" style="cursor:pointer">
+      <td class="tbl-name">📅 ${day}</td>
+      <td class="mono">${dayTrades.length}</td>
+      <td class="mono pos">${dayWins}</td>
+      <td class="mono ${dayLosses?'neg':''}">${dayLosses}</td>
+      ${multiAcc?`<td class="mono">${dayAccs}</td>`:''}
+      <td class="day-pnl ${dayPnl>=0?'pos':'neg'}">${fmtMoney(dayPnl)}</td>
+      <td><svg class="exp-arrow" id="arr-d${k}" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:15px;height:15px;transition:transform .3s"><polyline points="6 9 12 15 18 9"/></svg></td>
+    </tr>
+    <tr class="expand-row"><td colspan="${nCols}"><div class="expand-inner" id="exp-d${k}">
+      <div class="tbl-wrap"><table class="tbl" style="min-width:${multiAcc?640:560}px"><thead><tr>
+        <th>Ticket</th>${multiAcc?`<th>${T('Conta','Account','Cuenta')}</th>`:''}
+        <th>${T('Abertura','Open','Apertura')}</th><th>${T('Fechamento','Close','Cierre')}</th>
+        <th>${T('Símbolo','Symbol','Símbolo')}</th><th>${T('Direção','Dir','Dir')}</th>
+        <th>Lotes</th><th>P&L</th>
+      </tr></thead><tbody>
+      ${dayTrades.map(tr=>`<tr>
         <td class="mono">#${tr.id}</td>
         ${multiAcc?`<td class="mono" style="font-size:.76rem">${esc(tr.account||'—')}</td>`:''}
         <td class="mono" style="font-size:.76rem">${tr.openT.slice(11,16)}</td>
+        <td class="mono" style="font-size:.76rem">${tr.closeT.slice(11,16)}</td>
         <td class="tbl-name">${esc(tr.symbol)}</td>
         <td><span class="pill ${tr.dir}">${tr.dir.toUpperCase()}</span></td>
         <td class="mono">${tr.lots.toFixed(2)}</td>
         <td class="${tr.pnl>=0?'pos':'neg'}">${fmtMoney(tr.pnl)}</td>
-        <td><svg class="exp-arrow" id="arr-${tr.id}" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="width:15px;height:15px;transition:transform .3s"><polyline points="6 9 12 15 18 9"/></svg></td>
-      </tr>
-      <tr class="expand-row"><td colspan="${nCols}"><div class="expand-inner" id="exp-${tr.id}"><div class="expand-grid">
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Fechamento':LANG==='en'?'Close':'Cierre'}</div><div class="v">${tr.closeT.slice(11,16)}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Entrada':LANG==='en'?'Entry':'Entrada'}</div><div class="v">${tr.entry}</div></div>
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Saída':LANG==='en'?'Exit':'Salida'}</div><div class="v">${tr.exit}</div></div>
-        ${tr.commission==null?'':`<div class="expand-cell"><div class="l">${LANG==='pt'?'Comissão':LANG==='en'?'Commission':'Comisión'}</div><div class="v">${tr.commission.toFixed(2)}</div></div>`}
-        ${tr.swap==null?'':`<div class="expand-cell"><div class="l">Swap</div><div class="v">${tr.swap.toFixed(2)}</div></div>`}
-        ${tr.hasOpen?`<div class="expand-cell"><div class="l">${LANG==='pt'?'Duração':LANG==='en'?'Duration':'Duración'}</div><div class="v">${tr.dur} min</div></div>`:''}
-        <div class="expand-cell"><div class="l">${LANG==='pt'?'Saldo após':LANG==='en'?'Balance after':'Saldo después'}</div><div class="v">${fmtMoneyPlain(tr.balance)}</div></div>
-      </div></div></td></tr>`;
-    });
+      </tr>`).join('')}
+      </tbody></table></div>
+    </div></td></tr>`;
   });
   html+='</tbody></table></div>';
   return html;
+}
+function toggleHistDay(k){
+  const el=document.getElementById('exp-d'+k), arr=document.getElementById('arr-d'+k);
+  if(el){ el.classList.toggle('open'); if(arr)arr.style.transform=el.classList.contains('open')?'rotate(180deg)':'none'; }
 }
 function histFilterChange(){
   HIST_FILTER.search=document.getElementById('histSearch').value;
