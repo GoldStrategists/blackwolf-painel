@@ -3,8 +3,8 @@
 | Campo | Valor |
 | ----- | ----- |
 | id | `nasdaq-intraday-momentum` |
-| Market | US100 (Nasdaq) · M5 · MetaTrader 5 |
-| Version | 0.1 |
+| Market | Cesta de índices · M5 · MT5 — US100, US500, US30, DE40, UK100 |
+| Version | 0.2 |
 | Origin | public — Gao, Han, Li & Zhou, *Market Intraday Momentum*, JFE (2018) |
 | Owner | Luiz |
 | Estágio atual | STAGE 0 (idea) |
@@ -16,11 +16,18 @@
 Ver [`stage-0-idea.md`](stage-0-idea.md) — inclui o critério de morte, escrito antes do
 primeiro teste.
 
-## Por que este ativo
+## Por que estes ativos
 
-Sai do ouro. Hoje 100% da linha de produtos da casa depende de um regime só; um robô de
-Nasdaq com hipótese diferente é a primeira diversificação real do laboratório. Se o Nasdaq
-não der certo, o US500 é o segundo candidato natural (mesma hipótese, mercado mais líquido).
+Sai do ouro. Hoje 100% da linha de produtos da casa depende de um regime só; índices com
+hipótese diferente são a primeira diversificação real do laboratório.
+
+A cesta (US100, US500, US30, DE40, UK100) também é o que permite **mais de uma operação por
+dia sem inventar sinal**: são dois fechamentos de pregão por dia (Europa às 17:30 CET, EUA às
+16:00 NY) e até 5 operações. Cada mercado roda em um gráfico, com o robô anexado a cada um e
+um número mágico diferente — o limite de 1 operação por dia vale por mercado, não no total.
+
+**Critério de aprovação é da cesta, não do melhor mercado:** 1 de 5 funcionando é sorte;
+3 ou mais de 5, com a cesta somada lucrativa, é efeito.
 
 ## Como rodar o STAGE 1 (backtest básico)
 

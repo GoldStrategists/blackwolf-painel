@@ -84,8 +84,8 @@
     {
       "id": "nasdaq-intraday-momentum",
       "name": "Nasdaq — momentum intradiário de fim de sessão",
-      "market": "US100 (Nasdaq) · M5 · MetaTrader 5 · posição sempre zerada antes do fechamento",
-      "version": "0.1",
+      "market": "Cesta de índices · M5 · MT5 — US100, US500, US30, DE40, UK100 · posição sempre zerada antes do fechamento",
+      "version": "0.2",
       "origin": "public",
       "owner": "Luiz",
       "hypothesis": "Perto do fechamento existe fluxo obrigatório (rebalanceamento de fundos, ETFs alavancados e quem só opera uma vez ao dia) que não é opinião sobre preço. Esse fluxo tende a empurrar o preço na direção que o dia já vinha tomando, e o formador de mercado cobra para absorver esse desequilíbrio. Referência pública: Gao, Han, Li & Zhou, Market Intraday Momentum, Journal of Financial Economics (2018).",
@@ -99,7 +99,7 @@
           "date": "2026-09-15",
           "verdict": "pass",
           "evidence": "lab/strategies/nasdaq-intraday-momentum/stage-0-idea.md",
-          "notes": "Hipótese e critério de morte escritos antes de qualquer teste. Desenvolvimento: 2025. Validação lacrada: 2026 em diante."
+          "notes": "Hipótese e critério de morte escritos antes de qualquer teste. Desenvolvimento: 2025. Validação lacrada: 2026 em diante. v0.2: escopo ampliado de um ativo para cesta de 5 índices em dois fechamentos de pregão, para elevar o número de operações por dia sem forçar reentrada no mesmo evento."
         }
       ],
       "metrics": {},
@@ -108,10 +108,11 @@
         "Estratégia pública: margem apertada, o custo de operação decide se sobra lucro.",
         "Entra perto do fechamento, janela de notícia de banco central e balanço — gap dentro da sessão fura stop.",
         "Se o resultado morrer ao deslocar o horário em 15 minutos, é ajuste ao passado e não fluxo institucional.",
-        "Índice em CFD: spread e horário de sessão variam por corretora; o resultado pode ser da fonte de dados."
+        "Índice em CFD: spread e horário de sessão variam por corretora; o resultado pode ser da fonte de dados.",
+        "Cesta de 5 mercados = 5 chances de um vencedor por acaso. A aprovação é da cesta (3 de 5 ou mais, somada lucrativa), nunca do melhor mercado escolhido depois de ver os resultados."
       ],
       "rejection": null
     }
   ],
-  "updated": "2026-09-15"
+  "updated": "2026-09-16"
 }

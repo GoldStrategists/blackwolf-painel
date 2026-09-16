@@ -11,6 +11,12 @@
 //|  REGRA DA CASA: a posicao nasce e morre na mesma sessao.          |
 //|  NUNCA segura posicao com o mercado fechado.                      |
 //|                                                                  |
+//|  VARIOS MERCADOS: anexe uma copia em cada grafico (US100, US500,  |
+//|  US30, DE40, UK100), cada um com os horarios daquele pregao e um  |
+//|  InpMagic diferente. O limite de 1 operacao por dia vale POR      |
+//|  mercado — a cesta inteira pode dar ate 5 operacoes por dia, em   |
+//|  dois fechamentos de pregao (Europa e EUA).                       |
+//|                                                                  |
 //|  Este arquivo e material de TESTE. Nao e produto, nao vai para    |
 //|  cliente e nao passou por nenhum estagio do ciclo de vida.        |
 //+------------------------------------------------------------------+

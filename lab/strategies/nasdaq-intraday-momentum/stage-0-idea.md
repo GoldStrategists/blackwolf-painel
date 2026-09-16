@@ -1,7 +1,7 @@
 # STAGE 0 — IDEA — Nasdaq: momentum intradiário de fim de sessão
 
 - **Data:** 2026-09-15
-- **Ativo alvo:** US100 (Nasdaq) no MetaTrader 5 · M5
+- **Ativo alvo:** cesta de índices no MetaTrader 5 · M5 — US100 (Nasdaq), US500, US30, DE40, UK100
 - **Origem:** estratégia pública — artigo acadêmico (logo, o STAGE 2 é reproduzir o autor)
 - **Regra da casa atendida:** a posição **nasce e morre dentro da mesma sessão**. Nunca fica
   aberta com o mercado fechado.
@@ -36,6 +36,44 @@ infrequente (modelo de Bogousslavsky, 2016) e operador informado que chega tarde
    se for negativa, **vende**. Abaixo do movimento mínimo, **não opera aquele dia**.
 4. **Fecha na hora marcada, sempre**, antes do fim da sessão.
 5. Uma operação por dia, no máximo. Stop loss em % do preço. Tamanho pela % de risco.
+
+## Mais de uma operação por dia — como, sem quebrar a hipótese
+
+O fluxo obrigatório de fechamento acontece **uma vez por sessão, por mercado**. Forçar 3, 4
+entradas no mesmo mercado no mesmo dia não gera mais vantagem: gera mais custo em cima da
+mesma vantagem, uma só vez.
+
+O jeito honesto de aumentar o número de operações é **aumentar o número de eventos**, não
+espremer o mesmo evento. Dois caminhos, ambos legítimos:
+
+**1. Mais mercados, mesma hipótese.** O artigo original encontrou o mesmo efeito em dez ETFs
+muito negociados, não só no S&P 500. Cesta inicial:
+
+| Mercado | Fechamento do pregão | Sinal | Entrada | Saída |
+| ------- | -------------------- | ----- | ------- | ----- |
+| US100 (Nasdaq) | 16:00 Nova York | 10:00 NY | 15:00 NY | 15:45 NY |
+| US500 (S&P 500) | 16:00 Nova York | 10:00 NY | 15:00 NY | 15:45 NY |
+| US30 (Dow) | 16:00 Nova York | 10:00 NY | 15:00 NY | 15:45 NY |
+| DE40 (DAX) | 17:30 CET | 09:30 CET | 16:30 CET | 17:15 CET |
+| UK100 (FTSE) | 17:30 CET (16:30 Londres) | 09:30 CET | 16:30 CET | 17:15 CET |
+
+**2. Duas janelas de horário por dia**: o fechamento europeu e o fechamento americano são
+eventos separados, em fusos diferentes. Uma cesta com mercados dos dois lados dá até **5
+operações por dia**, em dois horários distintos — sem inventar nada.
+
+O que **não** vale: reentrar no mesmo mercado depois de tomar stop no mesmo dia. Se o stop
+bateu, o sinal daquele dia falhou. Reentrar é discutir com o resultado.
+
+### A regra que protege a cesta
+
+Testar em 5 mercados é ter 5 chances de encontrar um vencedor por acaso. Por isso o critério
+de aprovação é da **cesta inteira**, não do melhor mercado:
+
+- funciona em **1 de 5** → é sorte, descarta;
+- funciona em **3 ou mais de 5**, e a cesta somada é lucrativa → é efeito.
+
+Escolher só o mercado que deu certo depois de ver os cinco resultados é a definição de
+enganar a si mesmo com dado.
 
 ## O que invalida esta hipótese (critério de morte, escrito ANTES do teste)
 
