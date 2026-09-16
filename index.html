@@ -1938,18 +1938,31 @@ function maybeForceSurvey(){
   if(ov && ov.classList.contains('open')) return; // já está aberto
   setTimeout(()=>surveyStart('onboarding'),800);
 }
+// tempo decorrido em texto curto (12 min / 3 h / 2 d)
+function fmtAgo(mins){
+  if(mins<60) return mins+' min';
+  if(mins<1440) return Math.floor(mins/60)+' h';
+  return Math.floor(mins/1440)+' d';
+}
 // banner de status do robô (online/saldo) no topo do dashboard — UMA LINHA POR CONTA
 function eaStatusBanner(){
   const all=(DATA.client&&DATA.client._eaStatusAll&&DATA.client._eaStatusAll.length)?DATA.client._eaStatusAll:(DATA.client&&DATA.client._eaStatus?[DATA.client._eaStatus]:[]);
   if(!all.length) return '';
   const money=v=>v!=null?('$'+(+v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})):'—';
   const rows=all.map(function(st){
-    let online=false, seenTxt='—';
+    let online=false, seenTxt='—', mins=null;
     const seen=parseEaDate(st.last_seen);
-    if(seen){ online=(Date.now()-seen.getTime())<10*60000; seenTxt=fmtDT(seen).slice(5,16); }
+    if(seen){ mins=Math.floor((Date.now()-seen.getTime())/60000); online=mins<10; seenTxt=fmtDT(seen).slice(5,16); }
     const dot=online?'#22c55e':'#787F91';
     const label=online?(LANG==='pt'?'Robô online':LANG==='en'?'Robot online':'Robot en línea'):(LANG==='pt'?'Robô offline':LANG==='en'?'Robot offline':'Robot desconectado');
-    const err=st.last_error?`<span style="font-size:.72rem;color:var(--red-l)">⚠ ${esc(st.last_error)}</span>`:'';
+    // v28: erro antigo de robo que ja parou nao e erro — e robo desligado.
+    // So mostra o aviso vermelho se o ultimo sinal for recente (<15 min).
+    const errRecente = st.last_error && mins!=null && mins<15;
+    const err = errRecente
+      ? `<span style="font-size:.72rem;color:var(--red-l)">⚠ ${esc(st.last_error)}</span>`
+      : (mins!=null && mins>=15
+          ? `<span style="font-size:.72rem;color:var(--t3)">${LANG==='pt'?'EA offline — último sinal há '+fmtAgo(mins):LANG==='en'?'EA offline — last signal '+fmtAgo(mins)+' ago':'EA offline — última señal hace '+fmtAgo(mins)}</span>`
+          : '');
     return `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:${dot};box-shadow:0 0 8px ${dot}"></span><b style="font-size:.9rem">${label}</b></div>
       <div style="font-size:.8rem;color:var(--t3)">${LANG==='pt'?'Conta':LANG==='en'?'Account':'Cuenta'}: <b style="color:var(--t1)">${esc(st.account||'—')}</b></div>
