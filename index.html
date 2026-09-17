@@ -568,6 +568,10 @@ img{max-width:100%}
 .strat-info-item b{color:var(--t2);font-family:var(--fm);font-weight:500}
 
 /* ════════ DOWNLOAD ════════ */
+.dl-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.dl-tab{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border:1px solid var(--bord2);border-radius:11px;background:var(--s2);color:var(--t2);font-family:var(--fh);font-weight:700;font-size:.86rem;cursor:pointer;transition:border-color .16s,background .16s,color .16s}
+.dl-tab:hover{border-color:var(--blue-l);color:var(--t1)}
+.dl-tab.on{border-color:var(--blue);background:rgba(45,108,255,.12);color:var(--t1)}
 .dl-card{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .dl-ico{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,rgba(45,108,255,.2),rgba(45,108,255,.05));border:1px solid rgba(45,108,255,.28);display:flex;align-items:center;justify-content:center;font-size:1.6rem;flex-shrink:0}
 .dl-info{flex:1;min-width:160px}
@@ -3039,28 +3043,52 @@ function renderDownloads(){
       ? `<button class="dl-btn" onclick="downloadRobot('${kind}')" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`
       : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`;
     const baixar = LANG==='pt'?'Baixar':LANG==='en'?'Download':'Descargar';
+    const dlCarteira=(arq,label)=> canDl
+      ? `<button class="dl-btn" onclick="downloadCarteira('${arq}')" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`
+      : `<button class="dl-btn" onclick="toast(LANG==='pt'?'Ative sua licença para baixar o robô':LANG==='en'?'Activate your license to download':'Activa tu licencia para descargar','info')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>${label}</button>`;
     return `
   <div class="banner info rv" style="margin-bottom:14px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     <div class="banner-tx">${LANG==='pt'?'Sua licença vale <b>por conta</b>, não por robô. Você pode usar uma conta na <b>MetaTrader</b> e outra no <b>NinjaTrader</b> (até o limite do seu plano).':LANG==='en'?'Your license is <b>per account</b>, not per robot. You can use one account on <b>MetaTrader</b> and another on <b>NinjaTrader</b> (up to your plan limit).':'Tu licencia es <b>por cuenta</b>, no por robot. Puedes usar una cuenta en <b>MetaTrader</b> y otra en <b>NinjaTrader</b>.'}</div>
   </div>
-  <div class="card grad rv">
+  <div class="dl-tabs">
+    <button id="dl-tab-mt5" class="dl-tab on" type="button" onclick="dlTab('mt5')">MetaTrader 5</button>
+    <button id="dl-tab-nt" class="dl-tab" type="button" onclick="dlTab('nt')">NinjaTrader 8</button>
+  </div>
+  <div id="dl-pane-mt5">
+  <div class="card grad rv" style="margin-top:12px">
     <div class="dl-card">
       <div class="dl-ico">🐺</div>
-      <div class="dl-info"><div class="dl-name">${c.eaFile.name}<span class="pill current">v${c.eaFile.version}</span></div><div class="dl-meta">Expert Advisor · MetaTrader 5 · ${c.eaFile.size}</div></div>
-      ${dlBtn('mt5', baixar+' (MT5)')}
+      <div class="dl-info"><div class="dl-name">Black Wolf ${LANG==='pt'?'Ouro · Essencial':LANG==='en'?'Gold · Essential':'Oro · Esencial'}<span class="pill current">v3.4</span></div><div class="dl-meta">BlackWolfCarteira3.ex5 · 190 KB · ${LANG==='pt'?'Só ouro (XAUUSD) · 1 gráfico':LANG==='en'?'Gold only (XAUUSD) · 1 chart':'Solo oro (XAUUSD) · 1 gráfico'}</div></div>
+      ${dlCarteira('BlackWolfCarteira3.ex5', baixar)}
     </div>
   </div>
   <div class="card grad rv" style="margin-top:12px">
     <div class="dl-card">
       <div class="dl-ico">🐺</div>
-      <div class="dl-info"><div class="dl-name">BlackWolf_NinjaTrader.zip<span class="pill current">v3.1</span><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div><div class="dl-meta">Strategy · NinjaTrader 8 · 182 KB · .zip</div></div>
-      ${dlBtn('nt', baixar+' (NT8)')}
+      <div class="dl-info"><div class="dl-name">Black Wolf ${LANG==='pt'?'Ouro · Completo':LANG==='en'?'Gold · Complete':'Oro · Completo'}<span class="pill current">v3.4</span></div><div class="dl-meta">BlackWolfCarteira6.ex5 · 190 KB · ${LANG==='pt'?'Só ouro (XAUUSD) · 1 gráfico · mais operações por dia':LANG==='en'?'Gold only (XAUUSD) · 1 chart · more trades per day':'Solo oro (XAUUSD) · 1 gráfico · más operaciones por día'}</div></div>
+      ${dlCarteira('BlackWolfCarteira6.ex5', baixar)}
+    </div>
+  </div>
+  <div class="card grad rv" style="margin-top:12px">
+    <div class="dl-card">
+      <div class="dl-ico">🐺</div>
+      <div class="dl-info"><div class="dl-name">Black Wolf ${LANG==='pt'?'Ouro + Nasdaq':LANG==='en'?'Gold + Nasdaq':'Oro + Nasdaq'}<span class="pill current">v3.4</span></div><div class="dl-meta">BlackWolfCarteira11-Nova.ex5 · 191 KB · ${LANG==='pt'?'Ouro (XAUUSD) e Nasdaq (US100) · o mesmo arquivo nos 2 gráficos':LANG==='en'?'Gold (XAUUSD) and Nasdaq (US100) · same file on both charts':'Oro (XAUUSD) y Nasdaq (US100) · el mismo archivo en 2 gráficos'}</div></div>
+      ${dlCarteira('BlackWolfCarteira11-Nova.ex5', baixar)}
     </div>
   </div>
   <div class="banner info rv" style="margin-top:14px">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    <div class="banner-tx">${LANG==='pt'?'Primeira vez na <b>MetaTrader</b>? Siga o guia visual passo a passo.':LANG==='en'?'First time on <b>MetaTrader</b>? Follow the visual guide.':'¿Primera vez en <b>MetaTrader</b>? Sigue la guía visual.'} <span class="login-link" onclick="goPage('setup')" style="color:var(--blue-l)">${LANG==='pt'?'Abrir guia →':LANG==='en'?'Open guide →':'Abrir guía →'}</span></div>
+    <div class="banner-tx">${LANG==='pt'?'Um robô por conta. Primeira vez na <b>MetaTrader</b>? Siga o guia visual passo a passo.':LANG==='en'?'One robot per account. First time on <b>MetaTrader</b>? Follow the visual guide.':'Un robot por cuenta. ¿Primera vez en <b>MetaTrader</b>? Sigue la guía visual.'} <span class="login-link" onclick="goPage('setup')" style="color:var(--blue-l)">${LANG==='pt'?'Abrir guia →':LANG==='en'?'Open guide →':'Abrir guía →'}</span></div>
+  </div>
+  </div>
+  <div id="dl-pane-nt" hidden>
+  <div class="card grad rv">
+    <div class="dl-card">
+      <div class="dl-ico">🐺</div>
+      <div class="dl-info"><div class="dl-name">BlackWolf_NinjaTrader.zip<span class="pill current">v3.1</span><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div><div class="dl-meta">Strategy · NinjaTrader 8 · 182 KB · .zip</div></div>
+      ${dlBtn('nt', baixar+' (NT8)')}
+    </div>
   </div>
   <div class="card rv" style="margin-top:12px">
     <div class="card-head"><div class="card-title">${LANG==='pt'?'Black Wolf no NinjaTrader 8':LANG==='en'?'Black Wolf on NinjaTrader 8':'Black Wolf en NinjaTrader 8'}</div><span class="pill" style="background:rgba(45,108,255,.14);color:var(--blue-l)">NT8</span></div>
@@ -3074,6 +3102,7 @@ function renderDownloads(){
     </ol>
     <button class="academy-link" style="margin-top:15px" onclick="goPage('setup');setTimeout(()=>academyOpen('nt8'),80)">${LANG==='pt'?'Abrir instalação completa do NinjaTrader →':LANG==='en'?'Open complete NinjaTrader installation →':'Abrir instalación completa de NinjaTrader →'}</button>
     <div class="banner rv" style="margin:12px 0 0;background:rgba(45,108,255,.06);border:1px solid rgba(45,108,255,.2)"><div class="banner-tx" style="font-size:.85rem">${LANG==='pt'?'💡 Para <b>testar</b> sem licença, use uma conta <b>Sim101 / Playback</b> (isentas). Em conta real, sua licença precisa estar ativa. A conta do NinjaTrader conta como uma das contas do seu plano.':LANG==='en'?'💡 To <b>test</b> without a license use a <b>Sim101 / Playback</b> account (exempt). On a real account your license must be active. The NinjaTrader account counts as one of your plan accounts.':'💡 Para <b>probar</b> usa una cuenta <b>Sim101 / Playback</b>. En cuenta real la licencia debe estar activa.'}</div></div>
+  </div>
   </div>`;
   })());
 }
@@ -4173,6 +4202,20 @@ function robotUpload(kind){
   reader.readAsDataURL(file);
 }
 // baixa o robô guardado no servidor (com sessão); MT5 cai pro estático se não houver
+// abas da pagina de Downloads (MetaTrader 5 / NinjaTrader 8)
+function dlTab(qual){
+  ['mt5','nt'].forEach(k=>{
+    const pane=document.getElementById('dl-pane-'+k), tab=document.getElementById('dl-tab-'+k);
+    if(pane) pane.hidden = (k!==qual);
+    if(tab) tab.classList.toggle('on', k===qual);
+  });
+}
+// baixa um dos robos de MetaTrader publicados no painel (arquivo estatico)
+function downloadCarteira(arquivo){
+  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) download simulado':'(demo) download','info'); return; }
+  const a=document.createElement('a'); a.href='/'+arquivo; a.download=arquivo;
+  document.body.appendChild(a); a.click(); a.remove();
+}
 async function downloadRobot(kind){
   kind = (kind==='nt') ? 'nt' : 'mt5';
   if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) download simulado':'(demo) download','info'); return; }
