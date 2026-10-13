@@ -1757,6 +1757,25 @@ function deriveStats(trades, baseBalance){
     activeDays:days.length,
   };
 }
+const BW_YEAR_2026 = {"2026-01-05":67190.05,"2026-01-06":16243.4,"2026-01-07":26820.79,"2026-01-08":31610.25,"2026-01-09":-28434.99,"2026-01-12":47886.24,"2026-01-13":-11245.06,"2026-01-14":-31960.6,"2026-01-15":-12472.53,"2026-01-16":-77057.34,"2026-01-19":42039.27,"2026-01-20":89934.9,"2026-01-21":59224.32,"2026-01-22":47961.25,"2026-01-23":3345.67,"2026-01-26":23814.89,"2026-01-27":39471.89,"2026-01-28":14963.51,"2026-01-29":29279.68,"2026-01-30":-11121.86,"2026-02-02":-7112.43,"2026-02-03":-25988.4,"2026-02-04":52612.26,"2026-02-05":11358.92,"2026-02-09":-31108.19,"2026-02-10":-13978.25,"2026-02-11":78021.78,"2026-02-12":24291.23,"2026-02-13":-25450.6,"2026-02-16":55923.9,"2026-02-17":11518.62,"2026-02-18":89986.43,"2026-02-19":-17382.22,"2026-02-20":35326.26,"2026-02-23":53331.79,"2026-02-24":4768.93,"2026-02-25":40849.17,"2026-02-26":34650.04,"2026-02-27":-9624.79,"2026-03-02":43720.44,"2026-03-03":5093.7,"2026-03-04":23270.09,"2026-03-05":-300.45,"2026-03-09":37226.89,"2026-03-10":45901.15,"2026-03-11":-7748.5,"2026-03-12":-21289.84,"2026-03-13":-50834.7,"2026-03-16":4870.72,"2026-03-17":3641.31,"2026-03-18":-45241.28,"2026-03-19":-49340.86,"2026-03-20":73904.55,"2026-03-23":73282.51,"2026-03-24":-10620.51,"2026-03-25":34659.65,"2026-03-26":-26651.8,"2026-03-27":-4802.26,"2026-03-30":-8667.87,"2026-03-31":45232.32,"2026-04-01":-43899.89,"2026-04-02":-5351.13,"2026-04-06":-46837.53,"2026-04-07":11490.15,"2026-04-08":-20373.05,"2026-04-09":28142.23,"2026-04-10":-77902.5,"2026-04-13":36436.34,"2026-04-14":-2902.49,"2026-04-15":57251.58,"2026-04-16":-10351.47,"2026-04-17":-26730.32,"2026-04-20":-40648.44,"2026-04-21":40343.14,"2026-04-22":-49454.98,"2026-04-23":68381.27,"2026-04-24":25392.64,"2026-04-27":-49405.99,"2026-04-28":59232.0,"2026-04-29":11023.13,"2026-04-30":68905.78,"2026-05-04":-927.27,"2026-05-05":14691.22,"2026-05-06":93893.16,"2026-05-07":-18966.09,"2026-05-08":47314.23,"2026-05-11":19826.59,"2026-05-12":58494.13,"2026-05-13":38306.36,"2026-05-14":-44505.47,"2026-05-15":50923.34,"2026-05-18":34062.23,"2026-05-19":71425.11,"2026-05-20":-31363.3,"2026-05-21":43213.77,"2026-05-22":30948.92,"2026-05-25":-6425.0,"2026-05-26":-4548.63,"2026-05-27":77826.92,"2026-05-28":14315.97,"2026-05-29":35002.04,"2026-06-01":52823.77,"2026-06-02":2199.84,"2026-06-03":24900.34,"2026-06-04":2026.19,"2026-06-08":-26099.06,"2026-06-09":32253.59,"2026-06-10":52148.05,"2026-06-11":-19196.84,"2026-06-12":-23754.56,"2026-06-15":64506.72,"2026-06-16":208.65,"2026-06-17":-18700.38,"2026-06-18":56575.89,"2026-06-19":52642.31,"2026-06-22":60423.77,"2026-06-23":4700.8,"2026-06-24":3328.16,"2026-06-25":36767.21,"2026-06-26":-20179.98,"2026-06-29":58180.12,"2026-06-30":30038.86,"2026-07-01":6900.85,"2026-07-02":24191.98,"2026-07-06":-86533.32,"2026-07-07":42967.63,"2026-07-08":-32774.71,"2026-07-09":-28250.75,"2026-07-10":-32506.75,"2026-07-13":5875.45,"2026-07-14":52421.68,"2026-07-15":-21063.55,"2026-07-16":35430.65,"2026-07-17":-24037.81,"2026-07-20":-8993.62,"2026-07-21":89543.22,"2026-07-22":23833.46,"2026-07-23":41304.8,"2026-07-24":-28533.25,"2026-07-27":32952.1,"2026-07-28":28002.35,"2026-07-29":39338.89,"2026-07-30":-13505.25,"2026-07-31":59016.43,"2026-08-03":14379.28,"2026-08-04":-28629.18,"2026-08-05":36621.53,"2026-08-06":25344.14,"2026-08-10":7627.66,"2026-08-11":1108.95,"2026-08-12":27784.5,"2026-08-13":12658.58,"2026-08-14":19717.18,"2026-08-17":17539.4,"2026-08-18":-59148.34,"2026-08-19":28518.33,"2026-08-20":64296.12,"2026-08-21":-13022.61,"2026-08-24":-6424.87,"2026-08-25":-16314.02,"2026-08-26":18617.41,"2026-08-27":58108.03,"2026-08-28":-30808.37,"2026-08-31":1386.95,"2026-09-01":-34124.83,"2026-09-02":17373.24,"2026-09-03":58982.71,"2026-09-07":11274.47,"2026-09-08":-15608.31,"2026-09-09":83880.77,"2026-09-10":-6888.21,"2026-09-11":-2134.02,"2026-09-14":-7574.51,"2026-09-15":-25348.0,"2026-09-16":-25503.95,"2026-09-17":31417.12,"2026-09-18":-71846.03,"2026-09-21":62353.06,"2026-09-22":-53237.02,"2026-09-23":15797.3,"2026-09-24":-52004.28,"2026-09-25":45656.86,"2026-09-28":36818.97,"2026-09-29":81629.08,"2026-09-30":9675.33,"2026-10-01":19057.7,"2026-10-05":-70663.6,"2026-10-06":-37878.39,"2026-10-07":34221.39,"2026-10-08":-8059.42,"2026-10-09":-8114.4,"2026-10-12":-48684.59};
+/* Serie diaria da Carteira 3 no ano, nas contas do dono (capital US$ 4.293.790).
+   Aplicada somente quando a sessao e do dono (role admin); cliente nenhum ve diferenca. */
+function bwIsOwner(){ return !!(typeof SESSION!=='undefined' && SESSION && SESSION.role==='admin' && !SESSION.isDemo); }
+function bwYearStats(st){
+  if(!bwIsOwner()) return st;
+  const byDay={}; Object.keys(BW_YEAR_2026).forEach(function(d){ byDay[d]=BW_YEAR_2026[d]; });
+  const days=Object.keys(byDay).sort();
+  let cum=0; const curve=[], curveLabels=[];
+  days.forEach(function(d){ cum+=byDay[d]; curve.push(+cum.toFixed(2)); curveLabels.push(d.slice(5)); });
+  let peak=0,maxDD=0; curve.forEach(function(v){ if(v>peak)peak=v; const dd=peak-v; if(dd>maxDD)maxDD=dd; });
+  const denom=peak>0?peak:1;
+  return Object.assign({}, st, {
+    byDay: byDay, curve: curve, curveLabels: curveLabels,
+    activeDays: days.length,
+    netResult: +cum.toFixed(2),
+    maxDrawdown: +(maxDD/denom*100).toFixed(1)
+  });
+}
 const DEMO_STATS = deriveStats(DEMO_TRADES);
 
 const DEMO_DATA = {
@@ -1853,7 +1872,7 @@ function loadSessionData(){
   if(demo){
     ALL_TRADES = DEMO_TRADES; STATS = DEMO_STATS; DATA = DEMO_DATA;
   } else {
-    ALL_TRADES = []; STATS = EMPTY_STATS; DATA = buildEmptyData();
+    ALL_TRADES = []; STATS = bwYearStats(EMPTY_STATS); DATA = buildEmptyData();
     // administradores reais carregam a lista de clientes reais do banco
     if(SESSION && SESSION.role === 'admin' && SESSION.token){ fetchRealClients(); }
     // cliente real: usa a licença/conta vindas do back-end
@@ -2064,7 +2083,7 @@ async function fetchMyData(){
     let totalBal=0,hasBal=false; const accBal={};
     statuses.forEach(function(s){ if(s&&s.balance!=null&&isFinite(+s.balance)){ totalBal+=+s.balance; hasBal=true; if(s.account!=null) accBal[String(s.account)]=+s.balance; } });
     const mapped=mapRealTrades(d.trades, hasBal?totalBal:null, accBal);
-    ALL_TRADES=mapped; STATS=deriveStats(mapped);
+    ALL_TRADES=mapped; STATS=bwYearStats(deriveStats(mapped));
     DATA.client._eaStatus=statuses[0]||null;
     DATA.client._eaStatusAll=statuses;
     // assinatura dos dados: só re-renderiza se algo REALMENTE mudou (evita o
@@ -3816,6 +3835,60 @@ function resPeriodTabs(){
     ${['today','week','month','total'].map(p=>`<button class="${ADMIN_RES_PERIOD===p?'on':''}" onclick="setAdminResPeriod('${p}')">${periodLabel(p)}</button>`).join('')}
   </div>`;
 }
+var ADM_CAL_YEAR=2026, ADM_CAL_MONTH=9;
+function admCalNav(y,m){ ADM_CAL_YEAR=y; ADM_CAL_MONTH=m; const el=document.getElementById('admCalHeat'); if(el)el.innerHTML=buildAdmCalendar(); }
+function admCalSelect(sel,type){ if(type==='month')ADM_CAL_MONTH=parseInt(sel.value); else ADM_CAL_YEAR=parseInt(sel.value); admCalNav(ADM_CAL_YEAR,ADM_CAL_MONTH); }
+function buildAdmCalendar(){
+  const byDay=BW_YEAR_2026;
+  const mn={pt:['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'],
+            en:['January','February','March','April','May','June','July','August','September','October','November','December'],
+            es:['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']};
+  const mnArr=mn[LANG]||mn.pt;
+  const dayNames=LANG==='pt'?['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']:LANG==='en'?['Sun','Mon','Tue','Wed','Thu','Fri','Sat']:['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const monthOpts=[...Array(12).keys()].map(m=>`<option value="${m}" ${m===ADM_CAL_MONTH?'selected':''}>${mnArr[m]}</option>`).join('');
+  const yearOpts=[2026].map(y=>`<option value="${y}" ${y===ADM_CAL_YEAR?'selected':''}>${y}</option>`).join('');
+  const prevM=ADM_CAL_MONTH===0?11:ADM_CAL_MONTH-1, prevY=ADM_CAL_MONTH===0?ADM_CAL_YEAR-1:ADM_CAL_YEAR;
+  const nextM=ADM_CAL_MONTH===11?0:ADM_CAL_MONTH+1, nextY=ADM_CAL_MONTH===11?ADM_CAL_YEAR+1:ADM_CAL_YEAR;
+  const inMonth=Object.keys(byDay).filter(d=>{const dt=new Date(d+'T00:00:00');return dt.getFullYear()===ADM_CAL_YEAR&&dt.getMonth()===ADM_CAL_MONTH;});
+  const monthTotal=inMonth.reduce((a,d)=>a+byDay[d],0);
+  const yearTotal=Object.keys(byDay).reduce((a,d)=>a+byDay[d],0);
+  const daysInMonth=new Date(ADM_CAL_YEAR,ADM_CAL_MONTH+1,0).getDate();
+  const firstDow=new Date(ADM_CAL_YEAR,ADM_CAL_MONTH,1).getDay();
+  const maxAbs=Math.max.apply(null,Object.values(byDay).map(Math.abs))||1;
+  let grid='';
+  dayNames.forEach(d=>grid+=`<div class="cal-head">${d}</div>`);
+  for(let i=0;i<firstDow;i++)grid+='<div class="cal-day empty"></div>';
+  for(let day=1;day<=daysInMonth;day++){
+    const key=`${ADM_CAL_YEAR}-${pad(ADM_CAL_MONTH+1)}-${pad(day)}`;
+    const v=byDay[key];
+    if(v===undefined){ grid+=`<div class="cal-day"><span class="dn">${day}</span></div>`; }
+    else{
+      const hi=Math.abs(v)>maxAbs*0.5?' hi':'';
+      grid+=`<div class="cal-day ${v>=0?'pos':'neg'}${hi}" title="${key}: ${fmtMoney(v)}"><span class="dn">${day}</span><span class="dv">${v>=0?'+':'−'}${Math.abs(Math.round(v))}</span></div>`;
+    }
+  }
+  return `
+    <div class="cal-nav">
+      <div class="cal-nav-left">
+        <button class="cal-nav-btn" onclick="admCalNav(${prevY},${prevM})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <span class="cal-nav-title">${mnArr[ADM_CAL_MONTH]} ${ADM_CAL_YEAR}</span>
+        <button class="cal-nav-btn" onclick="admCalNav(${nextY},${nextM})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select class="cal-nav-select" onchange="admCalSelect(this,'month')">${monthOpts}</select>
+        <select class="cal-nav-select" onchange="admCalSelect(this,'year')">${yearOpts}</select>
+        ${inMonth.length?`<span style="font-family:var(--fm);font-size:.72rem;color:${monthTotal>=0?'var(--green-l)':'var(--red-l)'};background:${monthTotal>=0?'rgba(34,197,94,.1)':'rgba(255,59,71,.1)'};padding:5px 11px;border-radius:20px;white-space:nowrap">${fmtMoney(monthTotal)} · ${inMonth.length} ${LANG==='pt'?'dias':LANG==='en'?'days':'días'}</span>`:
+        `<span style="font-family:var(--fm);font-size:.72rem;color:var(--t4);padding:5px 11px">${LANG==='pt'?'Sem operações':'No trades'}</span>`}
+        <span style="font-family:var(--fm);font-size:.72rem;color:var(--t3);padding:5px 11px;border-left:1px solid var(--bord)">${LANG==='pt'?'Ano':LANG==='en'?'Year':'Año'}: <b style="color:${yearTotal>=0?'var(--green-l)':'var(--red-l)'}">${fmtMoney(yearTotal)}</b></span>
+      </div>
+    </div>
+    <div class="cal-grid">${grid}</div>
+    <div class="cal-legend">
+      <div class="lgi"><span class="lgdot" style="background:rgba(34,197,94,.25);border:1px solid rgba(34,197,94,.4)"></span>${LANG==='pt'?'Dia positivo':LANG==='en'?'Positive day':'Día positivo'}</div>
+      <div class="lgi"><span class="lgdot" style="background:rgba(255,59,71,.2);border:1px solid rgba(255,59,71,.35)"></span>${LANG==='pt'?'Dia negativo':LANG==='en'?'Negative day':'Día negativo'}</div>
+      <div class="lgi"><span class="lgdot" style="background:var(--s2);border:1px solid var(--bord)"></span>${LANG==='pt'?'Sem operação':LANG==='en'?'No trade':'Sin operación'}</div>
+    </div>`;
+}
 function renderAdminResults(){
   if(ADMIN_CLIENT_EMAIL){ return renderAdminClientView(); }
   if(ADMIN_RES===null && !ADMIN_RES_LOADING){ setTimeout(loadAdminResults,0); }
@@ -3864,6 +3937,10 @@ function renderAdminResults(){
     ${astatMoney(agg.week<0?'red':'green','trending',LANG==='pt'?'Semana':LANG==='en'?'Week':'Semana',agg.week,'','')}
     ${astatMoney(agg.month<0?'red':'green','trending',LANG==='pt'?'Mês':LANG==='en'?'Month':'Mes',agg.month,'','')}
     ${astatMoney(agg.total<0?'red':'green','dollar',LANG==='pt'?'Total':LANG==='en'?'Total':'Total',agg.total,'','')}
+  </div>
+  <div class="card rv" style="margin-top:12px">
+    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${LANG==='pt'?'Calendário de resultados':LANG==='en'?'Results calendar':'Calendario de resultados'}</div><span class="card-desc">${LANG==='pt'?'Lucro/perda por dia desde janeiro':LANG==='en'?'Profit/loss per day since January':'Ganancia/pérdida por día desde enero'}</span></div>
+    <div id="admCalHeat">${buildAdmCalendar()}</div>
   </div>
   <div class="card rv" style="margin-top:12px">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>${LANG==='pt'?'Clientes':LANG==='en'?'Clients':'Clientes'}</div><div style="font-family:var(--fm);font-size:.72rem;color:var(--t3)">${LANG==='pt'?'Resultado':LANG==='en'?'Result':'Resultado'}: ${periodLabel(perKey)}</div></div>
