@@ -2072,26 +2072,53 @@ async function stripePost(env, path, params) {
 // Assim o aluno troca de plano/cartão/cancela SEM logar na Stripe.
 async function handleBillingPortal(request, env, json) {
   const email = await getSessionEmail(request, env);
-  if (!email) return json({ error: 'unauthorized' }, 401);
-  if (!env.STRIPE_SECRET_KEY) return json({ error: 'stripe_key_missing' }, 500);
-  const u = await env.DB.prepare('SELECT stripe_customer FROM users WHERE email = ?').bind(email).first();
-  if (!u) return json({ error: 'not_found' }, 404);
-  let cust = u.stripe_customer && String(u.stripe_customer).trim();
-  if (!cust) {
-    // sem customer salvo → tenta achar pelo e-mail e guarda pra próxima
-    const cs = await stripeGet(env, '/customers?email=' + encodeURIComponent(email) + '&limit=1');
-    if (cs.ok && cs.body && Array.isArray(cs.body.data) && cs.body.data[0]) {
-      cust = cs.body.data[0].id;
-      await env.DB.prepare('UPDATE users SET stripe_customer = COALESCE(stripe_customer, ?) WHERE email = ?').bind(cust, email).run();
+  if (!email) return json({ error: "unauthorized" }, 401);
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "stripe_key_missing" }, 503);
+  let payload = {};
+  try { payload = await request.json(); } catch (_) {}
+  const cancel = payload && payload.flow === "cancel";
+  const user = await env.DB.prepare("SELECT stripe_customer FROM users WHERE email = ?").bind(email).first();
+  if (!user) return json({ error: "not_found" }, 404);
+  let customer = user.stripe_customer && String(user.stripe_customer).trim();
+  // Não escolhe o primeiro cliente por e-mail: um checkout pode criar duplicados.
+  if (!customer) {
+    const found = await stripeGet(env, "/customers?email=" + encodeURIComponent(email) + "&limit=100");
+    if (!found.ok) return json({ error: "portal_error" }, 502);
+    const customers = found.body && found.body.data || [];
+    for (const candidate of customers) {
+      if (String(candidate.email || "").trim().toLowerCase() !== email.toLowerCase()) continue;
+      const subscriptions = await stripeGet(env, "/subscriptions?customer=" + encodeURIComponent(candidate.id) + "&status=all&limit=100");
+      if (!subscriptions.ok) return json({ error: "portal_error" }, 502);
+      if ((subscriptions.body && subscriptions.body.data || []).some(s => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status))) {
+        customer = candidate.id; break;
+      }
+    }
+    if (!customer && customers.length === 1 && String(customers[0].email || "").trim().toLowerCase() === email.toLowerCase()) customer = customers[0].id;
+    if (customer) await env.DB.prepare("UPDATE users SET stripe_customer = ? WHERE email = ? AND (stripe_customer IS NULL OR trim(stripe_customer) = '')").bind(customer, email).run();
+  }
+  if (!customer) return json({ error: "no_customer" }, 400);
+  const returnUrl = "https://painel.blackwolfea.com/";
+  const params = { customer, return_url: returnUrl, locale: "auto" };
+  if (cancel) {
+    const result = await stripeGet(env, "/subscriptions?customer=" + encodeURIComponent(customer) + "&status=all&limit=100");
+    if (!result.ok) return json({ error: "portal_error" }, 502);
+    const subscriptions = (result.body && result.body.data || []).filter(s => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status));
+    if (!subscriptions.length) return json({ error: "no_subscription" }, 409);
+    // Com múltiplas assinaturas, a Stripe apresenta a lista para o cliente escolher.
+    if (subscriptions.length === 1 && !subscriptions[0].cancel_at_period_end) {
+      params["flow_data[type]"] = "subscription_cancel";
+      params["flow_data[subscription_cancel][subscription]"] = subscriptions[0].id;
+      params["flow_data[after_completion][type]"] = "redirect";
+      params["flow_data[after_completion][redirect][return_url]"] = returnUrl;
     }
   }
-  if (!cust) return json({ error: 'no_customer', message: 'Sem assinatura Stripe vinculada.' }, 400);
-  const returnUrl = env.PANEL_URL || 'https://painel.blackwolfea.com';
-  const r = await stripePost(env, '/billing_portal/sessions', { customer: cust, return_url: returnUrl });
-  if (r.ok && r.body && r.body.url) return json({ ok: true, url: r.body.url });
-  const msg = (r.body && r.body.error && r.body.error.message) || 'portal_error';
-  logEvent({ evt: 'portal_fail', email, detail: msg });
-  return json({ error: 'portal_error', message: msg }, 400);
+  const result = await stripePost(env, "/billing_portal/sessions", params);
+  if (result.ok && result.body && result.body.url) return json({ ok: true, url: result.body.url });
+  const error = result.body && result.body.error || {};
+  const denied = result.status === 403 || error.type === "insufficient_permissions";
+  logEvent({ evt: "portal_fail", detail: denied ? "customer_portal_write_missing" : String(error.code || "stripe_portal_error") });
+  // Não devolve ao navegador detalhes da chave nem links privados de administração.
+  return json({ error: denied ? "portal_permission_denied" : "portal_error" }, denied ? 503 : 502);
 }
 
 // v37: Resolve o plano EXATO de um pagamento pelo que o cliente comprou no Stripe —

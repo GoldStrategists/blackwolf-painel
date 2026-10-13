@@ -4229,43 +4229,48 @@ async function downloadRobot(kind){
     else { window.location.href='/BlackWolf_AI.ex5'; } // fallback: arquivo estático (só MT5)
   }catch(e){ window.location.href=isNt?'/BlackWolf_NinjaTrader.zip':'/BlackWolf_AI.ex5'; }
 }
-// abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
-// cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
-async function openBillingPortal(btn){
-  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o portal de assinatura':'(demo) would open the billing portal','info'); return; }
-  const old = btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Abrindo…':LANG==='en'?'Opening…':'Abriendo…'; }
+// Uma única requisição de cobrança por vez; nunca abre popup após um await.
+let BILLING_PORTAL_BUSY=false;
+async function openBillingPortal(btn,flow){
+  if(SESSION&&SESSION.isDemo){toast(LANG==='pt'?'(demo) abriria o portal de assinatura':'(demo) would open the billing portal','info');return;}
+  if(BILLING_PORTAL_BUSY)return;
+  BILLING_PORTAL_BUSY=true;
+  const old=btn?btn.innerHTML:'';
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),25000);
+  if(btn){btn.disabled=true;btn.textContent=LANG==='pt'?'Abrindo Stripe…':LANG==='en'?'Opening Stripe…':'Abriendo Stripe…';}
   try{
-    const r=await apiFetch('/api/portal',{method:'POST'});
-    let d={}; try{ d=await r.json(); }catch(e){}
-    if(r.ok && d.url){ window.location.href=d.url; return; } // redireciona pro portal
-    if(d.error==='no_customer'){ toast(LANG==='pt'?'Não achamos sua assinatura na Stripe. Fale com o suporte que a gente resolve.':LANG==='en'?'We could not find your Stripe subscription. Contact support.':'No encontramos tu suscripción en Stripe. Contacta al soporte.','error'); }
-    else if(d.error==='portal_error'){ toast(LANG==='pt'?'O portal de assinatura ainda não está configurado. Avise o suporte.':LANG==='en'?'The billing portal is not configured yet. Contact support.':'El portal aún no está configurado. Avisa al soporte.','error'); }
-    else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
-  }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
-  if(btn){ btn.disabled=false; btn.innerHTML=old; }
+    const r=await apiFetch('/api/portal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({flow:flow==='cancel'?'cancel':'manage'}),signal:controller.signal});
+    let d={};try{d=await r.json();}catch(e){}
+    if(r.ok&&d.url){
+      const target=new URL(d.url);
+      if(target.protocol!=='https:'||target.hostname!=='billing.stripe.com')throw new Error('invalid_portal_url');
+      window.location.assign(target.href);return;
+    }
+    const messages={
+      no_customer:['Não encontramos uma cobrança vinculada à sua conta. Fale com o suporte.','No billing account is linked. Contact support.','No hay una cuenta de facturación vinculada. Contacta al soporte.'],
+      no_subscription:['Não há assinatura com renovação ativa para cancelar.','There is no renewing subscription to cancel.','No hay una suscripción con renovación activa para cancelar.'],
+      portal_permission_denied:['A Stripe bloqueou o portal de cobrança por uma configuração interna. O suporte precisa liberar o acesso.','Stripe blocked the billing portal due to an internal configuration. Support needs to enable access.','Stripe bloqueó el portal por una configuración interna. Soporte debe habilitar el acceso.'],
+      portal_error:['A Stripe não conseguiu abrir a confirmação. Tente novamente ou fale com o suporte.','Stripe could not open confirmation. Try again or contact support.','Stripe no pudo abrir la confirmación. Inténtalo de nuevo o contacta al soporte.']
+    };
+    const msg=messages[d.error]||messages.portal_error;
+    toast(msg[LANG==='pt'?0:LANG==='en'?1:2],'error');
+  }catch(e){
+    if(e.message==='session_expired')return;
+    toast(e.name==='AbortError'?(LANG==='pt'?'A Stripe demorou a responder. Tente novamente.':'Stripe took too long to respond. Please try again.'):(LANG==='pt'?'Não foi possível conectar à cobrança. Confira sua conexão e tente novamente.':'Could not connect to billing. Check your connection and try again.'),'error');
+  }finally{
+    clearTimeout(timeout);BILLING_PORTAL_BUSY=false;
+    if(btn){btn.disabled=false;btn.innerHTML=old;}
+  }
 }
-// abre o Portal de Cobrança da Stripe JÁ LOGADO (sem senha) — o aluno troca de plano,
-// cartão, vê faturas ou cancela. O worker cria a sessão com o stripe_customer dele.
-async function openBillingPortal(btn){
-  if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o portal de assinatura':'(demo) would open the billing portal','info'); return; }
-  const old = btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent=LANG==='pt'?'Abrindo…':LANG==='en'?'Opening…':'Abriendo…'; }
-  try{
-    const r=await apiFetch('/api/portal',{method:'POST'});
-    let d={}; try{ d=await r.json(); }catch(e){}
-    if(r.ok && d.url){ window.location.href=d.url; return; } // redireciona pro portal
-    if(d.error==='no_customer'){ toast(LANG==='pt'?'Não achamos sua assinatura na Stripe. Fale com o suporte que a gente resolve.':LANG==='en'?'We could not find your Stripe subscription. Contact support.':'No encontramos tu suscripción en Stripe. Contacta al soporte.','error'); }
-    else if(d.error==='portal_error'){ toast(LANG==='pt'?'O portal de assinatura ainda não está configurado. Avise o suporte.':LANG==='en'?'The billing portal is not configured yet. Contact support.':'El portal aún no está configurado. Avisa al soporte.','error'); }
-    else { toast(LANG==='pt'?'Não foi possível abrir agora. Tente de novo em instantes.':LANG==='en'?'Could not open now. Try again shortly.':'No se pudo abrir ahora. Inténtalo de nuevo.','error'); }
-  }catch(e){ toast(LANG==='pt'?'Sem conexão. Tente de novo.':'No connection.','error'); }
-  if(btn){ btn.disabled=false; btn.innerHTML=old; }
-}
+
 // Fluxo de cancelamento com retenção: fácil de achar, mas com 1 tela de confirmação + ofertas
 function openCancelFlow(){
   if(SESSION&&SESSION.isDemo){ toast(LANG==='pt'?'(demo) abriria o cancelamento':LANG==='en'?'(demo) would open cancellation':'(demo) abriría la cancelación','info'); return; }
   const wa='https://wa.me/12292961795?text='+encodeURIComponent(LANG==='pt'?'Olá! Quero falar sobre a minha assinatura Black Wolf antes de decidir.':LANG==='en'?'Hi! I want to talk about my Black Wolf subscription before deciding.':'¡Hola! Quiero hablar sobre mi suscripción Black Wolf antes de decidir.');
   const T=LANG==='pt'?{
     title:'Cancelar assinatura',
-    intro:'Que pena que você pensou em sair. Antes de confirmar, veja o que acontece:',
+    intro:'Você vai confirmar o cancelamento na Stripe. A renovação só é interrompida depois dessa confirmação. Veja o que acontece:',
     li1:'O robô <b>para de operar</b> no fim do período que você já pagou.',
     li2:'A licença é desativada — mas <b>seus dados e histórico continuam salvos</b> aqui no painel.',
     li3:'<b>Sem multa.</b> Você mantém o acesso até o fim do período já pago.',
@@ -4273,7 +4278,7 @@ function openCancelFlow(){
     bTalk:'Falar com o time — a gente resolve',
     bPlan:'Pagar menos (mudar de plano)',
     keep:'Manter minha assinatura',
-    go:'Continuar cancelamento →'
+    go:'Ir para confirmação na Stripe →'
   }:LANG==='en'?{
     title:'Cancel subscription',
     intro:'Sorry to see you thinking about leaving. Before you confirm, here is what happens:',
@@ -4284,7 +4289,7 @@ function openCancelFlow(){
     bTalk:'Talk to the team — we’ll sort it out',
     bPlan:'Pay less (change plan)',
     keep:'Keep my subscription',
-    go:'Continue cancelling →'
+    go:'Confirm cancellation in Stripe →'
   }:{
     title:'Cancelar suscripción',
     intro:'Lamentamos que pienses en irte. Antes de confirmar, esto es lo que pasa:',
@@ -4295,7 +4300,7 @@ function openCancelFlow(){
     bTalk:'Hablar con el equipo — lo resolvemos',
     bPlan:'Pagar menos (cambiar de plan)',
     keep:'Mantener mi suscripción',
-    go:'Continuar cancelación →'
+    go:'Confirmar cancelación en Stripe →'
   };
   const liStyle='position:relative;padding-left:26px;color:var(--t2);font-size:.86rem;line-height:1.45';
   const dot='<svg viewBox="0 0 24 24" fill="none" stroke="var(--blue-l)" stroke-width="2.5" style="width:15px;height:15px;position:absolute;left:0;top:2px"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -4311,9 +4316,9 @@ function openCancelFlow(){
       <button class="btn-primary" style="width:100%;justify-content:center;background:linear-gradient(135deg,#22c55e,#16a34a)" onclick="closeCustomModal();window.open('${wa}','_blank')"><svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path d="M17.6 6.32A8.78 8.78 0 0 0 12 4a8.74 8.74 0 0 0-7.6 13.1L4 21l4-1.04A8.74 8.74 0 0 0 21 12a8.7 8.7 0 0 0-3.4-5.68z"/></svg>${T.bTalk}</button>
       <button class="btn-ghost" style="width:100%;justify-content:center" onclick="closeCustomModal();openBillingPortal()">${T.bPlan}</button>
     </div>
-    <div style="display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--bord2)">
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--bord2)">
       <button class="btn-primary" style="flex:1;justify-content:center" onclick="closeCustomModal()">${T.keep}</button>
-      <button style="flex:0 0 auto;background:none;border:none;color:var(--red-l);font-family:var(--fh);font-weight:600;font-size:.82rem;cursor:pointer;padding:0 8px" onclick="closeCustomModal();openBillingPortal()">${T.go}</button>
+      <button style="width:100%;justify-content:center;color:var(--red-l);border-color:rgba(255,59,71,.35)" class="btn-ghost" onclick="openBillingPortal(this, 'cancel')">${T.go}</button>
     </div>
   `);
 }
