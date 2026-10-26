@@ -1,0 +1,24 @@
+{
+  "name": "blackwolf-trading-floor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Black Wolf Trading Floor 3D — central local de monitoramento de contas de trading",
+  "workspaces": ["shared", "server", "web"],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web",
+    "test": "npm run test -w server",
+    "test:e2e": "node web/e2e/smoke.mjs",
+    "collector:check": "bash collector-nt8/tools/compile-check.sh",
+    "db:migrate": "npm run db:migrate -w server",
+    "token:create": "npm run token:create -w server --",
+    "user:set-password": "npm run user:set-password -w server --"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "~5.6.3"
+  },
+  "engines": { "node": ">=22.9" }
+}

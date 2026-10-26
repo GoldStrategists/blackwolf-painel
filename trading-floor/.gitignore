@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+*.local
+web/e2e/screenshots
+collector-nt8/tools/build
+data/
