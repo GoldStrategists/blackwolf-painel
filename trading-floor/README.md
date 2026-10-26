@@ -56,6 +56,16 @@ roda **em memória** (útil para testar o DEMO; nada persiste).
 
 ---
 
+## Jeito mais rápido (Windows)
+
+1. Instale o **Node.js 22** em https://nodejs.org.
+2. Baixe este projeto e descompacte.
+3. Dê dois cliques em **`trading-floor\INICIAR-WINDOWS.bat`**. Na primeira vez ele instala tudo
+   (alguns minutos); depois abre a sala em http://127.0.0.1:4100. Crie sua senha e pronto.
+
+Sem PostgreSQL a sala roda **em memória** (o DEMO funciona; nada fica salvo ao fechar). Para salvar
+configurações e histórico, siga a instalação completa abaixo.
+
 ## Instalação (Windows)
 
 Pré-requisitos: **Node.js 22.9+** (https://nodejs.org) e **PostgreSQL 16** (instalador oficial, ou
