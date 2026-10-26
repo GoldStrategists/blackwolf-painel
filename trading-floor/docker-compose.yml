@@ -1,0 +1,16 @@
+# PostgreSQL local para o Black Wolf Trading Floor (opcional: você pode usar um Postgres instalado).
+# Uso:  docker compose up -d      (crie um .env com POSTGRES_PASSWORD antes)
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: blackwolf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: blackwolf_floor
+    ports:
+      - "127.0.0.1:5432:5432" # só no próprio computador
+    volumes:
+      - bwfloor-db:/var/lib/postgresql/data
+volumes:
+  bwfloor-db:

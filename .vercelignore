@@ -1,0 +1,3 @@
+# O Trading Floor é um app local (dados financeiros privados) e não deve ir
+# para o deploy público do painel na Vercel.
+trading-floor

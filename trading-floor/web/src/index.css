@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { color: #c7d1e0; font-family: Inter, 'Segoe UI', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+
+@layer components {
+  .glass { @apply bg-wolf-900/85 backdrop-blur-md border border-wolf-700/70 shadow-[0_8px_40px_rgba(0,0,0,0.45)]; }
+  .btn { @apply inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-wolf-600 bg-wolf-800 text-wolf-200 hover:bg-wolf-700 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-on { @apply bg-brand border-brand text-white hover:bg-brand-glow; }
+  .btn-danger { @apply border-neg/60 text-neg hover:bg-neg/15; }
+  .input { @apply w-full rounded-md border border-wolf-600 bg-wolf-950 px-2.5 py-1.5 text-sm text-wolf-200 outline-none focus:border-brand; }
+  .label { @apply block text-[11px] font-semibold uppercase tracking-wide text-wolf-400 mb-1; }
+  .kpi-label { @apply text-[10px] font-bold uppercase tracking-wider text-wolf-400; }
+  .kpi-value { @apply font-mono text-base font-bold; }
+}
+
+.demo-stripes {
+  background: repeating-linear-gradient(-45deg, rgba(255,197,51,0.95) 0 14px, rgba(20,16,4,0.95) 14px 28px);
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #2a3548; border-radius: 8px; }

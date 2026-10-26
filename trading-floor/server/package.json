@@ -1,0 +1,33 @@
+{
+  "name": "@bw/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
+    "start": "tsx --env-file-if-exists=../.env src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "db:migrate": "tsx --env-file-if-exists=../.env src/cli/migrate.ts",
+    "token:create": "tsx --env-file-if-exists=../.env src/cli/token.ts",
+    "user:set-password": "tsx --env-file-if-exists=../.env src/cli/set-password.ts"
+  },
+  "dependencies": {
+    "@bw/shared": "*",
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/rate-limit": "^10.2.1",
+    "@fastify/static": "^8.0.3",
+    "@fastify/websocket": "^11.0.1",
+    "fastify": "^5.1.0",
+    "pg": "^8.13.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.5",
+    "ws": "^8.18.0"
+  }
+}
